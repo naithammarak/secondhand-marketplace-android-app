@@ -1,6 +1,7 @@
 import os
 from app.database import Base
 from app.models.test_message import TestMessage
+from app.models.user import User
 from pathlib import Path
 from logging.config import fileConfig
 
