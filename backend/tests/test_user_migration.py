@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
 USER_MIGRATION_REVISION = "b3f1a6c8d902"
+REQUIRED_DATA_API_ROLES = {"anon", "authenticated"}
 
 
 def _alembic_config() -> Config:
@@ -34,6 +35,23 @@ def test_user_migration_is_the_only_alembic_head():
 
     assert script.get_heads() == [USER_MIGRATION_REVISION]
     assert migration.down_revision == "9ff73113281a"
+
+
+def test_missing_data_api_roles_are_reported_as_skipped():
+    with pytest.raises(pytest.skip.Exception, match="authenticated"):
+        _require_data_api_roles(["anon"])
+
+
+def _require_data_api_roles(role_names) -> set[str]:
+    available_roles = set(role_names)
+    missing_roles = sorted(REQUIRED_DATA_API_ROLES - available_roles)
+    if missing_roles:
+        pytest.skip(
+            "PostgreSQL test database is missing required Data API roles: "
+            + ", ".join(missing_roles)
+        )
+
+    return available_roles
 
 
 def _isolated_test_database_url() -> str:
@@ -103,7 +121,9 @@ def user_session(migrated_database):
         connection.execute(text("TRUNCATE TABLE public.users RESTART IDENTITY"))
 
 
-def test_migration_upgrades_the_empty_database_and_secures_users(migrated_database):
+def test_migration_upgrades_database_and_enables_rls_without_policies(
+    migrated_database,
+):
     with migrated_database.connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
         rls_enabled = connection.execute(
@@ -128,19 +148,25 @@ def test_migration_upgrades_the_empty_database_and_secures_users(migrated_databa
                 """
             )
         ).scalar_one()
-        data_api_roles = connection.execute(
-            text(
-                """
-                SELECT rolname
-                FROM pg_roles
-                WHERE rolname IN ('anon', 'authenticated')
-                """
-            )
-        ).scalars()
-
         assert revision == USER_MIGRATION_REVISION
         assert rls_enabled is True
         assert policy_count == 0
+
+
+def test_migration_revokes_data_api_role_privileges(migrated_database):
+    with migrated_database.connect() as connection:
+        data_api_roles = _require_data_api_roles(
+            connection.execute(
+                text(
+                    """
+                    SELECT rolname
+                    FROM pg_roles
+                    WHERE rolname IN ('anon', 'authenticated')
+                    """
+                )
+            ).scalars()
+        )
+
         for role_name in data_api_roles:
             for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
                 assert connection.execute(
