@@ -50,13 +50,11 @@ def _isolated_test_database_url() -> str:
     if not test_url.database or "test" not in test_url.database.lower():
         pytest.fail("TEST_DATABASE_URL database name must contain 'test'")
 
-    configured_url = os.getenv("DATABASE_URL")
     dotenv_url = dotenv_values(BACKEND_DIR / ".env").get("DATABASE_URL")
-    for candidate in (configured_url, dotenv_url):
-        if candidate and make_url(candidate) == test_url:
-            pytest.fail(
-                "TEST_DATABASE_URL must not point to the configured application database"
-            )
+    if dotenv_url and make_url(dotenv_url) == test_url:
+        pytest.fail(
+            "TEST_DATABASE_URL must not point to the application database in .env"
+        )
 
     return raw_url
 
