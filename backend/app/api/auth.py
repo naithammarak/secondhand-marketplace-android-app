@@ -1,42 +1,47 @@
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from app.schemas.auth import GoogleLoginRequest
+import jwt  # ใช้ PyJWT ที่มีอยู่ในโปรเจกต์
+
 from app.core.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+security = HTTPBearer()
 
-# ดึงค่า Client ID จาก .env ความปลอดภัยสูง ป้องกันข้อมูลหลุดขึ้น GitHub
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+# ดึง Supabase JWT Secret จาก .env (หรือใส่ค่าจริงตรงนี้)
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "YOUR_SUPABASE_JWT_SECRET")
 
 @router.post("/google")
-async def google_login(payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+async def google_login(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    token = credentials.credentials
     try:
-        # ถ้าระบบยังไม่ได้ใส่ Client ID ใน .env ให้ข้ามการเช็คชั่วคราวเผื่อตอนเทส
-        if GOOGLE_CLIENT_ID:
-            idinfo = id_token.verify_oauth2_token(
-                payload.token, 
-                google_requests.Request(), 
-                GOOGLE_CLIENT_ID
-            )
-            email = idinfo.get("email")
-            name = idinfo.get("name")
-        else:
-            # โหมดจำลองกรณีรอ Client ID จากทีม
-            email = "test.user@example.com"
-            name = "Test User"
+        # ถอดรหัสและตรวจสอบความถูกต้องของ Token ที่ส่งมาจาก Supabase
+        payload = jwt.decode(
+            token, 
+            SUPABASE_JWT_SECRET, 
+            algorithms=["HS256"], 
+            options={"verify_aud": False}
+        )
+
+        # ดึงข้อมูลผู้ใช้จาก Token ของ Supabase
+        user_email = payload.get("email")
+        user_name = payload.get("user_metadata", {}).get("full_name", "")
+
+        # TODO: นำ email ไปบันทึกหรือเช็คในฐานข้อมูล AsyncSession ของคุณตรงนี้
 
         return {
             "success": True,
-            "message": "Google token verified successfully",
-            "email": email,
-            "name": name
+            "message": "Supabase token verified successfully",
+            "email": user_email,
+            "name": user_name
         }
 
-    except ValueError as e:
+    except jwt.PyJWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid Google Token: {str(e)}"
+            detail=f"Invalid Supabase Token: {str(e)}"
         )
