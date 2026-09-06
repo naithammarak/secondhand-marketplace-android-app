@@ -65,16 +65,20 @@ def cli_args(*, role="ADMIN", apply=False, supabase_user_id=str(TEST_USER_ID)):
     return args
 
 
-def test_cli_requires_apply_before_mutation(capsys):
-    session_factory = FakeSessionFactory(make_user(role=None))
+def test_cli_preview_reports_pending_change_without_mutation(capsys):
+    session_factory = FakeSessionFactory(make_user(role=UserRole.BUYER))
 
     code = main(cli_args(), session_factory=session_factory)
 
     assert code == 0
-    assert session_factory.session.user.role is None
+    assert session_factory.session.user.role is UserRole.BUYER
     assert session_factory.session.commit_count == 0
     assert session_factory.session.close_count == 1
-    assert "No change was made" in capsys.readouterr().out
+    assert capsys.readouterr().out == (
+        f"UUID: {TEST_USER_ID}\n"
+        "Requested role: ADMIN\n"
+        "Status: pending-change (no change was made)\n"
+    )
 
 
 def test_cli_apply_assigns_the_requested_role_and_closes_session(capsys):
@@ -122,15 +126,19 @@ def test_cli_reports_missing_application_user_and_closes_session(capsys):
     )
 
 
-def test_cli_reports_repeated_assignment_as_already_set(capsys):
+def test_cli_preview_reports_already_set_without_mutation(capsys):
     session_factory = FakeSessionFactory(make_user(role=UserRole.ADMIN))
 
-    code = main(cli_args(apply=True), session_factory=session_factory)
+    code = main(cli_args(), session_factory=session_factory)
 
     assert code == 0
     assert session_factory.session.commit_count == 0
     assert session_factory.session.close_count == 1
-    assert "already-set" in capsys.readouterr().out
+    assert capsys.readouterr().out == (
+        f"UUID: {TEST_USER_ID}\n"
+        "Requested role: ADMIN\n"
+        "Status: already-set (no change was made)\n"
+    )
 
 
 def test_cli_hides_sensitive_values_when_the_database_fails(capsys):

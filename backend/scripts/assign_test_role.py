@@ -60,9 +60,15 @@ def main(
             )
             if user is None:
                 raise TestUserNotFoundError(str(arguments.supabase_user_id))
+            outcome = (
+                "already-set"
+                if user.role == arguments.role
+                else "pending-change"
+            )
             print(
-                "No change was made. "
-                f"UUID {arguments.supabase_user_id}; requested role {arguments.role.value}."
+                f"UUID: {arguments.supabase_user_id}\n"
+                f"Requested role: {arguments.role.value}\n"
+                f"Status: {outcome} (no change was made)"
             )
             return 0
 
