@@ -59,3 +59,5 @@ watchfiles==1.2.0
 websockets==17.1
 google-auth
 requests
+PyJWT[crypto]>=2.8.0
+cryptography>=42.0.0
