@@ -11,8 +11,21 @@ class AllowedRole(str, Enum):
 
 
 class GoogleLoginRequest(BaseModel):
-    role: Optional[AllowedRole] = None  # อนุญาตให้เลือกได้เฉพาะ BUYER หรือ SELLER
+    role: Optional[AllowedRole] = Field(
+        default=None,
+        description="เลือกบทบาทตอนลงทะเบียนครั้งแรก (BUYER หรือ SELLER)",
+        json_schema_extra={"example": "BUYER"},
+    )
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"role": "BUYER"},
+                {"role": "SELLER"},
+                {},
+            ]
+        }
+    }
 
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
