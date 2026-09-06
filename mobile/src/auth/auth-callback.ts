@@ -1,19 +1,22 @@
-export const AUTH_SCHEME = 'secondhandmarketplace';
-export const AUTH_HOST = 'auth';
-export const AUTH_PATH = '/callback';
-
 export type ParsedAuthCallback =
   | { accessToken: string; refreshToken: string }
   | { error: 'oauth-error' };
 
-export function parseAuthCallback(value: string): ParsedAuthCallback | null {
+export function parseAuthCallback(value: string, expectedRedirectUri: string): ParsedAuthCallback | null {
   let url: URL;
+  let expectedUrl: URL;
   try {
     url = new URL(value);
+    expectedUrl = new URL(expectedRedirectUri);
   } catch {
     return null;
   }
-  if (url.protocol !== `${AUTH_SCHEME}:` || url.hostname !== AUTH_HOST || url.pathname !== AUTH_PATH) {
+  if (
+    url.protocol !== expectedUrl.protocol
+    || url.hostname !== expectedUrl.hostname
+    || url.port !== expectedUrl.port
+    || url.pathname !== expectedUrl.pathname
+  ) {
     return null;
   }
 

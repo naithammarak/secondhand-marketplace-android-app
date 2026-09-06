@@ -14,12 +14,13 @@ import { getSupabaseClient } from './supabase-client';
 import { verifyAccountWithRefresh } from './session-account';
 import { createMeService, MeServiceError, type MeResult } from '@/services/me-service';
 
-WebBrowser.maybeCompleteAuthSession();
-
-export const AUTH_REDIRECT_URI = makeRedirectUri({
-  scheme: 'secondhandmarketplace',
-  path: 'auth/callback',
-});
+function getAuthRedirectUri(): string | null {
+  if (Platform.OS === 'web' && typeof window === 'undefined') return null;
+  return makeRedirectUri({
+    scheme: 'secondhandmarketplace',
+    path: 'auth/callback',
+  });
+}
 
 type AuthContextValue = {
   initializing: boolean;
@@ -47,12 +48,19 @@ function mapMeError(error: unknown): LoginResult {
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const supabase = useMemo(() => getSupabaseClient(), []);
+  const redirectTo = useMemo(() => getAuthRedirectUri(), []);
   const meService = useMemo(() => createMeService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL }), []);
   const [initializing, setInitializing] = useState(supabase !== null);
   const [session, setSession] = useState<Session | null>(null);
   const [account, setAccount] = useState<MeResult | null>(null);
   const [accountChecking, setAccountChecking] = useState(false);
   const [accountError, setAccountError] = useState<LoginResult | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      WebBrowser.maybeCompleteAuthSession();
+    }
+  }, []);
 
   const loadAccount = useCallback(async (nextSession: Session, signal?: AbortSignal) => {
     if (!supabase) throw new MeServiceError('unauthorized');
@@ -93,12 +101,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [loadAccount]);
 
   const processCallback = useCallback(async (url: string, signal?: AbortSignal): Promise<LoginResult> => {
-    if (!supabase) return 'oauth-error';
+    if (!supabase || !redirectTo) return 'oauth-error';
     const existing = activeCallbacks.get(url);
     if (existing) return existing;
     const epoch = authEpoch;
     const operation = (async () => {
-      const parsed = parseAuthCallback(url);
+      const parsed = parseAuthCallback(url, redirectTo);
       if (!parsed || 'error' in parsed) return 'oauth-error';
       const fingerprint = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, url);
       if (completedCallbacks.has(fingerprint)) return 'success';
@@ -121,7 +129,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     })().finally(() => activeCallbacks.delete(url));
     activeCallbacks.set(url, operation);
     return operation;
-  }, [supabase, verifyAccount]);
+  }, [redirectTo, supabase, verifyAccount]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -165,9 +173,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [processCallback]);
 
   const loginAdapter = useMemo(() => {
-    if (!supabase) return undefined;
+    if (!supabase || !redirectTo) return undefined;
     return createGoogleLoginAdapter({
-      redirectTo: AUTH_REDIRECT_URI,
+      platform: Platform.OS === 'web' ? 'web' : 'native',
+      redirectTo,
       signIn: async options => {
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: options.provider,
@@ -176,11 +185,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (error) return {};
         return { url: data.url };
       },
-      openBrowser: WebBrowser.openAuthSessionAsync,
+      openBrowser: Platform.OS === 'web' ? undefined : WebBrowser.openAuthSessionAsync,
       processCallback,
-      dismissBrowser: () => { try { WebBrowser.dismissAuthSession(); } catch { /* no active session */ } },
+      dismissBrowser: Platform.OS === 'web' ? undefined : () => {
+        try { WebBrowser.dismissAuthSession(); } catch { /* no active session */ }
+      },
     });
-  }, [processCallback, supabase]);
+  }, [processCallback, redirectTo, supabase]);
 
   const logout = useCallback(async () => {
     authEpoch += 1;

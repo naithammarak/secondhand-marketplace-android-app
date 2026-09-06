@@ -6,6 +6,7 @@ test('starts Google OAuth once with the approved redirect and processes success'
   let options;
   let callback;
   const adapter = createGoogleLoginAdapter({
+    platform: 'native',
     redirectTo: 'secondhandmarketplace://auth/callback',
     signIn: async value => { options = value; return { url: 'https://supabase.test/oauth' }; },
     openBrowser: async () => ({ type: 'success', url: 'secondhandmarketplace://auth/callback#access_token=a&refresh_token=r' }),
@@ -19,9 +20,50 @@ test('starts Google OAuth once with the approved redirect and processes success'
   assert.equal(processing, 1);
 });
 
+test('native login opens the returned OAuth URL with the auth session browser', async () => {
+  let opened;
+  const adapter = createGoogleLoginAdapter({
+    platform: 'native',
+    redirectTo: 'secondhandmarketplace://auth/callback',
+    signIn: async () => ({ url: 'https://supabase.test/oauth' }),
+    openBrowser: async (...args) => { opened = args; return { type: 'cancel' }; },
+    processCallback: async () => 'success',
+    dismissBrowser: () => {},
+  });
+
+  assert.equal(await adapter.run({ signal: new AbortController().signal, processing: () => {} }), 'cancelled');
+  assert.deepEqual(opened, ['https://supabase.test/oauth', 'secondhandmarketplace://auth/callback']);
+});
+
+test('web login uses Supabase browser redirect without opening a popup', async () => {
+  let options;
+  let opened = 0;
+  let processed = 0;
+  let processing = 0;
+  const adapter = createGoogleLoginAdapter({
+    platform: 'web',
+    redirectTo: 'http://localhost:8081/auth/callback',
+    signIn: async value => { options = value; return { url: 'https://supabase.test/oauth' }; },
+    openBrowser: async () => { opened++; return { type: 'success' }; },
+    processCallback: async () => { processed++; return 'success'; },
+    dismissBrowser: () => { opened++; },
+  });
+
+  assert.equal(await adapter.run({ signal: new AbortController().signal, processing: () => processing++ }), 'success');
+  assert.deepEqual(options, {
+    provider: 'google',
+    redirectTo: 'http://localhost:8081/auth/callback',
+    skipBrowserRedirect: false,
+  });
+  assert.equal(opened, 0);
+  assert.equal(processed, 0);
+  assert.equal(processing, 1);
+});
+
 test('browser cancel is retryable and does not process a callback', async () => {
   let processed = false;
   const adapter = createGoogleLoginAdapter({
+    platform: 'native',
     redirectTo: 'secondhandmarketplace://auth/callback',
     signIn: async () => ({ url: 'https://supabase.test/oauth' }),
     openBrowser: async () => ({ type: 'cancel' }),
@@ -34,6 +76,7 @@ test('browser cancel is retryable and does not process a callback', async () => 
 
 test('unexpected browser failure is distinct from user cancellation', async () => {
   const adapter = createGoogleLoginAdapter({
+    platform: 'native',
     redirectTo: 'secondhandmarketplace://auth/callback',
     signIn: async () => ({ url: 'https://supabase.test/oauth' }),
     openBrowser: async () => ({ type: 'locked' }),
@@ -49,6 +92,7 @@ test('aborting dismisses the browser and ignores its later success', async () =>
   let dismissed = 0;
   let processed = false;
   const adapter = createGoogleLoginAdapter({
+    platform: 'native',
     redirectTo: 'secondhandmarketplace://auth/callback',
     signIn: async () => ({ url: 'https://supabase.test/oauth' }),
     openBrowser: async () => browser,

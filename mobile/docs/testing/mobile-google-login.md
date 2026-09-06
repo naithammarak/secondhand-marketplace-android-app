@@ -6,9 +6,14 @@ LOGIN-01 contract implemented for Expo SDK 57:
 
 - Supabase Auth with Google OAuth.
 - App scheme `secondhandmarketplace`.
-- Mobile callback `secondhandmarketplace://auth/callback`.
+- Native callback `secondhandmarketplace://auth/callback`.
+- Web development callback `http://localhost:8081/auth/callback` when Expo Web runs on
+  the default port; production uses the deployed HTTPS origin.
 - Android application ID `com.kmutnb.secondhandmarketplace`.
-- Supabase session persistence in AsyncStorage and refresh while the app is active.
+- Supabase session persistence in native AsyncStorage or Web browser storage, with refresh
+  while the app is active.
+- Static Web rendering does not create or cache a Supabase client until a browser runtime
+  is available.
 - `GET /me` with the current Supabase access token in the `Authorization: Bearer` header.
 - A service-layer `/me` mock returning `role: null` when `EXPO_PUBLIC_API_BASE_URL` is absent.
 - Logout through `supabase.auth.signOut()` and return to Login.
@@ -17,10 +22,9 @@ The app does not contain a Google client secret, Supabase `service_role` key, da
 database password, or role mutation for `ADMIN`/`INSPECTOR`. The Mobile app only displays
 the role returned by Backend; it never treats a client-supplied role as authorization.
 
-Physical Google login and BE verification are still `NOT RUN`: this machine has no test
-Supabase environment values, Google test account, Android SDK/ADB or connected phone.
-EAS CLI also reports `Not logged in`. The local Gradle build therefore stopped at the
-missing Android SDK and did not produce an APK.
+Real Google Login QA is still `NOT RUN` on both Web and an Android Development Build.
+The automated frontend checks do not replace provider account selection, browser redirect,
+native deep-link, session restore or Backend `/me` evidence.
 
 ## Environment
 
@@ -50,19 +54,28 @@ mocked as `{ role: null }`. The UI labels this mock explicitly; it is not BE evi
 2. In Google Auth Platform, set the authorized redirect URI to the callback shown by the
    Supabase Google provider, normally:
    `https://PROJECT_REF.supabase.co/auth/v1/callback`.
-3. In Supabase Authentication URL configuration, add exactly:
+   This Google Cloud callback is separate from the app callback URLs below.
+3. In Supabase Authentication URL configuration, add the native callback:
    `secondhandmarketplace://auth/callback`.
-4. The app creates this URI with:
+   Add the Web development callback used by Expo, for example:
+   `http://localhost:8081/auth/callback`.
+   Add the future production callback as the real deployed HTTPS origin, for example:
+   `https://YOUR_WEB_DOMAIN/auth/callback`.
+4. The app creates the callback at runtime with:
    `makeRedirectUri({ scheme: "secondhandmarketplace", path: "auth/callback" })`.
-5. `app.json` registers the same scheme and Android package. Changing either value requires
-   a new native build.
+   Native uses the app scheme; Web uses the current browser origin and path. The exact
+   protocol, hostname, port and pathname must match the callback being processed.
+5. `app.json` registers the native scheme and Android package. Changing either value
+   requires a new native build.
 
-The selected flow is the Supabase native deep-link implicit flow. Mobile calls
-`signInWithOAuth` with `provider: "google"`, the redirect above and
-`skipBrowserRedirect: true`, then opens the returned URL with
-`WebBrowser.openAuthSessionAsync`. The central callback handler accepts only the exact
-scheme/host/path and supplies access/refresh tokens from the callback to
-`supabase.auth.setSession`. It never logs or renders the callback.
+The platform-specific login flow is intentional. Native calls `signInWithOAuth` with
+`provider: "google"`, the native redirect and `skipBrowserRedirect: true`, then opens the
+returned URL with `WebBrowser.openAuthSessionAsync`. Web calls `signInWithOAuth` with
+`skipBrowserRedirect: false` and lets Supabase redirect the current browser page directly;
+Web does not call `openAuthSessionAsync` or open a popup after waiting for Supabase.
+The central callback handler accepts only an exact match for protocol, hostname, port and
+pathname, then supplies access/refresh tokens to `supabase.auth.setSession`. It never logs
+or renders the callback.
 
 Browser results, linking events and the initial cold-start URL share this handler. Concurrent
 duplicate callbacks share one operation; completed callbacks do not repeat `/me`. Cancelling
@@ -81,6 +94,7 @@ npm run typecheck
 npm test
 npx expo install --check
 node node_modules/expo/bin/cli export --platform android --clear
+npx expo export --platform web
 ```
 
 Dependencies were installed using the LOGIN-01 command:
@@ -133,7 +147,24 @@ The APK is normally `android/app/build/outputs/apk/debug/app-debug.apk`. A JS ex
 an APK and is not physical-device evidence. Rebuild after changes to scheme, application ID,
 plugins or native dependencies. Do not use Expo Go as evidence for this callback contract.
 
-## Phone test procedure
+## Web test procedure
+
+1. Start Expo Web with `npx expo start --web` and record the actual browser origin shown
+   by Expo. The default development origin is commonly `http://localhost:8081`.
+2. In Supabase Authentication URL configuration, add that exact origin plus
+   `/auth/callback`, for example `http://localhost:8081/auth/callback`. Do not substitute
+   the Google Cloud callback from the previous section.
+3. Open the Web app and press Google Login once. Confirm that Supabase redirects the same
+   browser tab to Google; no popup or `openAuthSessionAsync` window should be opened.
+4. Select the approved Google test account and verify return to the Web
+   `/auth/callback` route, a signed-in session and the expected account state.
+5. Refresh the page, log out and log in again. Also test provider denial, browser back or
+   cancel, network loss and a retry after each failure.
+6. Verify callback rejection for a wrong origin, port or pathname. Record only redacted
+   screenshots/logs; never share tokens, codes, authorization headers or full callback URLs
+   containing credentials.
+
+## Android Development Build test procedure
 
 1. Record date/time, commit, build ID, environment, device model and Android version.
 2. Verify the phone can reach the Backend origin (phone `localhost` is not the dev PC).
@@ -168,8 +199,10 @@ clears the local session and returns to Login. It does not refresh or loop Login
 
 ## Verification record
 
-Date: 2026-09-06. Branch: `login2-frontend`. Base commit: `e91ac4f` plus working changes.
-Local environment: Windows, Node 24.20.0. Physical device: unavailable.
+Date: 2026-09-06. Branch: `login2-frontend`. `HEAD` and `origin/login2-frontend` are
+currently both `b22652b`; the auth, test and guide changes below are still local and need a
+commit/push before review can use the remote branch.
+Local environment: Windows, Node 24.20.0. Manual Google Login QA: not run.
 
 | Check | Actual result | Status |
 | --- | --- | --- |
@@ -177,18 +210,21 @@ Local environment: Windows, Node 24.20.0. Physical device: unavailable.
 | Expo Doctor | 21/21 checks passed | PASS |
 | ESLint | `npm run lint`: no findings | PASS |
 | TypeScript | `npm run typecheck`: no errors | PASS |
-| Automated behavior | 32 tests: callback validation, duplicate/cancel/stale attempts, bearer `/me`, error mapping, one refresh | PASS |
+| Automated behavior | `npm.cmd test`: 37/37 tests passed, including callback validation, platform-specific OAuth behavior and static-render client coverage | PASS |
 | Android JS export | 1,677 modules; Hermes bundle `entry-997f152a340bcfae0f9c13f6c2fbfbf1.hbc` | PASS |
+| Web static export | `npx.cmd expo export --platform web`: 5 static routes, including `/auth/callback` | PASS |
 | Web smoke response | Expo dev server returned HTTP 200 | PASS |
 | Native manifest | scheme and Android application ID present after prebuild | PASS |
 | Local APK | Gradle stopped: Android SDK location unavailable | NOT RUN / BLOCKED |
 | EAS APK | EAS CLI returned `Not logged in` | NOT RUN / BLOCKED |
-| Google account selection and callback on phone | Test credentials/build/phone unavailable | NOT RUN |
+| Web Google account selection and callback | Real provider redirect and session QA not run | NOT RUN |
+| Android Development Build Google account selection and callback | Real provider deep-link QA not run | NOT RUN |
 | Supabase Authentication user record | Test project access unavailable | NOT RUN |
-| Cancel/retry and duplicate press on phone | Development build unavailable | NOT RUN |
-| Session restore/logout on phone | Development build unavailable | NOT RUN |
+| Web cancel/retry and session restore/logout | Real browser QA not run | NOT RUN |
+| Android cancel/retry and session restore/logout | Development Build QA not run | NOT RUN |
 | BE `/me` token verification and mapping | Backend/environment/evidence unavailable | NOT RUN |
 | Device log/screenshot inspection | No physical OAuth run | NOT RUN |
+| Commit and push | No commit or push performed; remote remains at `b22652b` | NOT RUN |
 
 Suggested evidence: a redacted Login → account selection → callback → account result video,
 cancel/retry video, build ID, test timestamp, request/correlation ID and BE confirmation that
