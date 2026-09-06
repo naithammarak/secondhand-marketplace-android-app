@@ -2,6 +2,7 @@ import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import jwt
 
@@ -12,29 +13,81 @@ from app.schemas.auth import GoogleLoginRequest, UserResponse
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
+
+def get_jwt_issuer() -> str | None:
+    issuer = os.getenv("SUPABASE_JWT_ISSUER")
+    if issuer:
+        return issuer.rstrip("/")
+    supabase_url = os.getenv("SUPABASE_URL")
+    if supabase_url:
+        return f"{supabase_url.rstrip('/')}/auth/v1"
+    project_ref = os.getenv("SUPABASE_PROJECT_REF")
+    if project_ref:
+        return f"https://{project_ref}.supabase.co/auth/v1"
+    return None
+
+
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
+SUPABASE_JWT_ISSUER = get_jwt_issuer()
+SUPABASE_JWT_ALGORITHM = os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
 
 
 def verify_supabase_token(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
-    if not SUPABASE_JWT_SECRET:
+    secret = SUPABASE_JWT_SECRET or os.getenv("SUPABASE_JWT_SECRET")
+    if not secret or secret.strip() in {
+        "YOUR_SUPABASE_JWT_SECRET",
+        "your_supabase_jwt_secret",
+        "YOUR_SECRET",
+        "CHANGE_ME",
+    }:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: SUPABASE_JWT_SECRET is missing",
+            detail="Server configuration error: SUPABASE_JWT_SECRET is missing or using placeholder",
+        )
+
+    expected_iss = SUPABASE_JWT_ISSUER if SUPABASE_JWT_ISSUER is not None else get_jwt_issuer()
+    if not expected_iss:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: SUPABASE_JWT_ISSUER or SUPABASE_URL is missing",
+        )
+
+    expected_aud = (
+        SUPABASE_JWT_AUDIENCE
+        if SUPABASE_JWT_AUDIENCE is not None
+        else os.getenv("SUPABASE_JWT_AUDIENCE")
+    )
+    if not expected_aud:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: SUPABASE_JWT_AUDIENCE is missing",
+        )
+
+    algorithm = SUPABASE_JWT_ALGORITHM or os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
+    if not algorithm:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: SUPABASE_JWT_ALGORITHM is missing",
         )
 
     token = credentials.credentials
     try:
+        decode_options = {
+            "verify_signature": True,
+            "verify_exp": True,
+            "verify_aud": True,
+            "verify_iss": True,
+        }
         payload = jwt.decode(
             token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_aud": False,
-            },
+            secret,
+            algorithms=[algorithm],
+            audience=expected_aud,
+            issuer=expected_iss,
+            options=decode_options,
         )
         return payload
     except jwt.ExpiredSignatureError:
@@ -117,8 +170,17 @@ def google_login(
             status=UserStatus.ACTIVE,
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        try:
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            db.rollback()
+            user = db.query(User).filter(User.supabase_user_id == supabase_uid).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database error during concurrent user creation",
+                )
 
     return user
 

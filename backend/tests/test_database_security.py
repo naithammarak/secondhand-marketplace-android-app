@@ -1,9 +1,12 @@
+import pytest
 from sqlalchemy import text
 
 from app.database import engine
 
 
 def test_test_messages_has_rls_enabled():
+    if engine is None or engine.dialect.name != "postgresql":
+        pytest.skip("PostgreSQL DATABASE_URL is not configured")
     query = text(
         """
         SELECT table_info.relrowsecurity
