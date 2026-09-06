@@ -42,7 +42,9 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   if (auth.session && (auth.account || auth.accountChecking || auth.accountError)) return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.content}>
-        <ThemedText type="subtitle">{auth.account ? 'เข้าสู่ระบบแล้ว' : 'กำลังตรวจสอบบัญชี'}</ThemedText>
+        <ThemedText type="subtitle" style={styles.statusTitle}>
+          {auth.account ? 'เข้าสู่ระบบแล้ว' : 'กำลังตรวจสอบบัญชี'}
+        </ThemedText>
         {auth.accountChecking && <ActivityIndicator accessibilityLabel="กำลังตรวจสอบบัญชี" />}
         {auth.account && <ThemedText>{roleMessage(auth.account.role)}</ThemedText>}
         {auth.accountError && <ThemedText accessibilityLiveRegion="polite">
@@ -75,4 +77,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four,
     paddingBottom: BottomTabInset + Spacing.four, gap: Spacing.three },
+  statusTitle: { alignSelf: 'stretch', flexShrink: 1, textAlign: 'center' },
 });
