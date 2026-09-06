@@ -63,3 +63,4 @@ Thumbs.db
 **/.claude/settings.local.json
 /saproject/.mcp.json
 /saproject/.agentsroom/
+/backend/test-data/login-role-assignments.local.json
