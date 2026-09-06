@@ -26,7 +26,6 @@ def verify_supabase_token(
 
     token = credentials.credentials
     try:
-        # ตรวจสอบ signature และ claims พื้นฐาน
         payload = jwt.decode(
             token,
             SUPABASE_JWT_SECRET,
@@ -34,7 +33,7 @@ def verify_supabase_token(
             options={
                 "verify_signature": True,
                 "verify_exp": True,
-                "verify_aud": False,  # หากต้องการตรวจ aud ให้ระบุ audience="authenticated"
+                "verify_aud": False,
             },
         )
         return payload
@@ -102,10 +101,9 @@ def google_login(
     user = db.query(User).filter(User.supabase_user_id == supabase_uid).first()
 
     if not user:
-        # ดึงข้อมูลจาก claims ของ Supabase
         email = payload.get("email") or ""
         metadata = payload.get("user_metadata", {})
-        full_name = metadata.get("full_name") or metadata.get("name") or email.split("@")[0]
+        full_name = metadata.get("full_name") or metadata.get("name") or (email.split("@")[0] if email else "User")
 
         assigned_role = None
         if body.role:
