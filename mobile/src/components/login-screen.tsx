@@ -1,11 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Button, StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image ,ImageBackground} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createLoginController, type LoginAdapter, type LoginState } from '@/auth/login-controller';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
+const googleLogo = require("@/assets/images/tabIcons/google-logo.jpg");
 
 const messages: Record<LoginState, string> = {
   ready: 'เข้าสู่ระบบเพื่อใช้งานบัญชีของคุณ',
@@ -36,9 +37,11 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => () => controller.cancel(), [controller]);
   const busy = state === 'waiting' || state === 'processing';
+
   if (auth.initializing) return (
     <ThemedView style={styles.container}><ActivityIndicator accessibilityLabel="กำลังกู้คืนเซสชัน" /></ThemedView>
   );
+
   if (auth.session && (auth.account || auth.accountChecking || auth.accountError)) return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.content}>
@@ -53,29 +56,93 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {auth.account?.source === 'mock' && (
           <ThemedText type="small">กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม</ThemedText>
         )}
-        {auth.accountError && <Button title="ลองตรวจบัญชีอีกครั้ง" disabled={auth.accountChecking}
-          onPress={() => { void auth.retryAccount(); }} />}
-        <Button title="ออกจากระบบ" onPress={() => { void auth.logout(); }} />
+
+        {auth.accountError && (
+          <TouchableOpacity
+            style={styles.button}
+            disabled={auth.accountChecking}
+            onPress={() => { void auth.retryAccount(); }}
+          >
+            <Text style={styles.buttonText}>ลองตรวจบัญชีอีกครั้ง</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => { void auth.logout(); }}
+        >
+          <Text style={styles.buttonText}>ออกจากระบบ</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     </ThemedView>
   );
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.content}>
-        <ThemedText type="subtitle">เข้าสู่ระบบ</ThemedText>
-        <ThemedText accessibilityLiveRegion="polite">{messages[state]}</ThemedText>
+
+   return (
+    <SafeAreaView style={styles.container}>
+      <ThemedView style={styles.card}>
+        <Image source={require("@/assets/images/tabIcons/google-logo.jpg")} style={styles.logo} />
+        <ThemedText type="subtitle" style={styles.title}>เข้าสู่ระบบ</ThemedText>
+        <ThemedText accessibilityLiveRegion="polite" style={styles.message}>{messages[state]}</ThemedText>
+
         {busy && <ActivityIndicator accessibilityLabel="กำลังเข้าสู่ระบบ" />}
-        {state !== 'success' && <Button title="เข้าสู่ระบบด้วย Google" disabled={busy}
-          onPress={() => { void controller.start(); }} />}
-        {state === 'waiting' && <Button title="ยกเลิก" onPress={controller.cancel} />}
-      </SafeAreaView>
-    </ThemedView>
+
+        {state !== 'success' && (
+          <TouchableOpacity
+            style={[styles.button, busy && styles.buttonDisabled]}
+            disabled={busy}
+            onPress={() => { void controller.start(); }}
+          >
+            <Image source={googleLogo} style={styles.icon} />
+            <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
+          </TouchableOpacity>
+        )}
+      </ThemedView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four, gap: Spacing.three },
+  container: { 
+    flex: 1,
+    width: "100%", 
+    height: "100%",
+    alignItems:"center", 
+    justifyContent: 'center', 
+    backgroundColor: '#96bde9' 
+  },
+  content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four },
+  card: { 
+    shadowColor: "#000",
+    shadowOffset: { width: 15, height: 20 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+    opacity: 1,
+    width: 380, 
+    height: 500, 
+    backgroundColor: "#243a73e4",
+    alignItems:"center", 
+    alignSelf: "center", 
+    borderRadius: 90 
+  },
+  title: { color: "white",textAlign: "center", marginTop: 40 ,fontFamily: "Kanit-Regular"},
+  message: { color: "white",textAlign: 'center', marginTop: 12, marginBottom: 50,fontFamily: "Kanit-Regular" },
+  button: {
+    flexDirection: "row", // ให้ icon กับข้อความอยู่ในแถวเดียวกัน
+    width: 250,
+    height: 50,
+    backgroundColor: "#fcfcfd",
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "center",
+    marginTop: 10,
+    fontFamily: "Kanit-Regular",
+  },
+  buttonText: { color: "black", fontSize: 16, fontWeight: "600", marginLeft: 10 },
+  buttonDisabled: { backgroundColor: "#999" },
+  icon: { width: 30, height: 30, resizeMode: "contain" },
   statusTitle: { alignSelf: 'stretch', flexShrink: 1, textAlign: 'center' },
+  logo: { marginTop:70,width: 100, height: 100, borderRadius:20},
+  circle: { width:80, height:80, borderRadius:40, backgroundColor:"#ffff"}
 });
