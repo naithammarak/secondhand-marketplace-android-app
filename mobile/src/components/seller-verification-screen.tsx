@@ -71,8 +71,10 @@ export function SellerVerificationScreen() {
   const busy = state.submitting;
 
   useEffect(() => {
-    if (!state.record && !state.loadError && !state.loading) void store.load();
-  }, [state.loadError, state.loading, state.record, store]);
+    // owner ถูกตั้งหลัง effect ของหน้าจอนี้รอบแรก จึงต้องโหลดอีกครั้งเมื่อผูกบัญชีแล้ว
+    if (!state.owner || state.loading || state.refreshing) return;
+    if (!state.record && !state.loadError) void store.load();
+  }, [state.loadError, state.loading, state.owner, state.record, state.refreshing, store]);
 
   if (!auth.session) return <Redirect href="/" />;
 
