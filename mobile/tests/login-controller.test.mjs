@@ -62,3 +62,32 @@ test('cancel aborts adapter and late progress cannot overwrite cancellation', as
   await work;
   assert.equal(login.getSnapshot(), 'cancelled');
 });
+
+test('reset after logout allows a second Google login', async () => {
+  let calls = 0;
+  const login = createLoginController({ run: async () => { calls += 1; return 'success'; } });
+  await login.start();
+  assert.equal(login.getSnapshot(), 'success');
+
+  login.reset();
+  assert.equal(login.getSnapshot(), 'ready');
+  await login.start();
+  assert.equal(login.getSnapshot(), 'success');
+  assert.equal(calls, 2);
+});
+
+test('reset aborts a pending login and ignores its late result', async () => {
+  const pending = deferred();
+  let signal;
+  const login = createLoginController({ run: ({ signal: attemptSignal }) => {
+    signal = attemptSignal;
+    return pending.promise;
+  } });
+  const work = login.start();
+  login.reset();
+  assert.equal(signal.aborted, true);
+  assert.equal(login.getSnapshot(), 'ready');
+  pending.resolve('success');
+  await work;
+  assert.equal(login.getSnapshot(), 'ready');
+});

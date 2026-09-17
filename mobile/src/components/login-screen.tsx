@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image ,ImageBackground} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createLoginController, type LoginAdapter, type LoginState } from '@/auth/login-controller';
@@ -35,7 +35,17 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   const adapter = adapterOverride ?? auth.loginAdapter;
   const [controller] = useState(() => createLoginController(adapter));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const hadSession = useRef(false);
   useEffect(() => () => controller.cancel(), [controller]);
+  useEffect(() => {
+    if (auth.session) {
+      hadSession.current = true;
+    } else if (hadSession.current) {
+      // ออกจากระบบแล้วรีเซ็ตสถานะ เพื่อให้ปุ่ม Google กลับมาและล็อกอินซ้ำได้
+      hadSession.current = false;
+      controller.reset();
+    }
+  }, [auth.session, controller]);
   const busy = state === 'waiting' || state === 'processing';
 
   if (auth.initializing) return (
