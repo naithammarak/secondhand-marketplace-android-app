@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.product_images import router as product_images_router
 
 
 app = FastAPI(
@@ -22,6 +23,8 @@ app.add_middleware(
 
 # Register API routers.
 app.include_router(auth_router)
+# PRODUCT-02: เปิดหน้า preview ใน /docs โดยยังไม่บันทึกรูป
+app.include_router(product_images_router)
 
 
 @app.get("/health")
