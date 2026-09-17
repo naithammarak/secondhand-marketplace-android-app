@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import patch
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -110,6 +111,85 @@ def test_token_invalid_algorithm():
         algorithm="HS512",
     )
     response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    assert "The specified alg value is not allowed" in response.json()["detail"]
+
+
+def test_es256_token_is_verified_with_supabase_public_key(monkeypatch):
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    token = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": TEST_AUDIENCE,
+            "iss": TEST_ISSUER,
+            "exp": int(time.time()) + 3600,
+            "email": "es256@example.com",
+        },
+        private_key,
+        algorithm="ES256",
+        headers={"kid": "test-signing-key"},
+    )
+
+    class TestJwksClient:
+        def get_signing_key_from_jwt(self, received_token):
+            assert received_token == token
+            return type("SigningKey", (), {"key": private_key.public_key()})()
+
+    monkeypatch.setattr(auth_module, "SUPABASE_JWT_ALGORITHM", None)
+    monkeypatch.delenv("SUPABASE_JWT_ALGORITHM", raising=False)
+    monkeypatch.setattr(auth_module, "SUPABASE_JWT_SECRET", None)
+    monkeypatch.delenv("SUPABASE_JWT_SECRET", raising=False)
+    monkeypatch.setattr(auth_module, "get_jwks_client", lambda issuer: TestJwksClient())
+
+    response = client.post(
+        "/auth/google",
+        json={"role": "SELLER"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["email"] == "es256@example.com"
+    assert response.json()["role"] == "SELLER"
+
+
+def test_es256_token_with_wrong_public_key_is_rejected(monkeypatch):
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    wrong_key = ec.generate_private_key(ec.SECP256R1()).public_key()
+    token = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "aud": TEST_AUDIENCE,
+            "iss": TEST_ISSUER,
+            "exp": int(time.time()) + 3600,
+        },
+        private_key,
+        algorithm="ES256",
+        headers={"kid": "test-signing-key"},
+    )
+
+    class TestJwksClient:
+        def get_signing_key_from_jwt(self, received_token):
+            return type("SigningKey", (), {"key": wrong_key})()
+
+    monkeypatch.setattr(auth_module, "SUPABASE_JWT_ALGORITHM", None)
+    monkeypatch.delenv("SUPABASE_JWT_ALGORITHM", raising=False)
+    monkeypatch.setattr(auth_module, "get_jwks_client", lambda issuer: TestJwksClient())
+
+    response = client.post(
+        "/auth/google",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 401
+    assert "Signature verification failed" in response.json()["detail"]
+
+
+def test_configured_es256_rejects_hs256_token(monkeypatch):
+    monkeypatch.setattr(auth_module, "SUPABASE_JWT_ALGORITHM", "ES256")
+    token = make_token({"sub": str(uuid.uuid4())})
+    response = client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == 401
     assert "The specified alg value is not allowed" in response.json()["detail"]
 

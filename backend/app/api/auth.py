@@ -1,5 +1,6 @@
 import os
 import uuid
+from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.exc import IntegrityError
@@ -30,24 +31,19 @@ def get_jwt_issuer() -> str | None:
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
 SUPABASE_JWT_ISSUER = get_jwt_issuer()
-SUPABASE_JWT_ALGORITHM = os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
+SUPABASE_JWT_ALGORITHM = os.getenv("SUPABASE_JWT_ALGORITHM")
+SUPPORTED_JWT_ALGORITHMS = {"HS256", "ES256", "RS256"}
+
+
+@lru_cache(maxsize=4)
+def get_jwks_client(issuer: str) -> jwt.PyJWKClient:
+    """Reuse Supabase's public signing keys for asymmetric access tokens."""
+    return jwt.PyJWKClient(f"{issuer}/.well-known/jwks.json", timeout=5)
 
 
 def verify_supabase_token(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
-    secret = SUPABASE_JWT_SECRET or os.getenv("SUPABASE_JWT_SECRET")
-    if not secret or secret.strip() in {
-        "YOUR_SUPABASE_JWT_SECRET",
-        "your_supabase_jwt_secret",
-        "YOUR_SECRET",
-        "CHANGE_ME",
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: SUPABASE_JWT_SECRET is missing or using placeholder",
-        )
-
     expected_iss = SUPABASE_JWT_ISSUER if SUPABASE_JWT_ISSUER is not None else get_jwt_issuer()
     if not expected_iss:
         raise HTTPException(
@@ -66,15 +62,50 @@ def verify_supabase_token(
             detail="Server configuration error: SUPABASE_JWT_AUDIENCE is missing",
         )
 
-    algorithm = SUPABASE_JWT_ALGORITHM or os.getenv("SUPABASE_JWT_ALGORITHM", "HS256")
-    if not algorithm:
+    configured_algorithm = SUPABASE_JWT_ALGORITHM or os.getenv("SUPABASE_JWT_ALGORITHM")
+    if configured_algorithm and configured_algorithm not in SUPPORTED_JWT_ALGORITHMS:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: SUPABASE_JWT_ALGORITHM is missing",
+            detail="Server configuration error: SUPABASE_JWT_ALGORITHM is unsupported",
+        )
+
+    secret = SUPABASE_JWT_SECRET or os.getenv("SUPABASE_JWT_SECRET")
+    if configured_algorithm == "HS256" and (
+        not secret or secret.strip() in {
+            "YOUR_SUPABASE_JWT_SECRET",
+            "your_supabase_jwt_secret",
+            "YOUR_SECRET",
+            "CHANGE_ME",
+        }
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: SUPABASE_JWT_SECRET is missing or using placeholder",
         )
 
     token = credentials.credentials
     try:
+        # เลือกคีย์จากแหล่งที่เชื่อถือได้ แล้วตรวจลายเซ็นและ claims ทุกครั้ง
+        algorithm = jwt.get_unverified_header(token).get("alg")
+        if algorithm not in SUPPORTED_JWT_ALGORITHMS or (
+            configured_algorithm and algorithm != configured_algorithm
+        ):
+            raise jwt.InvalidAlgorithmError("The specified alg value is not allowed")
+        if algorithm == "HS256":
+            if not secret or secret.strip() in {
+                "YOUR_SUPABASE_JWT_SECRET",
+                "your_supabase_jwt_secret",
+                "YOUR_SECRET",
+                "CHANGE_ME",
+            }:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Server configuration error: SUPABASE_JWT_SECRET is missing or using placeholder",
+                )
+            signing_key = secret
+        else:
+            signing_key = get_jwks_client(expected_iss).get_signing_key_from_jwt(token).key
+
         decode_options = {
             "verify_signature": True,
             "verify_exp": True,
@@ -83,8 +114,8 @@ def verify_supabase_token(
         }
         payload = jwt.decode(
             token,
-            secret,
-            algorithms=[algorithm],
+            signing_key,
+            algorithms=["HS256"] if algorithm == "HS256" else ["ES256", "RS256"],
             audience=expected_aud,
             issuer=expected_iss,
             options=decode_options,
