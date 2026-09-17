@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Identity, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -17,6 +17,7 @@ class ProductImage(Base):
 
     image_id: Mapped[int] = mapped_column(
         Integer,
+        Identity(),
         primary_key=True,
     )
 

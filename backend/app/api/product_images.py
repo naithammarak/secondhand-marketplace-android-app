@@ -8,16 +8,11 @@ from app.models.user import User, UserRole, UserStatus
 
 router = APIRouter(tags=["Product images"])
 
-# PRODUCT-02: กติกาไฟล์ชั่วคราว รอทีมยืนยันชนิดและขนาดรูป
-# Temporary policy until the team confirms PRODUCT-01 and image storage details.
+# PRODUCT-02: รับเฉพาะ JPEG/PNG ขนาดไม่เกิน 5 MiB ต่อรูป
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_IMAGES = {
     "image/jpeg": ((".jpg", ".jpeg"), lambda data: data.startswith(b"\xff\xd8\xff")),
     "image/png": ((".png",), lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")),
-    "image/webp": (
-        (".webp",),
-        lambda data: len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP",
-    ),
 }
 
 
@@ -41,7 +36,7 @@ async def preview_product_image(
         content_type = (file.content_type or "").lower().strip()
         rule = ALLOWED_IMAGES.get(content_type)
         if rule is None:
-            raise HTTPException(status_code=415, detail="Allowed types: JPEG, PNG, WebP")
+            raise HTTPException(status_code=415, detail="Allowed types: JPEG, PNG")
 
         extensions, has_signature = rule
         filename = (file.filename or "").lower()
@@ -52,7 +47,7 @@ async def preview_product_image(
         if not content:
             raise HTTPException(status_code=400, detail="Image is empty")
         if len(content) > MAX_IMAGE_BYTES:
-            raise HTTPException(status_code=413, detail="Image exceeds the provisional 5 MiB limit")
+            raise HTTPException(status_code=413, detail="Image exceeds the 5 MiB limit")
         if not has_signature(content):
             raise HTTPException(status_code=415, detail="File content does not match image type")
 

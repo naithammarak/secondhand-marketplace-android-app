@@ -26,6 +26,12 @@ def upload(client, filename: str, content: bytes, content_type: str):
     )
 
 
+def test_valid_jpeg_is_checked_but_not_saved(client):
+    response = upload(client, "item.jpg", b"\xff\xd8\xffexample", "image/jpeg")
+    assert response.status_code == 200
+    assert response.json()["stored"] is False
+
+
 def test_valid_png_is_checked_but_not_saved(client):
     response = upload(client, "item.png", b"\x89PNG\r\n\x1a\nexample", "image/png")
     assert response.status_code == 200
@@ -37,6 +43,7 @@ def test_valid_png_is_checked_but_not_saved(client):
     ("filename", "content", "content_type", "expected_status"),
     [
         ("item.txt", b"hello", "text/plain", 415),
+        ("item.webp", b"RIFFxxxxWEBPexample", "image/webp", 415),
         ("item.png", b"not an image", "image/png", 415),
         ("item.png", b"", "image/png", 400),
     ],
