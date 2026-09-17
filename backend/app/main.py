@@ -23,7 +23,7 @@ app.add_middleware(
 
 # Register API routers.
 app.include_router(auth_router)
-# PRODUCT-02: เปิดหน้า preview ใน /docs โดยยังไม่บันทึกรูป
+# PRODUCT-02: เปิด API อัปโหลดรูปสินค้าใน /docs
 app.include_router(product_images_router)
 
 
