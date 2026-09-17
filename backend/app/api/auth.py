@@ -33,6 +33,8 @@ SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated")
 SUPABASE_JWT_ISSUER = get_jwt_issuer()
 SUPABASE_JWT_ALGORITHM = os.getenv("SUPABASE_JWT_ALGORITHM")
 SUPPORTED_JWT_ALGORITHMS = {"HS256", "ES256", "RS256"}
+# เผื่อเวลาเครื่องกับ Supabase ต่างกันเล็กน้อยระหว่างตรวจ token
+JWT_CLOCK_SKEW_SECONDS = 30
 
 
 @lru_cache(maxsize=4)
@@ -119,6 +121,7 @@ def verify_supabase_token(
             audience=expected_aud,
             issuer=expected_iss,
             options=decode_options,
+            leeway=JWT_CLOCK_SKEW_SECONDS,
         )
         return payload
     except jwt.ExpiredSignatureError:

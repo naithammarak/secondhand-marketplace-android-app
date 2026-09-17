@@ -49,5 +49,13 @@ export function createLoginController(adapter?: LoginAdapter) {
       attempt.abort();
       set('cancelled');
     },
+    reset() {
+      if (active) {
+        const attempt = active;
+        active = undefined;
+        attempt.abort();
+      }
+      if (state !== 'ready') set('ready');
+    },
   };
 }

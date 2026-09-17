@@ -104,6 +104,29 @@ def test_token_expired():
     assert response.json()["detail"] == "Token has expired"
 
 
+def test_token_issued_slightly_in_future_is_accepted():
+    token = make_token({
+        "sub": str(uuid.uuid4()),
+        "iat": int(time.time()) + 15,
+    })
+    response = client.post(
+        "/auth/google",
+        json={"role": "BUYER"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+
+def test_token_issued_far_in_future_is_rejected():
+    token = make_token({
+        "sub": str(uuid.uuid4()),
+        "iat": int(time.time()) + 120,
+    })
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    assert "not yet valid (iat)" in response.json()["detail"]
+
+
 def test_token_invalid_algorithm():
     # Token signed with HS512 while backend expects HS256
     token = make_token(
