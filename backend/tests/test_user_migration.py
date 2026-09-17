@@ -29,11 +29,21 @@ def _alembic_config() -> Config:
     return config
 
 
-def test_user_migration_is_the_only_alembic_head():
-    script = ScriptDirectory.from_config(_alembic_config())
-    migration = script.get_revision(USER_MIGRATION_REVISION)
+def _single_head(script: ScriptDirectory) -> str:
+    """คืน head เดียวของประวัติ migration และล้มเหลวเมื่อประวัติแตกสาขา"""
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected exactly one alembic head, found {sorted(heads)}"
+    return heads[0]
 
-    assert script.get_heads() == [USER_MIGRATION_REVISION]
+
+def test_migrations_have_one_head_that_includes_the_user_migration():
+    script = ScriptDirectory.from_config(_alembic_config())
+    head = _single_head(script)
+    migration = script.get_revision(USER_MIGRATION_REVISION)
+    # migration ใหม่ต่อท้ายได้ ขอเพียงไม่แตกสาขาและยังคงลำดับของตาราง users ไว้
+    ancestors = {revision.revision for revision in script.iterate_revisions(head, "base")}
+
+    assert USER_MIGRATION_REVISION in ancestors
     assert migration.down_revision == "9ff73113281a"
 
 
@@ -148,7 +158,8 @@ def test_migration_upgrades_database_and_enables_rls_without_policies(
                 """
             )
         ).scalar_one()
-        assert revision == USER_MIGRATION_REVISION
+        # อัปเกรดถึง head ล่าสุดเสมอ ไม่ผูกกับ revision ของตาราง users
+        assert revision == _single_head(ScriptDirectory.from_config(_alembic_config()))
         assert rls_enabled is True
         assert policy_count == 0
 

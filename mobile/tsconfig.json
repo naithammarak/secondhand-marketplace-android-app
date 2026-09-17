@@ -2,6 +2,8 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // ให้ไฟล์ที่ทดสอบด้วย node --test อ้างถึงกันแบบระบุนามสกุลได้ (ESM ของ Node ต้องการนามสกุล)
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": [
         "./src/*"

@@ -6,6 +6,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
+import { router } from 'expo-router';
+import type { VerificationStatus } from '@/services/verification-service';
+import { useVerification } from '@/verification/verification-provider';
 const googleLogo = require("@/assets/images/tabIcons/google-logo.jpg");
 
 const messages: Record<LoginState, string> = {
@@ -22,6 +25,31 @@ const messages: Record<LoginState, string> = {
   'server-error': 'บริการตรวจสอบบัญชีขัดข้อง กรุณาลองใหม่ภายหลัง',
   success: 'เข้าสู่ระบบและตรวจสอบบัญชีสำเร็จ',
 };
+
+const verificationEntryLabels: Record<VerificationStatus, string> = {
+  NOT_SUBMITTED: 'ยังไม่ส่งคำขอ',
+  PENDING: 'รอตรวจสอบ',
+  APPROVED: 'อนุมัติแล้ว',
+  REJECTED: 'ถูกปฏิเสธ',
+};
+
+/** ทางเข้าหน้ายืนยันตัวตนผู้ขาย พร้อมสถานะล่าสุดจาก backend */
+function SellerVerificationEntry() {
+  const { state } = useVerification();
+  const status = state.record?.status;
+  return (
+    <TouchableOpacity
+      style={styles.button}
+      accessibilityRole="button"
+      accessibilityLabel="ไปหน้ายืนยันตัวตนผู้ขาย"
+      onPress={() => router.push('/seller-verification')}
+    >
+      <Text style={styles.buttonText}>
+        ยืนยันตัวตนผู้ขาย{status ? ` (${verificationEntryLabels[status]})` : ''}
+      </Text>
+    </TouchableOpacity>
+  );
+}
 
 function roleMessage(role: string | null | undefined) {
   if (role === 'BUYER') return 'บทบาทผู้ซื้อ';
@@ -66,6 +94,8 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {auth.account?.source === 'mock' && (
           <ThemedText type="small">กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม</ThemedText>
         )}
+
+        {auth.account?.role === 'SELLER' && <SellerVerificationEntry />}
 
         {auth.accountError && (
           <TouchableOpacity

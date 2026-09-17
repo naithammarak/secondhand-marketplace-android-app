@@ -34,7 +34,14 @@
           "imageWidth": 76
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "แอปขอเข้าถึงคลังรูปภาพเพื่อแนบรูปบัตรประชาชนสำหรับยืนยันตัวตนผู้ขาย",
+          "cameraPermission": "แอปขอใช้กล้องเพื่อถ่ายรูปบัตรประชาชนสำหรับยืนยันตัวตนผู้ขาย"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
