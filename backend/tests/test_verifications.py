@@ -324,3 +324,96 @@ def test_suspended_seller_cannot_submit(storage):
     _, headers = create_user(status=UserStatus.SUSPENDED)
     assert submit(headers).status_code == 403
     assert storage.uploads == []
+
+
+WEBP_BYTES = b"RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00" + b"\x00" * 24
+JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 32
+
+
+def test_webp_image_upload_is_accepted(storage):
+    _, headers = create_user()
+    response = submit(headers, storage_file=("card.webp", WEBP_BYTES, "image/webp"))
+    assert response.status_code == 201
+    assert len(storage.uploads) == 1
+    assert storage.uploads[0][2] == "image/webp"
+
+
+def test_jpg_content_type_is_normalized_and_accepted(storage):
+    _, headers = create_user()
+    response = submit(headers, storage_file=("card.jpg", JPEG_BYTES, "image/jpg"))
+    assert response.status_code == 201
+    assert len(storage.uploads) == 1
+    assert storage.uploads[0][2] == "image/jpeg"
+
+
+def test_boundary_name_lengths(storage):
+    _, headers = create_user()
+    # 2 chars accepted
+    r1 = submit(headers, bank_name="KB", bank_account_name="AB")
+    assert r1.status_code == 201
+
+    # 1 char rejected
+    _, h2 = create_user()
+    r2 = submit(h2, bank_name="K")
+    assert r2.status_code == 422
+    assert "bank_name" in r2.json()["detail"]["fields"]
+
+    # 255 chars accepted
+    _, h3 = create_user()
+    r3 = submit(h3, bank_name="B" * 255, bank_account_name="A" * 255)
+    assert r3.status_code == 201
+
+    # 256 chars rejected
+    _, h4 = create_user()
+    r4 = submit(h4, bank_name="B" * 256)
+    assert r4.status_code == 422
+    assert "bank_name" in r4.json()["detail"]["fields"]
+
+
+def test_boundary_account_number_digits(storage):
+    # 10 digits accepted
+    _, h1 = create_user()
+    r1 = submit(h1, bank_account_number="1234567890")
+    assert r1.status_code == 201
+
+    # 15 digits accepted
+    _, h2 = create_user()
+    r2 = submit(h2, bank_account_number="123456789012345")
+    assert r2.status_code == 201
+
+    # 9 digits rejected
+    _, h3 = create_user()
+    r3 = submit(h3, bank_account_number="123456789")
+    assert r3.status_code == 422
+    assert "bank_account_number" in r3.json()["detail"]["fields"]
+
+    # 16 digits rejected
+    _, h4 = create_user()
+    r4 = submit(h4, bank_account_number="1234567890123456")
+    assert r4.status_code == 422
+    assert "bank_account_number" in r4.json()["detail"]["fields"]
+
+
+def test_data_minimization_contract(storage):
+    _, headers = create_user()
+    response = submit(headers, bank_account_number="1234567890")
+    assert response.status_code == 201
+    body = response.json()
+    assert "bank_account_number" not in body
+    assert "id_card_image_url" not in body
+    assert "document" not in body
+    assert body["bank_account_last4"] == "7890"
+
+    me = client.get("/verifications/me", headers=headers)
+    assert me.status_code == 200
+    me_body = me.json()
+    assert "bank_account_number" not in me_body
+    assert "id_card_image_url" not in me_body
+    assert me_body["bank_account_last4"] == "7890"
+
+
+def test_seller_cannot_access_admin_verifications():
+    _, headers = create_user(role=UserRole.SELLER)
+    assert client.get("/admin/verifications", headers=headers).status_code == 403
+    assert client.get("/admin/verifications/1", headers=headers).status_code == 403
+    assert client.get("/admin/verifications/1/id-card", headers=headers).status_code == 403

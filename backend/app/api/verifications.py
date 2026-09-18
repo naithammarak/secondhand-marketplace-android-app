@@ -17,6 +17,7 @@ from app.services.id_card_storage import (
     StorageUploadError,
     content_type_matches_bytes,
     get_id_card_storage,
+    normalize_image_content_type,
 )
 
 router = APIRouter(prefix="/verifications", tags=["Seller verification"])
@@ -156,7 +157,7 @@ def submit_verification(
         fields["id_card_image"] = "กรุณาแนบรูปบัตรประชาชน"
     else:
         content = id_card_image.file.read()
-        content_type = (id_card_image.content_type or "").split(";")[0].strip().lower()
+        content_type = normalize_image_content_type(id_card_image.content_type)
         if content_type not in ALLOWED_IMAGE_TYPES:
             fields["id_card_image"] = "รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP"
         elif not content:
@@ -173,7 +174,7 @@ def submit_verification(
         stored_path = storage.upload(
             current_user.id,
             content,
-            (id_card_image.content_type or "").split(";")[0].strip().lower(),
+            content_type,
         )
     except StorageUploadError:
         raise HTTPException(

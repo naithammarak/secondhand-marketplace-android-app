@@ -44,12 +44,20 @@ class StorageSignError(RuntimeError):
     """ขอลิงก์ชั่วคราวสำหรับดูรูปบัตรประชาชนไม่สำเร็จ"""
 
 
+def normalize_image_content_type(content_type: str | None) -> str:
+    cleaned = (content_type or "").split(";")[0].strip().lower()
+    if cleaned in {"image/jpg", "image/pjpeg"}:
+        return "image/jpeg"
+    return cleaned
+
+
 def content_type_matches_bytes(content_type: str, content: bytes) -> bool:
-    prefixes = _MAGIC_PREFIXES.get(content_type)
+    normalized = normalize_image_content_type(content_type)
+    prefixes = _MAGIC_PREFIXES.get(normalized)
     if not prefixes:
         return False
-    if content_type == "image/webp":
-        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    if normalized == "image/webp":
+        return len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
     return any(content.startswith(prefix) for prefix in prefixes)
 
 
