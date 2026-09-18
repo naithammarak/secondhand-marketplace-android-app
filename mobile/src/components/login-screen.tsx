@@ -33,6 +33,20 @@ const verificationEntryLabels: Record<VerificationStatus, string> = {
   REJECTED: 'ถูกปฏิเสธ',
 };
 
+/** ทางเข้าหน้าตรวจคำขอของผู้ดูแล แสดงเฉพาะบัญชีที่ backend บอกว่าเป็น ADMIN */
+function AdminReviewEntry() {
+  return (
+    <TouchableOpacity
+      style={styles.button}
+      accessibilityRole="button"
+      accessibilityLabel="ไปหน้าตรวจคำขอยืนยันตัวตน"
+      onPress={() => router.push('/admin-verifications')}
+    >
+      <Text style={styles.buttonText}>ตรวจคำขอยืนยันตัวตน</Text>
+    </TouchableOpacity>
+  );
+}
+
 /** ทางเข้าหน้ายืนยันตัวตนผู้ขาย พร้อมสถานะล่าสุดจาก backend */
 function SellerVerificationEntry() {
   const { state } = useVerification();
@@ -54,6 +68,7 @@ function SellerVerificationEntry() {
 function roleMessage(role: string | null | undefined) {
   if (role === 'BUYER') return 'บทบาทผู้ซื้อ';
   if (role === 'SELLER') return 'บทบาทผู้ขาย';
+  if (role === 'ADMIN') return 'บทบาทผู้ดูแลระบบ';
   if (role) return 'บทบาทได้รับการจัดการโดยระบบ';
   return 'ยังไม่ได้เลือกบทบาทผู้ซื้อหรือผู้ขาย';
 }
@@ -96,6 +111,7 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         )}
 
         {auth.account?.role === 'SELLER' && <SellerVerificationEntry />}
+        {auth.account?.role === 'ADMIN' && <AdminReviewEntry />}
 
         {auth.accountError && (
           <TouchableOpacity

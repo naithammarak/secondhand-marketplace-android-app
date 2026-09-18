@@ -28,6 +28,9 @@ _MAGIC_PREFIXES = {
 
 DEFAULT_BUCKET = "seller-verifications"
 
+# ลิงก์ดูรูปบัตรมีอายุสั้น เพื่อไม่ให้ URL ที่หลุดออกไปใช้ได้นาน
+SIGNED_URL_TTL_SECONDS = 120
+
 
 class StorageNotConfiguredError(RuntimeError):
     """ยังไม่ได้ตั้งค่า Supabase Storage สำหรับเก็บรูปบัตรประชาชน"""
@@ -35,6 +38,10 @@ class StorageNotConfiguredError(RuntimeError):
 
 class StorageUploadError(RuntimeError):
     """อัปโหลดไปยัง Supabase Storage ไม่สำเร็จ"""
+
+
+class StorageSignError(RuntimeError):
+    """ขอลิงก์ชั่วคราวสำหรับดูรูปบัตรประชาชนไม่สำเร็จ"""
 
 
 def content_type_matches_bytes(content_type: str, content: bytes) -> bool:
@@ -89,6 +96,31 @@ class SupabaseIdCardStorage:
             # ไม่ส่งข้อความจาก storage ต่อให้ผู้ใช้ กันข้อมูลการตั้งค่ารั่ว
             raise StorageUploadError(f"upload rejected with status {response.status_code}")
         return f"{self._bucket}/{path}"
+
+    def create_signed_url(self, stored_path: str, expires_in: int = SIGNED_URL_TTL_SECONDS) -> str:
+        """ขอลิงก์ชั่วคราวให้ผู้ดูแลเปิดดูรูปบัตร โดยไม่เปิด bucket เป็นสาธารณะ"""
+        bucket, _, path = stored_path.partition("/")
+        if not path:
+            raise StorageSignError("stored path is missing an object key")
+        try:
+            with self._client_factory(timeout=self._timeout) as client:
+                response = client.post(
+                    f"{self._base_url}/storage/v1/object/sign/{bucket}/{path}",
+                    json={"expiresIn": expires_in},
+                    headers={**self._headers(), "Content-Type": "application/json"},
+                )
+        except httpx.HTTPError as error:
+            raise StorageSignError("sign transport failed") from error
+        if response.status_code >= 400:
+            raise StorageSignError(f"sign rejected with status {response.status_code}")
+        try:
+            body = response.json()
+        except ValueError as error:
+            raise StorageSignError("sign response was not json") from error
+        signed = body.get("signedURL") or body.get("signedUrl") if isinstance(body, dict) else None
+        if not signed:
+            raise StorageSignError("sign response has no url")
+        return f"{self._base_url}/storage/v1{signed}" if signed.startswith("/") else signed
 
     def remove(self, stored_path: str) -> None:
         """ลบไฟล์ที่อัปโหลดค้างไว้เมื่อบันทึกคำขอลงฐานข้อมูลไม่สำเร็จ"""
