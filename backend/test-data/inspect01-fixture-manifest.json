@@ -1,0 +1,87 @@
+{
+  "namespace": "inspect01-v1",
+  "contract_version": "0.1-draft",
+  "status": "PRE_IMPLEMENTATION",
+  "requires_approved_contract": true,
+  "requires_order_fixture": true,
+  "notes": [
+    "Scenario keys are stable; database primary keys must be resolved by fixture ownership, never hardcoded.",
+    "order_item_key values are placeholders until ORDER-01 publishes its fixture manifest.",
+    "This manifest is not executable seed input until the contract, order fixture, and shared integration storage owners are approved."
+  ],
+  "scenarios": [
+    {
+      "key": "ready-to-ship",
+      "status": "READY_TO_SHIP",
+      "order_item_key": "order-fixture-required:ready-to-ship",
+      "result": null,
+      "evidence_categories": []
+    },
+    {
+      "key": "shipped-to-inspection",
+      "status": "SHIPPED_TO_INSPECTION",
+      "order_item_key": "order-fixture-required:shipped-to-inspection",
+      "shipment": {
+        "carrier": "fixture-carrier",
+        "tracking_number": "inspect01-v1-shipped"
+      },
+      "result": null,
+      "evidence_categories": []
+    },
+    {
+      "key": "received",
+      "status": "RECEIVED",
+      "order_item_key": "order-fixture-required:received",
+      "shipment": {
+        "carrier": "fixture-carrier",
+        "tracking_number": "inspect01-v1-received"
+      },
+      "result": null,
+      "evidence_categories": []
+    },
+    {
+      "key": "inspecting",
+      "status": "INSPECTING",
+      "order_item_key": "order-fixture-required:inspecting",
+      "assigned_inspector_key": "user-fixture-required:inspector",
+      "result": null,
+      "evidence_categories": []
+    },
+    {
+      "key": "completed-passed",
+      "status": "COMPLETED",
+      "order_item_key": "order-fixture-required:completed-passed",
+      "assigned_inspector_key": "user-fixture-required:inspector",
+      "result": "PASSED",
+      "reason_code": null,
+      "evidence_categories": ["OVERVIEW", "IDENTIFIER", "FINDING"]
+    },
+    {
+      "key": "completed-not-authentic",
+      "status": "COMPLETED",
+      "order_item_key": "order-fixture-required:completed-not-authentic",
+      "assigned_inspector_key": "user-fixture-required:inspector",
+      "result": "NOT_AUTHENTIC",
+      "reason_code": "AUTHENTICITY_MISMATCH",
+      "evidence_categories": ["OVERVIEW", "IDENTIFIER", "FINDING"]
+    },
+    {
+      "key": "completed-not-as-described",
+      "status": "COMPLETED",
+      "order_item_key": "order-fixture-required:completed-not-as-described",
+      "assigned_inspector_key": "user-fixture-required:inspector",
+      "result": "NOT_AS_DESCRIBED",
+      "reason_code": "CONDITION_MISMATCH",
+      "evidence_categories": ["OVERVIEW", "IDENTIFIER", "FINDING"]
+    },
+    {
+      "key": "completed-inconclusive",
+      "status": "COMPLETED",
+      "order_item_key": "order-fixture-required:completed-inconclusive",
+      "assigned_inspector_key": "user-fixture-required:inspector",
+      "result": "INCONCLUSIVE",
+      "reason_code": "INSUFFICIENT_REFERENCE",
+      "evidence_categories": ["OVERVIEW", "IDENTIFIER", "FINDING"]
+    }
+  ]
+}

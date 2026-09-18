@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,11 +30,22 @@ def _alembic_config() -> Config:
     return config
 
 
-def test_user_migration_is_the_only_alembic_head():
+def test_user_migration_remains_in_alembic_graph():
     script = ScriptDirectory.from_config(_alembic_config())
     migration = script.get_revision(USER_MIGRATION_REVISION)
+    heads = script.get_heads()
 
-    assert script.get_heads() == [USER_MIGRATION_REVISION]
+    assert migration is not None
+    assert len(heads) == 1
+    revisions_from_head = {
+        revision.revision
+        for revision in script.iterate_revisions(
+            heads[0],
+            USER_MIGRATION_REVISION,
+            inclusive=True,
+        )
+    }
+    assert USER_MIGRATION_REVISION in revisions_from_head
     assert migration.down_revision == "9ff73113281a"
 
 
@@ -111,19 +123,34 @@ def migrated_database():
                 os.environ["DATABASE_URL"] = previous_database_url
 
 
+@contextmanager
+def _isolated_session(migrated_database):
+    connection = migrated_database.connect()
+    outer_transaction = connection.begin()
+    session = Session(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+    )
+
+    try:
+        yield session
+    finally:
+        session.close()
+        outer_transaction.rollback()
+        connection.close()
+
+
 @pytest.fixture()
 def user_session(migrated_database):
-    with Session(migrated_database) as session:
+    with _isolated_session(migrated_database) as session:
         yield session
-        session.rollback()
-
-    with migrated_database.begin() as connection:
-        connection.execute(text("TRUNCATE TABLE public.users RESTART IDENTITY"))
 
 
 def test_migration_upgrades_database_and_enables_rls_without_policies(
     migrated_database,
 ):
+    script = ScriptDirectory.from_config(_alembic_config())
+
     with migrated_database.connect() as connection:
         revision = MigrationContext.configure(connection).get_current_revision()
         rls_enabled = connection.execute(
@@ -148,7 +175,7 @@ def test_migration_upgrades_database_and_enables_rls_without_policies(
                 """
             )
         ).scalar_one()
-        assert revision == USER_MIGRATION_REVISION
+        assert revision == script.get_heads()[0]
         assert rls_enabled is True
         assert policy_count == 0
 
@@ -219,6 +246,67 @@ def test_duplicate_supabase_user_id_is_rejected(user_session):
 
     with pytest.raises(IntegrityError):
         user_session.commit()
+
+
+def test_user_session_isolates_commit_rollback_commit_sequence(
+    migrated_database,
+):
+    from app.models.user import User
+
+    committed_first = uuid4()
+    rolled_back = uuid4()
+    committed_last = uuid4()
+
+    with _isolated_session(migrated_database) as session:
+        session.add(
+            User(
+                supabase_user_id=committed_first,
+                full_name="Committed First",
+                email="committed-first@example.com",
+            )
+        )
+        session.commit()
+
+        session.add(
+            User(
+                supabase_user_id=rolled_back,
+                full_name="Rolled Back",
+                email="rolled-back@example.com",
+            )
+        )
+        session.flush()
+        session.rollback()
+
+        session.add(
+            User(
+                supabase_user_id=committed_last,
+                full_name="Committed Last",
+                email="committed-last@example.com",
+            )
+        )
+        session.commit()
+
+    with migrated_database.connect() as connection:
+        remaining_count = connection.execute(
+            text(
+                """
+                SELECT count(*)
+                FROM public.users
+                WHERE supabase_user_id IN (
+                    :committed_first,
+                    :rolled_back,
+                    :committed_last
+                )
+                """
+            ),
+            {
+                "committed_first": committed_first,
+                "rolled_back": rolled_back,
+                "committed_last": committed_last,
+            },
+        ).scalar_one()
+
+    assert remaining_count == 0
 
 
 def test_database_rejects_an_unknown_role(migrated_database):
