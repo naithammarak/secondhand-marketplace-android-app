@@ -398,3 +398,53 @@ test('empty list, errors and account switch', async () => {
   assert.equal(state.owner, 'user-b');
   assert.deepEqual(state.items, [], 'late response of user-a must not show for user-b');
 });
+
+// Review PR #69: มี Order ใหม่แทรกหัวรายการระหว่างเลื่อนโหลด ต้องไม่วนขอหน้าเดิม
+test('pagination advances by server offset even when new orders are inserted meanwhile', async () => {
+  const item = id => ({ ...order({ id }), totalAmount: '1350.00', sellerPayout: null, currency: 'THB' });
+  let rows = [6, 5, 4, 3, 2, 1];
+  const offsets = [];
+  const store = createOrdersListStore({
+    ...tokens(),
+    pageSize: 2,
+    service: {
+      listOrders: async (token, page) => {
+        offsets.push(page.offset);
+        const result = { items: rows.slice(page.offset, page.offset + page.limit).map(item), total: rows.length, limit: page.limit, offset: page.offset };
+        if (page.offset === 0) rows = [8, 7, ...rows]; // Order ใหม่ 2 รายการเข้ามาหลังโหลดหน้าแรก
+        return result;
+      },
+    },
+  });
+  store.setOwner('user-a');
+  await store.load();
+  for (let i = 0; i < 20 && store.hasMore(); i += 1) await store.loadMore();
+
+  assert.equal(store.hasMore(), false, 'must reach the end');
+  assert.ok(offsets.length <= 6, `too many requests: ${offsets.join(',')}`);
+  for (let i = 1; i < offsets.length; i += 1) assert.ok(offsets[i] > offsets[i - 1], `offset repeated: ${offsets.join(',')}`);
+  const ids = store.getSnapshot().items.map(i => i.id);
+  assert.equal(new Set(ids).size, ids.length, 'no duplicates shown');
+  for (const id of [6, 5, 4, 3, 2, 1]) assert.ok(ids.includes(id), `missing ${id}`);
+});
+
+test('an empty page ends pagination even if total says there is more', async () => {
+  const item = id => ({ ...order({ id }), totalAmount: '1350.00', sellerPayout: null, currency: 'THB' });
+  let calls = 0;
+  const store = createOrdersListStore({
+    ...tokens(),
+    pageSize: 2,
+    service: {
+      listOrders: async (token, page) => {
+        calls += 1;
+        return { items: page.offset === 0 ? [item(2), item(1)] : [], total: 5, limit: 2, offset: page.offset };
+      },
+    },
+  });
+  store.setOwner('user-a');
+  await store.load();
+  await store.loadMore();
+  assert.equal(store.hasMore(), false);
+  await store.loadMore();
+  assert.equal(calls, 2);
+});

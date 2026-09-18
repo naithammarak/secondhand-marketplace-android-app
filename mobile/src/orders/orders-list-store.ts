@@ -32,6 +32,9 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
   let state: OrdersListState = initialOrdersListState;
   let generation = 0;
   let controller: AbortController | undefined;
+  // ตำแหน่งถัดไปตาม offset ของ server แยกจากจำนวนที่แสดง เพราะรายการที่แสดงถูกตัดตัวซ้ำออก
+  let nextOffset = 0;
+  let reachedEnd = false;
   const listeners = new Set<() => void>();
 
   const emit = () => listeners.forEach(listener => listener());
@@ -48,7 +51,7 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
     controller?.abort();
     controller = new AbortController();
     const signal = controller.signal;
-    const offset = mode === 'more' ? state.items.length : 0;
+    const offset = mode === 'more' ? nextOffset : 0;
     set({
       loading: mode === 'load',
       refreshing: mode === 'refresh',
@@ -62,6 +65,9 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
       const merged = mode === 'more' ? [...state.items] : [];
       const seen = new Set(merged.map(item => item.id));
       for (const item of page.items) if (!seen.has(item.id)) { merged.push(item); seen.add(item.id); }
+      nextOffset = offset + page.items.length;
+      // หน้าว่างหรือเลื่อนถึง total แล้วถือว่าจบ กันการขอหน้าเดิมวนซ้ำ
+      reachedEnd = page.items.length === 0 || nextOffset >= page.total;
       set({ items: merged, total: page.total, loaded: true, loading: false, refreshing: false, loadingMore: false });
     } catch (error) {
       if (current !== generation || signal.aborted) return;
@@ -83,6 +89,8 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
       generation += 1;
       controller?.abort();
       controller = undefined;
+      nextOffset = 0;
+      reachedEnd = false;
       state = { ...initialOrdersListState, owner };
       emit();
     },
@@ -98,11 +106,11 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
     },
 
     loadMore() {
-      if (busy() || !state.loaded || state.items.length >= state.total) return Promise.resolve();
+      if (busy() || !state.loaded || reachedEnd) return Promise.resolve();
       return fetchPage('more');
     },
 
-    hasMore: () => state.loaded && state.items.length < state.total,
+    hasMore: () => state.loaded && !reachedEnd,
   };
 }
 

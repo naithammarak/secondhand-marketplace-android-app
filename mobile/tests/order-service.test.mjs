@@ -176,3 +176,30 @@ test('route ids accept only positive integers', () => {
     assert.equal(parseRouteId(bad), null, String(bad));
   }
 });
+
+// Review PR #69: body ที่ค้างหลังได้ headers ต้องเข้าเงื่อนไข timeout ไม่ใช่รอไม่สิ้นสุด
+function stalledBody(status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: () => new Promise(() => {}) };
+}
+
+test('a response body that stalls after headers is reported as timeout', async () => {
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => stalledBody(), timeoutMs: 30 });
+  const outcome = await Promise.race([
+    service.simulatePayment('tok', { orderId: 1, outcome: 'SUCCESS', idempotencyKey: 'key-12345678' })
+      .then(() => 'resolved', error => error.kind),
+    new Promise(resolve => setTimeout(() => resolve('hung'), 1000)),
+  ]);
+  assert.equal(outcome, 'timeout');
+});
+
+test('caller abort while reading the body rejects without waiting for the timeout', async () => {
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => stalledBody(), timeoutMs: 60000 });
+  const controller = new AbortController();
+  const pending = service.getOrder('tok', 1, controller.signal);
+  setTimeout(() => controller.abort(), 10);
+  const outcome = await Promise.race([
+    pending.then(() => 'resolved', error => (error instanceof OrderServiceError ? error.kind : 'aborted')),
+    new Promise(resolve => setTimeout(() => resolve('hung'), 1000)),
+  ]);
+  assert.equal(outcome, 'aborted');
+});

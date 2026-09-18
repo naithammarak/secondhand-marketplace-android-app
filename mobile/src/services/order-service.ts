@@ -325,14 +325,22 @@ export function createOrderService(options: { baseUrl?: string; fetch?: FetchLik
   ): Promise<unknown> => {
     if (!baseUrl) throw new OrderServiceError('unavailable');
     // แยก timeout ออกจากการยกเลิกโดยผู้ใช้ เพื่อให้หน้าจอรู้ว่า "ไม่รู้ผล" ต้องตรวจสถานะก่อน
+    // timeout ครอบทั้งการรอ headers และการอ่าน body เพราะการเชื่อมต่ออาจค้างหลังได้ headers แล้ว
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     const onAbort = () => controller.abort();
     signal?.addEventListener('abort', onAbort);
+    // บาง fetch (เช่นบน React Native) ไม่หยุดอ่าน body เมื่อ abort จึงแข่งกับสัญญาณ abort เอง
+    const aborted = new Promise<never>((_resolve, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    });
+    aborted.catch(() => {});
     let response: Response;
+    let body: unknown;
     try {
-      response = await fetcher(`${baseUrl}${path}`, { ...init, signal: controller.signal });
+      response = await Promise.race([fetcher(`${baseUrl}${path}`, { ...init, signal: controller.signal }), aborted]);
+      body = await Promise.race([readJson(response), aborted]);
     } catch (error) {
       if (signal?.aborted) throw error;
       if (timedOut) throw new OrderServiceError('timeout');
@@ -341,8 +349,9 @@ export function createOrderService(options: { baseUrl?: string; fetch?: FetchLik
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
     }
+    // body ที่อ่านไม่ครบเพราะหมดเวลาต้องไม่ถูกตีความเป็นคำตอบ
+    if (timedOut) throw new OrderServiceError('timeout');
 
-    const body = await readJson(response);
     if (response.ok) return body;
     const detail = (body as { detail?: unknown } | null)?.detail;
     const detailObject = typeof detail === 'object' && detail !== null ? detail as Record<string, unknown> : {};
