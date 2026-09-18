@@ -1,6 +1,6 @@
 # INSPECT-02 — API และสิทธิ์ฉบับเตรียมงาน
 
-สถานะ: DRAFT อิง `inspect-contract.md` 0.1; #54 เสร็จแล้วตามคำยืนยันผู้ใช้ แต่ approved contract ยังไม่อยู่ใน checkout นี้ จึงต้อง sync ค่าจาก #54 ก่อน implement ส่วน dependency ที่ยังต้องรอคือ #56 และ ORDER-03
+สถานะ: DRAFT อิง `inspect-contract.md` 0.1; #54 เสร็จแล้วตามคำยืนยันผู้ใช้ แต่ approved contract ยังไม่อยู่ใน checkout นี้ จึงต้อง sync ค่าจาก #54 ก่อน implement พบ ORDER-03 บน `origin/feat/orders-checkout` ที่ `6b94caf` แต่ยังไม่อยู่ใน main; blocker ที่ยังไม่พบ implementation คือ #56
 
 ## Endpoints
 
@@ -49,7 +49,7 @@ carrier/tracking_number trim แล้ว 1–100 ตัวอักษร; rece
 
 ใช้ Inspection response จาก contract กลาง โดยกำหนด projection จริงใน OpenAPI หลัง gate ผ่าน:
 
-- ฟิลด์หลัก: id, order_item_id, product_id, seller_id, assigned_inspector_id, status, version, shipment, received_at, created_at, updated_at
+- ฟิลด์หลัก: id, order reference, product_id, seller_id, assigned_inspector_id, status, version, shipment, received_at, created_at, updated_at โดยชื่อ order reference ต้องแก้ตาม #56; ORDER-03 ปัจจุบันมี `orders.id` และไม่มี OrderItem
 - shipment ก่อนแจ้งส่งเป็น null; หลังแจ้งส่งมี carrier/tracking_number; หากเพิ่ม shipped_at/received_by ต้องตกลงกับ schema owner
 - result_record, certificate, return คงรูปแบบตาม contract จริง; ยังไม่มีผลเป็น null และสถานะ integration ใช้ค่าที่ตกลง ห้ามสร้างข้อมูลผลหรือใบรับรองจำลองเพื่อเติม response
 - Seller เห็นเฉพาะงานตน และเห็นผล/หลักฐานที่ส่งแล้วเมื่อ COMPLETED; Inspector/Admin ตาม scope กลาง ไม่มีบัญชีธนาคาร บัตรประชาชน หรือข้อมูลผู้ซื้อที่ไม่จำเป็น

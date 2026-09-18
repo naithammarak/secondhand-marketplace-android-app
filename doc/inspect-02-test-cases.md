@@ -13,7 +13,7 @@
 
 ## Fixture requirements หลัง dependencies พร้อม
 
-ใช้ namespace `inspect02-v1` กับ ORDER-03/#56 fixture ที่เป็นเจ้าของชัดเจน: Seller A/B, Admin, Inspector A/B, Buyer, role-null และบัญชี inactive; order item แยก paid/eligible, unpaid, cancelled/refunded และ Inspection ครบ 5 สถานะตาม contract งาน RECEIVED มีทั้ง unassigned และงานของ Inspector อื่นสำหรับ negative checks
+ใช้ namespace `inspect02-v1` กับ ORDER-03/#56 fixture ที่เป็นเจ้าของชัดเจน: Seller A/B, Admin, Inspector A/B, Buyer, role-null และบัญชี inactive; Order แยก paid/eligible และ unpaid พร้อม Inspection ครบ 5 สถานะตาม contract งาน RECEIVED มีทั้ง unassigned และงานของ Inspector อื่นสำหรับ negative checks หาก approved contract เพิ่ม cancelled/refunded ให้เพิ่มหลัง Order รองรับสถานะนั้น
 
 เริ่ม fixture เฉพาะสถานะที่ระบบอนุญาตจริง: unpaid ปกติไม่มี Inspection; กรณี Inspection เดิมแต่ ineligible ใช้ controlled integration setup เพื่อตรวจ fail-closed behavior ไม่ถือเป็นข้อมูลปกติของทีม ชุดนี้เป็นข้อกำหนด fixture ไม่ใช่ seed ที่พร้อมรัน
 
@@ -73,7 +73,7 @@ reuse namespace/scenario keys จาก fixture owners เมื่อทำไ�
 
 ## หลักฐานสำหรับปิดงาน
 
-- แนบ approved contract, #56 storage commit/migration และ ORDER-03 integration contract พร้อมผู้รับผิดชอบ
+- แนบ approved contract, #56 storage commit/migration และ ORDER-03 integration contract พร้อมผู้รับผิดชอบ ระบุ base commit ที่มีอย่างน้อย ORDER-01 `f4828aa` และ ORDER-03 `6b94caf` หรือ commit หลัง merge
 - แนบ OpenAPI และตัวอย่าง successful sequence / denied permission / invalid state / replay
 - ทุก acceptance มี automated evidence โดย PostgreSQL concurrency/integration ใช้ฐานทดสอบแยก; tests ที่ skip ไม่ถือว่าผ่าน
 - สรุปผล regression suite ตามที่รันจริงและระบุสิ่งที่ยังไม่ได้ทดสอบ; ผล `51 passed, 8 skipped` ของงานก่อนหน้าไม่ใช่หลักฐานว่า INSPECT-02 ผ่าน

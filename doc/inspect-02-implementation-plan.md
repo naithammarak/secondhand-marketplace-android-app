@@ -18,9 +18,11 @@
 |---|---|---|
 | [#54 INSPECT-00](https://github.com/naithammarak/SA-Project/issues/54) | เสร็จแล้วตามคำยืนยันผู้ใช้; นำสถานะ/สิทธิ์, ผู้รับสินค้า, API/errors, idempotency และ cancellation rule ที่อนุมัติมาแทนค่าร่าง | approved contract version และผู้ยืนยัน |
 | [#56](https://github.com/naithammarak/SA-Project/issues/56) | ยืนยันว่าเป็นงาน storage ที่ต้องใช้; ส่งมอบ Inspection, shipment, version, constraints, audit/idempotency ตามสัญญาจริง | ชื่อ issue ที่ตรวจสอบได้, merged PR/commit, migration revision และ persistence interface |
-| ORDER-03 | แหล่งข้อมูลยืนยัน paid/eligible, seller ownership, cancellation/refund boundary, วิธีอ่านสถานะและความสอดคล้องระหว่างแจ้งส่ง | contract/interface ที่อนุมัติ, merged commit และ fixture ที่ใช้งานได้ |
+| ORDER-03 | พบ implementation บน `origin/feat/orders-checkout`: ORDER-01 `f4828aa`, ORDER-03 `6b94caf`; หลังจ่าย Order เป็น `WAITING_SELLER_SHIP`, มี `paid_at` และ Payment unique ต่อ Order แต่ยังไม่อยู่ใน `main` | merge/base commit ที่ทีมเลือก, contract/interface และ test fixture/helper ที่ใช้ร่วมได้ |
 
-dependency ที่ยังต้องรอคือ #56 และ ORDER-03 ห้ามสรุปว่า #56 เสร็จเพียงเพราะมีเอกสาร INSPECT-01; ต้องยืนยันชื่อ/ขอบเขตจาก issue และส่งมอบ storage จริง ห้ามสมมติ ORDER-03 เป็น endpoint หรือ enum ที่ไม่มีใน repository
+blocker ที่ยังไม่พบของส่งมอบคือ #56 ส่วน ORDER-03 มี implementation แล้วแต่ต้อง merge หรือกำหนดให้ INSPECT-02 base บน commit ที่มี Order ก่อน ห้ามสรุปว่า #56 เสร็จเพียงเพราะมีเอกสาร INSPECT-01; ต้องยืนยันชื่อ/ขอบเขตจาก issue และส่งมอบ storage จริง
+
+Order implementation ปัจจุบันไม่มี `OrderItem`; เป็นหนึ่ง `Order` ต่อสินค้าที่จอง และใช้ `orders.id` เป็นคีย์ ดังนั้นร่าง Inspect ที่อ้าง `order_item_id` มี contract mismatch ห้าม implement FK จากชื่อในร่างเอง #54/#56 ต้องระบุว่าจะอ้าง `orders.id` โดยตรงหรือมี schema อื่นเพิ่มเติม พร้อมแก้ unique/fixture/API field ให้ตรงกัน
 
 งานที่ทำได้ตอนนี้คือแผน, API/permission matrix, ลำดับ transaction, test design และ fixture requirements งานที่รอ gate คือ executable schemas/services/routes, migration เสริมที่จำเป็น และ integration tests ที่อ้างโครงสร้างจริง
 
@@ -38,7 +40,7 @@ dependency ที่ยังต้องรอคือ #56 และ ORDER-03 
 2. เพิ่ม schemas ใน `backend/app/schemas/inspection.py`: shipment/receive requests, list query, response projections และ error envelope; reject extra fields และ server-owned fields
 3. เพิ่ม policy/service ใน `backend/app/services/inspections.py` หรือโครงสร้างที่ repo ใช้: active account, scoped queries, action permissions, transitions, transaction และ replay ห้ามรับ actor/role/seller/status จาก client เพื่อให้สิทธิ์
 4. ใช้ `get_current_user` เดิมร่วมกับ guard ตรวจ ACTIVE และบทบาททุกคำขอ รวม replay; ตรวจ 401 สำหรับ token หาย/ผิด และจัด error envelope ของ Inspect ให้ตรง contract โดยไม่ทำให้ auth เดิมเสีย
-5. เชื่อม ORDER-03 ผ่าน interface ที่เจ้าของส่งมอบจริง ปฏิเสธเมื่ออ่าน eligibility ไม่ได้ ห้าม fallback เป็น paid=true หรือใช้ cache ฝั่งมือถือ
+5. เชื่อม ORDER-03 จาก base ที่มี `f4828aa` และ `6b94caf` หรือ commit หลัง merge โดยยืนยัน eligibility จาก Order `WAITING_SELLER_SHIP` ร่วมกับ successful Payment/`paid_at` ตาม contract ที่เจ้าของ Order รับรอง ปฏิเสธเมื่ออ่านไม่ได้ ห้าม fallback เป็น paid=true หรือใช้ cache ฝั่งมือถือ
 6. เพิ่ม `backend/app/api/inspections.py` และลงทะเบียนใน `app/main.py`; query กรองสิทธิ์ก่อน pagination และ projection
 7. เพิ่ม tests ใน `backend/tests/test_inspection_api.py`, `test_inspection_service.py`, `test_inspection_concurrency.py` ตาม test matrix; ใช้ PostgreSQL แยกสำหรับ transaction/locks/unique จริง
 8. ตรวจ OpenAPI, run tests ที่เกี่ยวข้องและ regression suite แล้วแนบผลจริง พร้อมตัวอย่าง shipment → receive → GET และหลักฐานจำนวน shipment หลัง concurrent requests
