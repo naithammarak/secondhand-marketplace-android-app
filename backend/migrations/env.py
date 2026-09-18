@@ -2,6 +2,7 @@ import os
 from app.database import Base
 from app.models.test_message import TestMessage
 from app.models.user import User
+import app.models  # noqa: F401  โหลดทุกตารางเข้า metadata สำหรับ autogenerate
 from pathlib import Path
 from logging.config import fileConfig
 
