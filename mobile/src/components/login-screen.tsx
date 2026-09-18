@@ -65,6 +65,32 @@ function SellerVerificationEntry() {
   );
 }
 
+/** ทางเข้างานสั่งซื้อ: ผู้ซื้อเห็นคำสั่งซื้อและทางเข้าซื้อชั่วคราว ผู้ขายเห็นคำสั่งซื้อสินค้าของตน */
+function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
+  return (
+    <>
+      <TouchableOpacity
+        style={styles.button}
+        accessibilityRole="button"
+        accessibilityLabel="ไปหน้าคำสั่งซื้อ"
+        onPress={() => router.push('/orders')}
+      >
+        <Text style={styles.buttonText}>{role === 'BUYER' ? 'คำสั่งซื้อของฉัน' : 'คำสั่งซื้อสินค้าของฉัน'}</Text>
+      </TouchableOpacity>
+      {role === 'BUYER' && (
+        <TouchableOpacity
+          style={styles.button}
+          accessibilityRole="button"
+          accessibilityLabel="ซื้อสินค้าด้วยรหัสสินค้า"
+          onPress={() => router.push('/buy-by-product-id')}
+        >
+          <Text style={styles.buttonText}>ซื้อด้วยรหัสสินค้า (ทดสอบ)</Text>
+        </TouchableOpacity>
+      )}
+    </>
+  );
+}
+
 function roleMessage(role: string | null | undefined) {
   if (role === 'BUYER') return 'บทบาทผู้ซื้อ';
   if (role === 'SELLER') return 'บทบาทผู้ขาย';
@@ -112,6 +138,9 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
 
         {auth.account?.role === 'SELLER' && <SellerVerificationEntry />}
         {auth.account?.role === 'ADMIN' && <AdminReviewEntry />}
+        {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && (
+          <OrderEntries role={auth.account.role} />
+        )}
 
         {auth.accountError && (
           <TouchableOpacity

@@ -1,0 +1,178 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createOrderService, OrderServiceError } from '../src/services/order-service.ts';
+import { formatBaht } from '../src/orders/order-format.ts';
+import { validateAddress, normalizeAddress } from '../src/orders/checkout-form.ts';
+import { parseRouteId } from '../src/orders/route-params.ts';
+
+const detail = (extra = {}) => ({
+  id: 41,
+  status: 'WAITING_PAYMENT',
+  payment_status: 'UNPAID',
+  viewer_role: 'buyer',
+  product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
+  amounts: {
+    currency: 'THB', item_price: '1200.00', shipping_fee: '50.00', inspection_fee: '100.00',
+    total_amount: '1350.00', commission_fee: null, seller_payout: null,
+  },
+  shipping_address: {
+    recipient_name: 'ผู้ซื้อ ทดสอบ', phone: '0812345678', address_line: '99/1 ถนนทดสอบ',
+    subdistrict: 'แขวง', district: 'เขต', province: 'กรุงเทพ', postal_code: '10110',
+  },
+  last_payment_attempt: null,
+  paid_at: null,
+  receipt_no: null,
+  can_pay: true,
+  created_at: '2026-09-18T10:00:00Z',
+  updated_at: '2026-09-18T10:00:00Z',
+  ...extra,
+});
+
+const address = {
+  recipientName: 'ผู้ซื้อ ทดสอบ', phone: '081-234-5678', addressLine: '99/1 ถนนทดสอบ',
+  subdistrict: 'แขวงทดสอบ', district: 'เขตทดสอบ', province: 'กรุงเทพมหานคร', postalCode: '10110',
+};
+
+function json(status, body) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function recorder(respond) {
+  const calls = [];
+  const fetch = async (url, init) => {
+    calls.push({ url, init });
+    return respond(url, init, calls.length);
+  };
+  return { calls, fetch };
+}
+
+test('create sends only product and address with the idempotency key', async () => {
+  const { calls, fetch } = recorder(() => json(201, detail()));
+  const service = createOrderService({ baseUrl: 'https://api.test/ignored/path', fetch });
+  const order = await service.createOrder('tok', { productId: 12, address, idempotencyKey: 'key-12345678' });
+
+  assert.equal(calls[0].url, 'https://api.test/orders');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers['Idempotency-Key'], 'key-12345678');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer tok');
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(Object.keys(body).sort(), ['product_id', 'shipping_address']);
+  assert.equal(body.shipping_address.postal_code, '10110');
+  assert.equal(order.amounts.totalAmount, '1350.00');
+  assert.equal(order.canPay, true);
+});
+
+test('money must be decimal strings from the server', async () => {
+  const { fetch } = recorder(() => json(200, detail({
+    amounts: { ...detail().amounts, total_amount: 1350 },
+  })));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  await assert.rejects(service.getOrder('tok', 41), error => error.kind === 'server-error');
+});
+
+test('conflict carries backend code and existing order id', async () => {
+  const { fetch } = recorder(() => json(409, {
+    detail: { code: 'already_ordered', message: 'x', order_id: 7 },
+  }));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  await assert.rejects(
+    service.createOrder('tok', { productId: 1, address, idempotencyKey: 'key-12345678' }),
+    error => error instanceof OrderServiceError && error.kind === 'conflict'
+      && error.code === 'already_ordered' && error.orderId === 7,
+  );
+});
+
+test('validation errors are mapped to form field names', async () => {
+  const { fetch } = recorder(() => json(422, {
+    detail: { code: 'validation_error', fields: { postal_code: 'รหัสไปรษณีย์ผิด', phone: 'เบอร์ผิด' } },
+  }));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  await assert.rejects(
+    service.createOrder('tok', { productId: 1, address, idempotencyKey: 'key-12345678' }),
+    error => error.kind === 'validation-error'
+      && error.fields.postalCode === 'รหัสไปรษณีย์ผิด' && error.fields.phone === 'เบอร์ผิด',
+  );
+});
+
+test('status codes map to error kinds', async () => {
+  const cases = [
+    [401, {}, 'unauthorized'],
+    [403, { detail: { code: 'not_order_buyer' } }, 'forbidden'],
+    [403, { detail: { code: 'payment_simulation_disabled' } }, 'unavailable'],
+    [404, { detail: { code: 'order_not_found' } }, 'not-found'],
+    [500, {}, 'server-error'],
+  ];
+  for (const [status, body, kind] of cases) {
+    const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => json(status, body) });
+    await assert.rejects(service.getOrder('tok', 1), error => error.kind === kind, `${status}`);
+  }
+});
+
+test('a slow server is reported as timeout, not as failure or success', async () => {
+  const fetch = (_url, init) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+  });
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch, timeoutMs: 20 });
+  await assert.rejects(
+    service.simulatePayment('tok', { orderId: 1, outcome: 'SUCCESS', idempotencyKey: 'key-12345678' }),
+    error => error.kind === 'timeout',
+  );
+});
+
+test('network failure and missing API configuration', async () => {
+  const offline = createOrderService({ baseUrl: 'https://api.test', fetch: async () => { throw new Error('x'); } });
+  await assert.rejects(offline.listOrders('tok', { limit: 20, offset: 0 }), error => error.kind === 'network-error');
+  const missing = createOrderService({});
+  await assert.rejects(missing.listOrders('tok', { limit: 20, offset: 0 }), error => error.kind === 'unavailable');
+  assert.throws(() => createOrderService({ baseUrl: 'ftp://api.test' }));
+});
+
+test('payment result and list parsing', async () => {
+  const { calls, fetch } = recorder(url => {
+    if (url.includes('/payments/simulate')) {
+      return json(200, {
+        attempt: { id: 3, outcome: 'FAILED', amount: '1350.00', created_at: null },
+        order: detail(),
+      });
+    }
+    return json(200, {
+      items: [{
+        id: 41, status: 'WAITING_PAYMENT', payment_status: 'UNPAID', viewer_role: 'seller',
+        product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
+        total_amount: null, seller_payout: '1140.00', currency: 'THB', created_at: null, paid_at: null,
+      }],
+      total: 1, limit: 20, offset: 0,
+    });
+  });
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  const result = await service.simulatePayment('tok', { orderId: 41, outcome: 'FAILED', idempotencyKey: 'k-12345678' });
+  assert.equal(result.attempt.outcome, 'FAILED');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { outcome: 'FAILED' });
+  const page = await service.listOrders('tok', { limit: 20, offset: 40 });
+  assert.equal(calls[1].url, 'https://api.test/orders?limit=20&offset=40');
+  assert.equal(page.items[0].sellerPayout, '1140.00');
+  assert.equal(page.items[0].totalAmount, null);
+});
+
+test('formatBaht formats server strings without floating point', () => {
+  assert.equal(formatBaht('1350.00'), '฿1,350.00');
+  assert.equal(formatBaht('1234567.05'), '฿1,234,567.05');
+  assert.equal(formatBaht('0.10'), '฿0.10');
+  assert.equal(formatBaht(null), '-');
+  assert.equal(formatBaht('abc'), '-');
+});
+
+test('address validation mirrors the backend rules', () => {
+  assert.deepEqual(validateAddress(address), {});
+  assert.equal(normalizeAddress(address).phone, '0812345678');
+  const errors = validateAddress({ ...address, recipientName: ' ', phone: '12345', postalCode: '1011' });
+  assert.deepEqual(Object.keys(errors).sort(), ['phone', 'postalCode', 'recipientName']);
+});
+
+test('route ids accept only positive integers', () => {
+  assert.equal(parseRouteId('12'), 12);
+  assert.equal(parseRouteId(['7']), 7);
+  for (const bad of [undefined, '', '0', '-1', '1.5', 'abc', '99999999999', '2147483648']) {
+    assert.equal(parseRouteId(bad), null, String(bad));
+  }
+});
