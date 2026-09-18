@@ -10,16 +10,16 @@ from uuid import uuid4
 import httpx
 from anyio.from_thread import run
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile, status
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import database
-from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.product import Product
 from app.models.product_image import ProductImage
 from app.models.user import User, UserRole, UserStatus
+from app.services.product_seller_access import require_approved_seller
 
 
 router = APIRouter(tags=["Product images"])
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # PRODUCT-02: Validate the entire image and limit each product to ten images.
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_PIXELS = 25_000_000
+MAX_IMAGE_DIMENSION = 10_000
 MAX_PRODUCT_IMAGES = 10
 ALLOWED_IMAGES = {
     "image/jpeg": ((".jpg", ".jpeg"), "JPEG", ".jpg"),
@@ -57,15 +58,30 @@ async def validate_image(file: UploadFile) -> tuple[bytes, str, str]:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(BytesIO(content)) as image:
-                if image.format != image_format or image.width * image.height > MAX_IMAGE_PIXELS:
+                if image.format != image_format:
                     raise ValueError("Unexpected image format or dimensions")
+                if (
+                    image.width * image.height > MAX_IMAGE_PIXELS
+                    or max(image.size) > MAX_IMAGE_DIMENSION
+                ):
+                    raise HTTPException(status_code=422, detail="Invalid image dimensions")
+                if getattr(image, "is_animated", False) or getattr(image, "n_frames", 1) > 1:
+                    raise ValueError("Animated images are not allowed")
                 image.verify()
             with Image.open(BytesIO(content)) as image:
                 image.load()
+                clean_image = ImageOps.exif_transpose(image)
+                if image_format == "JPEG":
+                    clean_image = clean_image.convert("RGB")
+                output = BytesIO()
+                clean_image.save(output, format=image_format)
+                content = output.getvalue()
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError,
             Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=415, detail="File is not a readable JPEG or PNG image") from exc
 
+    if len(content) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds the 5 MiB limit")
     return content, content_type, safe_extension
 
 
@@ -169,7 +185,7 @@ def reconcile_commit(product_id: int, result: dict, path: str) -> bool:
 def create_product_image(
     product_id: int = Path(gt=0),
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_approved_seller),
     db: Session = Depends(get_db),
 ):
     path = None
