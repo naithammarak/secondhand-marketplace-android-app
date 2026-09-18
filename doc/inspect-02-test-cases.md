@@ -40,7 +40,7 @@ reuse namespace/scenario keys จาก fixture owners เมื่อทำไ�
 | AUTH-03 | Seller A receive งานตน หรือ Admin shipment งานที่เห็น | 403; no writes |
 | AUTH-04 | Buyer/role-null/inactive account ทุก endpoint | 403 ตาม error contract; ไม่รั่วรายการ |
 | AUTH-05 | Inspector A list/detail | เห็น RECEIVED unassigned และงานตน; ไม่เห็นงาน Inspector B หรือ READY/SHIPPED นอก scope |
-| AUTH-06 | Inspector receive | ไม่อนุญาตตามร่าง; 403 เมื่อเห็นงาน หรือ 404 เมื่องานนอก scope; แก้ expected หาก #54 อนุมัติบทบาทอื่น |
+| AUTH-06 | Inspector receive | ใช้ expected ตามบทบาทผู้รับของที่อนุมัติใน #54; จนกว่าจะ sync contract ตารางร่างคาดว่า 403 เมื่อเห็นงาน หรือ 404 เมื่องานนอก scope |
 | AUTH-07 | key เคยสำเร็จ แต่ actor ถูก suspend/เสียสิทธิ์ก่อน replay | ปฏิเสธตามสิทธิ์ปัจจุบัน ไม่คืน cached body ที่หลุด scope |
 
 ## Read และ Refresh

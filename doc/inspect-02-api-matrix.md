@@ -1,6 +1,6 @@
 # INSPECT-02 — API และสิทธิ์ฉบับเตรียมงาน
 
-สถานะ: DRAFT อิง `inspect-contract.md` 0.1; รอ #54, #56 และ ORDER-03 ชื่อ/รูปแบบด้านล่างยังเปลี่ยนได้ตาม contract ที่อนุมัติ
+สถานะ: DRAFT อิง `inspect-contract.md` 0.1; #54 เสร็จแล้วตามคำยืนยันผู้ใช้ แต่ approved contract ยังไม่อยู่ใน checkout นี้ จึงต้อง sync ค่าจาก #54 ก่อน implement ส่วน dependency ที่ยังต้องรอคือ #56 และ ORDER-03
 
 ## Endpoints
 
@@ -23,7 +23,7 @@ carrier/tracking_number trim แล้ว 1–100 ตัวอักษร; rece
 |---|---|---|---|
 | ACTIVE SELLER เจ้าของ | งานตนทุกสถานะที่ contract อนุญาต | เฉพาะ READY_TO_SHIP และ paid/eligible | 403 สำหรับงานที่ตนเห็น |
 | ACTIVE SELLER คนอื่น | list ไม่ปรากฏ; detail 404 | 404 | 404 |
-| ACTIVE INSPECTOR | RECEIVED ที่ยังไม่ assigned และงานที่ตนรับอยู่/ตรวจเสร็จ | ไม่อนุญาต | ไม่อนุญาตตามร่าง; ต้องให้ #54 ยืนยันผู้รับของ |
+| ACTIVE INSPECTOR | RECEIVED ที่ยังไม่ assigned และงานที่ตนรับอยู่/ตรวจเสร็จ | ไม่อนุญาต | ใช้สิทธิ์ผู้รับของตาม approved contract จาก #54; ตารางนี้แสดงค่าร่างเดิมจนกว่าจะ sync |
 | ACTIVE ADMIN | ทุกงาน | 403 | SHIPPED_TO_INSPECTION เท่านั้น |
 | BUYER / role=null | 403 | 403 | 403 |
 | SUSPENDED/CLOSED ทุก role | 403 ACCOUNT_INACTIVE | 403 | 403 |

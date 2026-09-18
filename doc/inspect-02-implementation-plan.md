@@ -10,17 +10,17 @@
 
 จาก checkout ที่ฐานงาน INSPECT-01 preparation commit `ec7b148`: backend เป็น FastAPI + SQLAlchemy + Alembic; `app/main.py` ลงทะเบียนเฉพาะ auth router; มี `get_current_user` แต่ยังไม่มี Inspection/Order models หรือ Inspect API จึงต้องใช้ model และ contract ที่ต้นทางส่งมอบจริงก่อน implement
 
-ร่าง `inspect-contract.md` เวอร์ชัน 0.1 ยังไม่ได้อนุมัติ ข้อเสนอสถานะ บทบาท endpoint และ error code ทั้งหมดในชุดนี้จึงเป็นข้อเสนอเพื่อทบทวน ไม่ใช่หลักฐานว่าทีมตกลงแล้ว การเปิด issue #54/#56 ผ่านเว็บได้ 404 จึงยืนยันสถานะล่าสุดไม่ได้
+ผู้ใช้ยืนยันเมื่อ 2026-09-18 ว่า #54 INSPECT-00 เสร็จแล้ว จึงไม่นับ #54 เป็น dependency ที่ยังต้องรอ อย่างไรก็ตาม `inspect-contract.md` ใน checkout นี้ยังระบุเวอร์ชัน 0.1 draft และเปิด issue ผ่านเว็บได้ 404; ก่อน implement ต้องนำ approved contract/version จาก #54 มาเทียบและปรับเอกสาร/API tests ให้ตรง ห้ามถือว่าค่าใน draft คือข้อสรุปหากต่างจาก #54
 
 ## Dependency gate
 
-| ต้องรอ | สิ่งที่ต้องได้รับก่อน implement | หลักฐานที่แนบใน PR |
+| Dependency | สถานะและสิ่งที่ต้องใช้ก่อน implement | หลักฐานที่แนบใน PR |
 |---|---|---|
-| [#54 INSPECT-00](https://github.com/naithammarak/SA-Project/issues/54) | สถานะ/สิทธิ์ที่อนุมัติ; ผู้รับสินค้าเป็น Admin ตามร่างหรือบทบาทอื่น; รูปแบบ API/errors; idempotency และการยกเลิก | approved contract version และผู้ยืนยัน |
+| [#54 INSPECT-00](https://github.com/naithammarak/SA-Project/issues/54) | เสร็จแล้วตามคำยืนยันผู้ใช้; นำสถานะ/สิทธิ์, ผู้รับสินค้า, API/errors, idempotency และ cancellation rule ที่อนุมัติมาแทนค่าร่าง | approved contract version และผู้ยืนยัน |
 | [#56](https://github.com/naithammarak/SA-Project/issues/56) | ยืนยันว่าเป็นงาน storage ที่ต้องใช้; ส่งมอบ Inspection, shipment, version, constraints, audit/idempotency ตามสัญญาจริง | ชื่อ issue ที่ตรวจสอบได้, merged PR/commit, migration revision และ persistence interface |
 | ORDER-03 | แหล่งข้อมูลยืนยัน paid/eligible, seller ownership, cancellation/refund boundary, วิธีอ่านสถานะและความสอดคล้องระหว่างแจ้งส่ง | contract/interface ที่อนุมัติ, merged commit และ fixture ที่ใช้งานได้ |
 
-ห้ามสรุปว่า #56 เสร็จเพียงเพราะมีเอกสาร INSPECT-01; ต้องยืนยันชื่อ/ขอบเขตจาก issue และส่งมอบ storage จริง ห้ามสมมติ ORDER-03 เป็น endpoint หรือ enum ที่ไม่มีใน repository
+dependency ที่ยังต้องรอคือ #56 และ ORDER-03 ห้ามสรุปว่า #56 เสร็จเพียงเพราะมีเอกสาร INSPECT-01; ต้องยืนยันชื่อ/ขอบเขตจาก issue และส่งมอบ storage จริง ห้ามสมมติ ORDER-03 เป็น endpoint หรือ enum ที่ไม่มีใน repository
 
 งานที่ทำได้ตอนนี้คือแผน, API/permission matrix, ลำดับ transaction, test design และ fixture requirements งานที่รอ gate คือ executable schemas/services/routes, migration เสริมที่จำเป็น และ integration tests ที่อ้างโครงสร้างจริง
 
@@ -83,7 +83,7 @@
 
 ## ผู้รับผิดชอบและการตรวจรับ
 
-BE/implement agent รับ API/service/tests; DB1 รับรอง constraints/transaction storage; เจ้าของ ORDER-03 รับรอง eligibility และ cancellation race; FE/QA ทบทวน Refresh/permission/error behavior; Lead ยืนยัน #54 และขอบเขต #56 โดยต้องใส่ชื่อผู้รับงานจริงใน PR
+BE/implement agent รับ API/service/tests; DB1 รับรอง constraints/transaction storage; เจ้าของ ORDER-03 รับรอง eligibility และ cancellation race; FE/QA ทบทวน Refresh/permission/error behavior; Lead/เจ้าของ #54 ส่ง approved contract ให้ใช้เป็นฐาน และ Lead ยืนยันขอบเขต #56 โดยต้องใส่ชื่อผู้รับงานจริงใน PR
 
 ปิด INSPECT-02 ได้เมื่อ API จริงผ่าน acceptance ทั้ง 4 ข้อใน [test matrix](inspect-02-test-cases.md), dependencies มีหลักฐานพร้อม, PostgreSQL concurrency/integration tests ผ่านจริง และ regression ไม่เสีย งานเตรียมเสร็จหรือ tests ถูก skip ไม่เท่ากับ issue เสร็จ
 
