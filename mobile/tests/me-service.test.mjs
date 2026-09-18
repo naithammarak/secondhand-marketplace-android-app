@@ -6,9 +6,11 @@ test('registers the Google account before reading /auth/me with the Supabase tok
   const received = [];
   const service = createMeService({ baseUrl: 'https://api.example.test/', fetch: async (url, init) => {
     received.push({ url, init });
-    return new Response(JSON.stringify({ role: null }), { status: 200 });
+    return new Response(JSON.stringify({ full_name: 'สมใจ ซื้อดี', role: null }), { status: 200 });
   }});
-  assert.deepEqual(await service.getMe('supabase-token'), { role: null, source: 'backend' });
+  assert.deepEqual(await service.getMe('supabase-token'), {
+    fullName: 'สมใจ ซื้อดี', role: null, source: 'backend',
+  });
   assert.deepEqual(received.map(call => [call.url, call.init.method]), [
     ['https://api.example.test/auth/google', 'POST'],
     ['https://api.example.test/auth/me', 'GET'],
@@ -34,8 +36,34 @@ test('maps transport failures and supports cancellation', async () => {
 
 test('mock service returns a new user without assigning privileged roles', async () => {
   const service = createMeService({});
-  assert.deepEqual(await service.getMe('ignored'), { role: null, source: 'mock' });
+  assert.deepEqual(await service.getMe('ignored'), { fullName: null, role: null, source: 'mock' });
+  await assert.rejects(service.setRole('ignored', 'BUYER'), error => error.kind === 'not-configured');
 });
+
+test('sets a role with the token and maps the returned account through the shared mapper', async () => {
+  let received;
+  const service = createMeService({ baseUrl: 'https://api.example.test', fetch: async (url, init) => {
+    received = { url, init };
+    return new Response(JSON.stringify({ full_name: 'Seller Name', role: 'SELLER' }));
+  }});
+
+  const result = await service.setRole('secret-token', 'SELLER');
+
+  assert.deepEqual(result, { fullName: 'Seller Name', role: 'SELLER', source: 'backend' });
+  assert.equal(received.url, 'https://api.example.test/auth/role');
+  assert.equal(received.init.method, 'POST');
+  assert.equal(received.init.headers.Authorization, 'Bearer secret-token');
+  assert.equal(received.init.headers['Content-Type'], 'application/json');
+  assert.equal(received.init.body, '{"role":"SELLER"}');
+});
+
+for (const [status, expected] of [[409, 'conflict'], [422, 'validation-error']]) {
+  test(`maps role save ${status} separately`, async () => {
+    const service = createMeService({ baseUrl: 'https://api.example.test',
+      fetch: async () => new Response('do not expose me', { status }) });
+    await assert.rejects(service.setRole('token', 'BUYER'), error => error.kind === expected);
+  });
+}
 
 test('backend base URL is reduced to its http origin', async () => {
   const receivedUrls = [];
