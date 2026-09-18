@@ -244,12 +244,23 @@ def test_missing_or_deleted_product_cannot_upload(upload_client):
     assert calls["upload"] == []
 
 
-@pytest.mark.parametrize("role,status", [(UserRole.BUYER, UserStatus.ACTIVE), (UserRole.SELLER, UserStatus.SUSPENDED)])
+@pytest.mark.parametrize(
+    "role,status",
+    [
+        (None, UserStatus.ACTIVE),
+        (UserRole.BUYER, UserStatus.ACTIVE),
+        (UserRole.ADMIN, UserStatus.ACTIVE),
+        (UserRole.SELLER, UserStatus.SUSPENDED),
+        (UserRole.SELLER, UserStatus.CLOSED),
+    ],
+)
 def test_only_active_seller_can_upload(upload_client, role, status):
     client, _, user, calls = upload_client
     user.role = role
     user.status = status
-    assert post_image(client).status_code == 403
+    response = post_image(client)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only active sellers can upload product images"
     assert calls["upload"] == []
 
 
