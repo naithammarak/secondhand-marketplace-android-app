@@ -1,0 +1,88 @@
+"""Request models for the PRODUCT-00 product contract."""
+
+import re
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+
+PRICE_PATTERN = re.compile(r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$")
+
+
+class ProductUploadReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    upload_id: int
+
+    @field_validator("upload_id")
+    @classmethod
+    def positive_upload_id(cls, value: int) -> int:
+        if type(value) is not int or value <= 0:
+            raise ValueError("upload_id ต้องเป็นจำนวนเต็มบวก")
+        return value
+
+
+class CreateProductRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_name: str
+    description: str
+    price: str
+    category_id: int
+    brand_id: int
+    size: str
+    condition: Literal["NEW", "LIKE_NEW", "GOOD", "FAIR"]
+    sale_type: Literal["FIXED_PRICE"]
+    images: list[ProductUploadReference]
+
+    @field_validator("product_name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        value = value.strip()
+        if not 1 <= len(value) <= 255:
+            raise ValueError("ชื่อต้องมีความยาว 1–255 ตัวอักษร")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def valid_description(cls, value: str) -> str:
+        value = value.strip()
+        if not 1 <= len(value) <= 1000:
+            raise ValueError("รายละเอียดต้องมีความยาว 1–1000 ตัวอักษร")
+        return value
+
+    @field_validator("size")
+    @classmethod
+    def valid_size(cls, value: str) -> str:
+        value = value.strip()
+        if not 1 <= len(value) <= 100:
+            raise ValueError("ขนาดต้องมีความยาว 1–100 ตัวอักษร")
+        return value
+
+    @field_validator("category_id", "brand_id")
+    @classmethod
+    def positive_reference(cls, value: int) -> int:
+        if type(value) is not int or value <= 0:
+            raise ValueError("รหัสต้องเป็นจำนวนเต็มบวก")
+        return value
+
+    @field_validator("price")
+    @classmethod
+    def valid_price(cls, value: str) -> str:
+        if not isinstance(value, str) or not PRICE_PATTERN.fullmatch(value):
+            raise ValueError("ราคาต้องเป็นข้อความทศนิยมบวกไม่เกิน 2 ตำแหน่ง")
+        amount = Decimal(value)
+        if amount <= 0 or amount > Decimal("9999999999.99"):
+            raise ValueError("ราคาต้องมากกว่า 0 และไม่เกิน 9999999999.99")
+        return format(amount, ".2f")
+
+    @field_validator("images")
+    @classmethod
+    def valid_images(cls, value: list[ProductUploadReference]) -> list[ProductUploadReference]:
+        if not 1 <= len(value) <= 10:
+            raise ValueError("สินค้าต้องมีรูป 1–10 รูป")
+        ids = [item.upload_id for item in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("ห้ามใช้ upload_id ซ้ำ")
+        return value

@@ -80,7 +80,7 @@ def test_bad_counts_or_refs_cannot_create_partial_images(ids, expected_code):
     "bad_upload,expected_code",
     [
         (upload(12, user_id=8), "INVALID_IMAGE_REFERENCE"),
-        (upload(12, state="ATTACHED"), "INVALID_IMAGE_REFERENCE"),
+        (upload(12, state="ATTACHED"), "IMAGE_ALREADY_ATTACHED"),
         (upload(12, expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc)), "UPLOAD_EXPIRED"),
     ],
 )
