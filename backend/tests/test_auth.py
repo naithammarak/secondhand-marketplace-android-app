@@ -42,7 +42,7 @@ def setup_auth_env(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def setup_test_db():
-    Base.metadata.create_all(bind=test_engine)
+    User.__table__.create(bind=test_engine)
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -54,7 +54,7 @@ def setup_test_db():
     app.dependency_overrides[get_db] = override_get_db
     yield
     app.dependency_overrides.pop(get_db, None)
-    Base.metadata.drop_all(bind=test_engine)
+    User.__table__.drop(bind=test_engine)
 
 
 def make_token(payload: dict, secret: str = TEST_SECRET, algorithm: str = "HS256") -> str:
