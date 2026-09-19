@@ -19,6 +19,8 @@ from app.database import get_db
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.product import Product
+from app.models.product_image import ProductImage
+from app.models.product_upload import ProductUpload
 from app.models.user import User
 from app.schemas.product import CreateProductRequest
 from app.services.product_seller_access import require_approved_seller
@@ -121,6 +123,32 @@ class ProductCreateRoute(APIRoute):
 router = APIRouter(tags=["Products"], route_class=ProductCreateRoute)
 
 
+def committed_product_exists(bind, product_id: int, seller_id: int, upload_ids: list[int]) -> bool:
+    """Confirm an uncertain commit using a separate database session."""
+    with Session(bind=bind) as inspection_db:
+        product = inspection_db.get(Product, product_id)
+        if product is None or product.user_id != seller_id:
+            return False
+        image_ids = inspection_db.scalars(
+            select(ProductImage.image_id)
+            .where(ProductImage.product_id == product_id)
+            .order_by(ProductImage.sort_order, ProductImage.image_id)
+        ).all()
+        uploads = inspection_db.scalars(
+            select(ProductUpload)
+            .where(ProductUpload.id.in_(upload_ids))
+            .order_by(ProductUpload.id)
+        ).all()
+        return (
+            image_ids == upload_ids
+            and len(uploads) == len(upload_ids)
+            and all(
+                upload.state == "ATTACHED" and upload.attached_product_id == product_id
+                for upload in uploads
+            )
+        )
+
+
 @router.post(
     "/products",
     status_code=201,
@@ -140,8 +168,19 @@ def create_product(
     current_user: User = Depends(require_approved_seller),
     db: Session = Depends(get_db),
 ):
+    commit_attempted = False
+    result = None
+    product_id = None
+    seller_id = current_user.id
+    upload_ids = [item.upload_id for item in body.images]
+    bind = db.get_bind()
     try:
-        seller = db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+        seller = db.scalar(
+            select(User)
+            .where(User.id == current_user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if seller is None:
             raise product_error(403, "ACCOUNT_NOT_REGISTERED")
         require_approved_seller(current_user=seller, db=db)
@@ -175,25 +214,26 @@ def create_product(
             db,
             seller_id=seller.id,
             product_id=product.id,
-            upload_ids=[item.upload_id for item in body.images],
+            upload_ids=upload_ids,
         )
-        signed_urls = [run(sign_private_object, image.image_url) for image in images]
-        urls_expire_at = datetime.now(timezone.utc) + timedelta(seconds=SIGNED_URL_SECONDS)
+        signed_images = []
+        for image in images:
+            signing_started_at = datetime.now(timezone.utc)
+            signed_images.append(
+                (
+                    image,
+                    run(sign_private_object, image.image_url),
+                    signing_started_at + timedelta(seconds=SIGNED_URL_SECONDS),
+                )
+            )
         category_data = {
             "id": category.id,
             "category_name": category.category_name,
             "parent_category_id": category.parent_category_id,
         }
         brand_data = {"id": brand.id, "brand_name": brand.brand_name}
-
-        db.commit()
-        db.refresh(product)
-        for image in images:
-            db.refresh(image)
-
-        response.headers["Location"] = f"/products/{product.id}"
-        response.headers["Cache-Control"] = "no-store"
-        return {
+        product_id = product.id
+        result = {
             "data": {
                 "id": product.id,
                 "product_name": product.product_name,
@@ -211,18 +251,23 @@ def create_product(
                     {
                         "image_id": image.image_id,
                         "image_url": signed_url,
-                        "url_expires_at": urls_expire_at,
+                        "url_expires_at": url_expires_at,
                         "file_size": image.file_size,
                         "uploaded_at": image.uploaded_at,
                         "sort_order": image.sort_order,
                         "photo_type": image.photo_type,
                     }
-                    for image, signed_url in zip(images, signed_urls, strict=True)
+                    for image, signed_url, url_expires_at in signed_images
                 ],
                 "created_at": product.created_at,
                 "updated_at": product.updated_at,
             }
         }
+        commit_attempted = True
+        db.commit()
+        response.headers["Location"] = f"/products/{product_id}"
+        response.headers["Cache-Control"] = "no-store"
+        return result
     except HTTPException:
         db.rollback()
         raise
@@ -232,5 +277,17 @@ def create_product(
         raise product_error(422, "INVALID_REFERENCE") from exc
     except Exception as exc:
         db.rollback()
+        if commit_attempted and result is not None and product_id is not None:
+            try:
+                if committed_product_exists(bind, product_id, seller_id, upload_ids):
+                    response.headers["Location"] = f"/products/{product_id}"
+                    response.headers["Cache-Control"] = "no-store"
+                    return result
+            except Exception:
+                logger.exception(
+                    "PRODUCT-03 uncertain commit check failed for product_id=%s",
+                    product_id,
+                )
+            logger.error("PRODUCT-03 uncertain commit for product_id=%s", product_id)
         logger.exception("PRODUCT-03 create failed for user_id=%s", current_user.id)
         raise product_error(500, "PRODUCT_SAVE_FAILED") from exc

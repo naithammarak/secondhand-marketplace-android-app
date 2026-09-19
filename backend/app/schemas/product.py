@@ -2,25 +2,19 @@
 
 import re
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 
 PRICE_PATTERN = re.compile(r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$")
+PositiveStrictInt = Annotated[StrictInt, Field(gt=0)]
 
 
 class ProductUploadReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    upload_id: int
-
-    @field_validator("upload_id")
-    @classmethod
-    def positive_upload_id(cls, value: int) -> int:
-        if type(value) is not int or value <= 0:
-            raise ValueError("upload_id ต้องเป็นจำนวนเต็มบวก")
-        return value
+    upload_id: PositiveStrictInt
 
 
 class CreateProductRequest(BaseModel):
@@ -29,8 +23,8 @@ class CreateProductRequest(BaseModel):
     product_name: str
     description: str
     price: str
-    category_id: int
-    brand_id: int
+    category_id: PositiveStrictInt
+    brand_id: PositiveStrictInt
     size: str
     condition: Literal["NEW", "LIKE_NEW", "GOOD", "FAIR"]
     sale_type: Literal["FIXED_PRICE"]
@@ -58,13 +52,6 @@ class CreateProductRequest(BaseModel):
         value = value.strip()
         if not 1 <= len(value) <= 100:
             raise ValueError("ขนาดต้องมีความยาว 1–100 ตัวอักษร")
-        return value
-
-    @field_validator("category_id", "brand_id")
-    @classmethod
-    def positive_reference(cls, value: int) -> int:
-        if type(value) is not int or value <= 0:
-            raise ValueError("รหัสต้องเป็นจำนวนเต็มบวก")
         return value
 
     @field_validator("price")

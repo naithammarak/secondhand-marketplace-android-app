@@ -28,14 +28,17 @@ Content-Type: application/json
 The client must not send owner, role, approval, status, timestamps, object keys,
 signed URLs, or other unknown fields. Price is a positive decimal string with at
 most two decimal places. `condition` is one of `NEW`, `LIKE_NEW`, `GOOD`, or
-`FAIR`.
+`FAIR`. `category_id`, `brand_id`, and every `upload_id` must be positive JSON
+integers; booleans, strings, and decimal numbers are rejected.
 
 ## Success
 
 The response is `201 Created`, includes `Location: /products/{id}`, and returns
 the saved product in `data`. The server sets owner and `AVAILABLE` status. Images
 are returned in request order; index 0 is `MAIN` and the remaining images are
-`GALLERY`. Every `image_url` is a private signed URL valid for 300 seconds.
+`GALLERY`. Every `image_url` is a private signed URL valid for 300 seconds. Each
+image carries its own conservative `url_expires_at`, measured before its signing
+request begins.
 
 ## Atomic behavior
 
@@ -44,7 +47,10 @@ category and brand, inserts the product, locks all pending uploads, and changes
 them to `ATTACHED` in one database transaction. A missing, expired, already-used,
 or different-owner upload rolls back the product and every image binding. A
 signed URL failure also rolls back the database transaction and leaves the
-uploads PENDING for retry.
+uploads PENDING for retry. The response is assembled before commit so no database
+refresh is required afterward. If commit acknowledgement is lost, the backend
+checks the product and all image bindings through a new session and returns the
+original `201` only when the committed result is confirmed.
 
 ## Main errors
 

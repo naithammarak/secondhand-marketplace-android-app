@@ -1,5 +1,6 @@
 """PRODUCT-03 create endpoint: contract, permission and rollback coverage."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -207,6 +208,33 @@ def test_invalid_price_does_not_create_product(db, price):
     assert count(db, Product) == 0
 
 
+@pytest.mark.parametrize("value", [True, "1", 1.0])
+@pytest.mark.parametrize(
+    "field,expected_code",
+    [
+        ("category_id", "VALIDATION_ERROR"),
+        ("brand_id", "VALIDATION_ERROR"),
+        ("upload_id", "INVALID_IMAGE_REFERENCE"),
+    ],
+)
+def test_ids_require_strict_positive_integers(db, field, expected_code, value):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    upload_id = pending_upload(db, seller_id)
+    body = valid_body(category_id, brand_id, [upload_id])
+    if field == "upload_id":
+        body["images"][0]["upload_id"] = value
+    else:
+        body[field] = value
+
+    response = client.post("/products", headers=headers, json=body)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == expected_code
+    assert count(db, Product) == 0
+
+
 def test_missing_category_and_brand_return_field_errors(db):
     seller_id, headers = create_user(db, UserRole.SELLER)
     approve(db, seller_id)
@@ -326,6 +354,35 @@ def test_signing_failure_rolls_back_product_and_leaves_upload_retryable(db, monk
     assert upload.attached_product_id is None
 
 
+def test_each_signed_url_expiry_is_measured_before_signing(db, monkeypatch):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    uploads = [pending_upload(db, seller_id), pending_upload(db, seller_id)]
+    signing_started = []
+
+    async def slow_sign(path):
+        signing_started.append(datetime.now(timezone.utc))
+        await asyncio.sleep(0.02)
+        return f"https://storage.example.invalid/signed/{path}?token=test"
+
+    monkeypatch.setattr(products_module, "sign_private_object", slow_sign)
+    response = client.post(
+        "/products", headers=headers, json=valid_body(category_id, brand_id, uploads)
+    )
+
+    assert response.status_code == 201
+    expiries = [
+        datetime.fromisoformat(image["url_expires_at"])
+        for image in response.json()["data"]["images"]
+    ]
+    assert expiries[0] < expiries[1]
+    assert all(
+        expiry <= started + timedelta(seconds=products_module.SIGNED_URL_SECONDS)
+        for expiry, started in zip(expiries, signing_started, strict=True)
+    )
+
+
 def test_database_commit_failure_rolls_back_product_and_bindings(db):
     seller_id, headers = create_user(db, UserRole.SELLER)
     approve(db, seller_id)
@@ -360,3 +417,42 @@ def test_database_commit_failure_rolls_back_product_and_bindings(db):
     upload = db.get(ProductUpload, upload_id)
     assert upload.state == "PENDING"
     assert upload.attached_product_id is None
+
+
+def test_commit_success_with_lost_acknowledgement_returns_created_product(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    upload_id = pending_upload(db, seller_id)
+    uncertain_session = SessionLocal()
+    real_commit = uncertain_session.commit
+
+    def commit_then_lose_acknowledgement():
+        real_commit()
+        raise RuntimeError("simulated lost commit acknowledgement")
+
+    uncertain_session.commit = commit_then_lose_acknowledgement
+
+    def uncertain_get_db():
+        try:
+            yield uncertain_session
+        finally:
+            uncertain_session.close()
+
+    app.dependency_overrides[get_db] = uncertain_get_db
+    try:
+        response = client.post(
+            "/products", headers=headers, json=valid_body(category_id, brand_id, [upload_id])
+        )
+    finally:
+        app.dependency_overrides[get_db] = _session_dependency
+
+    assert response.status_code == 201
+    product_id = response.json()["data"]["id"]
+    assert response.headers["location"] == f"/products/{product_id}"
+    assert count(db, Product) == 1
+    assert count(db, ProductImage) == 1
+    db.expire_all()
+    upload = db.get(ProductUpload, upload_id)
+    assert upload.state == "ATTACHED"
+    assert upload.attached_product_id == product_id
