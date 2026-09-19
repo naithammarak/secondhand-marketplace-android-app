@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -57,8 +58,11 @@ def validation_error(fields: dict) -> HTTPException:
     )
 
 
+ACCOUNT_NUMBER_DIGITS_PATTERN = re.compile(r"^[0-9]+$")
+
+
 def normalize_account_number(value: str) -> str:
-    return "".join(character for character in value if character.isdigit())
+    return (value or "").replace(" ", "").replace("-", "")
 
 
 def validate_text(value: str | None, field_label: str) -> tuple[str, str | None]:
@@ -141,11 +145,11 @@ def submit_verification(
     if error:
         fields["bank_account_name"] = error
 
-    digits = normalize_account_number(bank_account_number or "")
     raw_account = (bank_account_number or "").strip()
+    digits = normalize_account_number(raw_account)
     if not raw_account:
         fields["bank_account_number"] = "กรุณากรอกเลขที่บัญชี"
-    elif any(character.isalpha() for character in raw_account):
+    elif not digits or not ACCOUNT_NUMBER_DIGITS_PATTERN.fullmatch(digits):
         fields["bank_account_number"] = "เลขที่บัญชีต้องเป็นตัวเลขเท่านั้น"
     elif len(digits) < MIN_ACCOUNT_DIGITS or len(digits) > MAX_ACCOUNT_DIGITS:
         fields["bank_account_number"] = (

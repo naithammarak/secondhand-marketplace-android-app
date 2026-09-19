@@ -417,3 +417,44 @@ def test_seller_cannot_access_admin_verifications():
     assert client.get("/admin/verifications", headers=headers).status_code == 403
     assert client.get("/admin/verifications/1", headers=headers).status_code == 403
     assert client.get("/admin/verifications/1/id-card", headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize(
+    "forbidden_account",
+    [
+        "1234/567890",
+        "1234.567890",
+        "1234_567890",
+        "12345abcde",
+        "1234😊567890",
+        "๑๒๓๔๕๖๗๘๙๐",
+        "- - -",
+        "1234+567890",
+        "1234#567890",
+        "1234@567890",
+    ],
+)
+def test_account_number_with_forbidden_characters_is_rejected(storage, forbidden_account):
+    _, headers = create_user()
+    response = submit(headers, bank_account_number=forbidden_account)
+    assert response.status_code == 422
+    fields = response.json()["detail"]["fields"]
+    assert "bank_account_number" in fields
+    assert storage.uploads == []
+
+
+@pytest.mark.parametrize(
+    "valid_account",
+    [
+        "123-4-56789-0",
+        "123 456 7890",
+        "  1234567890  ",
+        "123-456-789-012-345",
+        "123 456 789 012 345",
+    ],
+)
+def test_account_number_with_valid_spaces_and_hyphens_is_accepted(storage, valid_account):
+    _, headers = create_user()
+    response = submit(headers, bank_account_number=valid_account)
+    assert response.status_code == 201
+    assert len(storage.uploads) == 1
