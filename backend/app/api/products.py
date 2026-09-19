@@ -452,6 +452,13 @@ def create_product(
                         },
                     },
                     "examples": {
+                        "fill_before_execute": {
+                            "summary": "กรอกข้อมูลก่อนกด Execute",
+                            "description": (
+                                "ตัวอย่างเริ่มต้นที่ปลอดภัย: body ว่างจะถูกปฏิเสธและไม่แก้สินค้า"
+                            ),
+                            "value": {},
+                        },
                         "edit_fields": {
                             "summary": "แก้ชื่อและราคา",
                             "value": {

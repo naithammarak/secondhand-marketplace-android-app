@@ -168,7 +168,13 @@ def test_openapi_documents_update_and_cancel_errors():
     )
     media = patch_operation["requestBody"]["content"]["application/json"]
     assert "images" in media["schema"]["properties"]
-    assert {"edit_fields", "reorder_images", "replace_image"} == set(media["examples"])
+    assert {
+        "fill_before_execute",
+        "edit_fields",
+        "reorder_images",
+        "replace_image",
+    } == set(media["examples"])
+    assert media["examples"]["fill_before_execute"]["value"] == {}
     assert {"id", "user_id", "status"}.isdisjoint(media["schema"]["properties"])
 
 
