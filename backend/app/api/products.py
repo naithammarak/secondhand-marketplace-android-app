@@ -121,7 +121,19 @@ class ProductCreateRoute(APIRoute):
 router = APIRouter(tags=["Products"], route_class=ProductCreateRoute)
 
 
-@router.post("/products", status_code=201, summary="Create a product")
+@router.post(
+    "/products",
+    status_code=201,
+    summary="Create a product",
+    responses={
+        401: {"description": "Authentication required"},
+        403: {"description": "Account or seller approval does not allow this action"},
+        409: {"description": "Image reference is expired or already attached"},
+        422: {"description": "Request, catalog reference, or image reference is invalid"},
+        500: {"description": "Product could not be saved"},
+        503: {"description": "Approval or private image storage is unavailable"},
+    },
+)
 def create_product(
     body: CreateProductRequest,
     response: Response,

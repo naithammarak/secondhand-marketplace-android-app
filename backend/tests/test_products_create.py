@@ -127,6 +127,11 @@ def count(db, model):
     return db.scalar(select(func.count()).select_from(model))
 
 
+def test_openapi_documents_product_create_errors():
+    responses = app.openapi()["paths"]["/products"]["post"]["responses"]
+    assert {"201", "401", "403", "409", "422", "500", "503"} <= set(responses)
+
+
 def test_approved_seller_creates_product_and_consumes_images(db):
     seller_id, headers = create_user(db, UserRole.SELLER)
     approve(db, seller_id)
