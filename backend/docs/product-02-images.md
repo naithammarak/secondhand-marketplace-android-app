@@ -26,6 +26,21 @@ curl -X POST 'https://api.example.invalid/products/images/upload' \
 {"data":{"upload_id":801,"image_url":"https://example.supabase.co/storage/v1/object/sign/product-images/pending/example.jpg?token=EXAMPLE","url_expires_at":"2026-09-18T10:05:00Z","expires_at":"2026-09-19T10:00:00Z","mime_type":"image/jpeg","file_size":120000,"uploaded_at":"2026-09-18T10:00:00Z"}}
 ```
 
+## Live integration verification
+
+Verified against the shared development Supabase project on 2026-09-19:
+
+- `product-images` was private and limited to 5 MiB JPEG/PNG files.
+- An active Seller whose latest verification was APPROVED received HTTP 201.
+- The response contained an `upload_id` and a 300-second signed URL.
+- The corresponding `product_uploads` row was PENDING, unexpired, and not yet
+  attached to a product.
+- The private Storage object existed in `product-images`.
+
+Access tokens and signed-URL tokens are intentionally omitted from test
+evidence. The pending upload will be consumed by PRODUCT-03 or become eligible
+for cleanup after its 24-hour expiry.
+
 ## Pending-upload registry migration
 
 Revision `7f4c2e91a6b0` adds `product_uploads`, with seller ownership,
