@@ -4,15 +4,16 @@ import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect,
-  useMemo, useState } from 'react';
+  useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 
 import { parseAuthCallback } from './auth-callback';
 import { createGoogleLoginAdapter } from './google-login-adapter';
 import type { LoginAdapter, LoginResult } from './login-controller';
 import { getSupabaseClient } from './supabase-client';
-import { verifyAccountWithRefresh } from './session-account';
-import { createMeService, MeServiceError, type MeResult } from '@/services/me-service';
+import { verifyAccountWithRefresh, withTokenRefresh } from './session-account';
+import { createMeService, MeServiceError, type MeErrorKind, type MeResult,
+  type SelectableRole } from '@/services/me-service';
 
 function getAuthRedirectUri(): string | null {
   if (Platform.OS === 'web' && typeof window === 'undefined') return null;
@@ -28,7 +29,10 @@ type AuthContextValue = {
   account: MeResult | null;
   accountChecking: boolean;
   accountError: LoginResult | null;
+  roleSaving: boolean;
+  roleError: MeErrorKind | null;
   loginAdapter?: LoginAdapter;
+  selectRole(role: SelectableRole): Promise<void>;
   retryAccount(): Promise<void>;
   logout(): Promise<void>;
 };
@@ -36,12 +40,27 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const activeCallbacks = new Map<string, Promise<LoginResult>>();
 const completedCallbacks = new Set<string>();
+const callbackSessionTokens = new Set<string>();
 let authEpoch = 0;
 
-function mapMeError(error: unknown): LoginResult {
+function getMeErrorKind(error: unknown): MeErrorKind | null {
   if (error instanceof MeServiceError) return error.kind;
-  if (typeof error === 'object' && error !== null && 'kind' in error && error.kind === 'unauthorized') {
-    return 'unauthorized';
+  if (typeof error === 'object' && error !== null && 'kind' in error
+    && typeof error.kind === 'string') {
+    const kinds: MeErrorKind[] = ['unauthorized', 'forbidden', 'conflict', 'validation-error',
+      'not-configured', 'network-error', 'server-error'];
+    if (kinds.includes(error.kind as MeErrorKind)) return error.kind as MeErrorKind;
+  }
+  return null;
+}
+
+function mapMeError(error: unknown): LoginResult {
+  const kind = getMeErrorKind(error);
+  if (kind) {
+    if (['unauthorized', 'forbidden', 'network-error', 'server-error'].includes(kind)) {
+      return kind as LoginResult;
+    }
+    return 'backend-error';
   }
   return 'backend-error';
 }
@@ -55,6 +74,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [account, setAccount] = useState<MeResult | null>(null);
   const [accountChecking, setAccountChecking] = useState(false);
   const [accountError, setAccountError] = useState<LoginResult | null>(null);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState<MeErrorKind | null>(null);
+  const roleSavingRef = useRef(false);
+  const roleAbortRef = useRef<AbortController | null>(null);
+  const sessionUserIdRef = useRef<string | null>(null);
+  const currentSessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -111,10 +136,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const fingerprint = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, url);
       if (completedCallbacks.has(fingerprint)) return 'success';
       if (signal?.aborted) return 'cancelled';
-      const { data, error } = await supabase.auth.setSession({
-        access_token: parsed.accessToken,
-        refresh_token: parsed.refreshToken,
-      });
+      callbackSessionTokens.add(parsed.accessToken);
+      let sessionResult;
+      try {
+        sessionResult = await supabase.auth.setSession({
+          access_token: parsed.accessToken,
+          refresh_token: parsed.refreshToken,
+        });
+      } finally {
+        callbackSessionTokens.delete(parsed.accessToken);
+      }
+      const { data, error } = sessionResult;
       if (error || !data.session) return 'oauth-error';
       if (signal?.aborted) return 'cancelled';
       try {
@@ -136,22 +168,55 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let mounted = true;
     void supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
+      currentSessionRef.current = data.session;
+      sessionUserIdRef.current = data.session?.user.id ?? null;
       setSession(data.session);
       if (data.session) {
         try { await verifyAccount(data.session); } catch { setAccount(null); }
       }
       if (mounted) setInitializing(false);
     });
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+      const previousUserId = sessionUserIdRef.current;
+      const nextUserId = nextSession?.user.id ?? null;
+      const callbackOwnsVerification = event === 'SIGNED_IN'
+        && callbackSessionTokens.delete(nextSession?.access_token ?? '');
+      if (sessionUserIdRef.current && sessionUserIdRef.current !== nextUserId) {
+        authEpoch += 1;
+        roleAbortRef.current?.abort();
+        roleAbortRef.current = null;
+        roleSavingRef.current = false;
+        setRoleSaving(false);
+        setRoleError(null);
+        setAccount(null);
+      }
+      currentSessionRef.current = nextSession;
+      sessionUserIdRef.current = nextUserId;
       setSession(nextSession);
       if (!nextSession) {
         setAccount(null);
         setAccountError(null);
         setAccountChecking(false);
+        setRoleSaving(false);
+        setRoleError(null);
+      } else if (!callbackOwnsVerification && previousUserId !== nextUserId) {
+        const expectedEpoch = authEpoch;
+        void Promise.resolve().then(async () => {
+          try {
+            await verifyAccount(nextSession, undefined, expectedEpoch);
+          } catch {
+            if (mounted && expectedEpoch === authEpoch
+              && sessionUserIdRef.current === nextUserId) setAccount(null);
+          }
+        });
       }
     });
-    return () => { mounted = false; subscription.subscription.unsubscribe(); };
+    return () => {
+      mounted = false;
+      roleAbortRef.current?.abort();
+      subscription.subscription.unsubscribe();
+    };
   }, [supabase, verifyAccount]);
 
   useEffect(() => {
@@ -193,18 +258,89 @@ export function AuthProvider({ children }: PropsWithChildren) {
     });
   }, [processCallback, redirectTo, supabase]);
 
-  const logout = useCallback(async () => {
+  const clearSession = useCallback(async (scope: 'local' | 'global') => {
     authEpoch += 1;
+    callbackSessionTokens.clear();
+    currentSessionRef.current = null;
+    sessionUserIdRef.current = null;
+    roleAbortRef.current?.abort();
+    roleAbortRef.current = null;
+    roleSavingRef.current = false;
     try {
-      if (supabase) await supabase.auth.signOut();
+      if (supabase) await supabase.auth.signOut({ scope });
     } finally {
       setSession(null);
       setAccount(null);
       setAccountError(null);
       setAccountChecking(false);
+      setRoleSaving(false);
+      setRoleError(null);
       completedCallbacks.clear();
     }
   }, [supabase]);
+
+  const selectRole = useCallback(async (role: SelectableRole) => {
+    if (!supabase || !session || roleSavingRef.current) return;
+    const expectedEpoch = authEpoch;
+    const expectedUserId = session.user.id;
+    let latestSession = currentSessionRef.current?.user.id === expectedUserId
+      ? currentSessionRef.current
+      : session;
+    const controller = new AbortController();
+    roleAbortRef.current?.abort();
+    roleAbortRef.current = controller;
+    roleSavingRef.current = true;
+    setRoleSaving(true);
+    setRoleError(null);
+    try {
+      const result = await withTokenRefresh({
+        accessToken: latestSession.access_token,
+        request: token => meService.setRole(token, role, controller.signal),
+        refresh: async () => {
+          const { data, error } = await supabase.auth.refreshSession();
+          if (error || !data.session) return null;
+          latestSession = data.session;
+          currentSessionRef.current = data.session;
+          return { accessToken: data.session.access_token };
+        },
+      });
+      if (!controller.signal.aborted && expectedEpoch === authEpoch
+        && sessionUserIdRef.current === expectedUserId) setAccount(result);
+    } catch (error) {
+      if (controller.signal.aborted || expectedEpoch !== authEpoch
+        || sessionUserIdRef.current !== expectedUserId) return;
+      const kind = getMeErrorKind(error) ?? 'server-error';
+      if (kind === 'unauthorized') {
+        await clearSession('local').catch(() => undefined);
+        return;
+      }
+      if (kind === 'conflict') {
+        try {
+          const reloadSession = currentSessionRef.current?.user.id === expectedUserId
+            ? currentSessionRef.current
+            : latestSession;
+          const latest = await loadAccount(reloadSession, controller.signal);
+          if (!controller.signal.aborted && expectedEpoch === authEpoch
+            && sessionUserIdRef.current === expectedUserId) setAccount(latest);
+        } catch (reloadError) {
+          if (!controller.signal.aborted) {
+            setRoleError(reloadError instanceof MeServiceError ? reloadError.kind : 'server-error');
+          }
+        }
+      } else {
+        setRoleError(kind);
+      }
+    } finally {
+      if (roleAbortRef.current === controller) roleAbortRef.current = null;
+      if (!controller.signal.aborted && expectedEpoch === authEpoch
+        && sessionUserIdRef.current === expectedUserId) {
+        roleSavingRef.current = false;
+        setRoleSaving(false);
+      }
+    }
+  }, [clearSession, loadAccount, meService, session, supabase]);
+
+  const logout = useCallback(async () => clearSession('global'), [clearSession]);
 
   const retryAccount = useCallback(async () => {
     if (!session || accountChecking) return;
@@ -212,7 +348,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [accountChecking, session, verifyAccount]);
 
   return <AuthContext.Provider value={{ initializing, session, account, accountChecking,
-    accountError, loginAdapter, retryAccount, logout }}>
+    accountError, roleSaving, roleError, loginAdapter, selectRole, retryAccount, logout }}>
     {children}
   </AuthContext.Provider>;
 }

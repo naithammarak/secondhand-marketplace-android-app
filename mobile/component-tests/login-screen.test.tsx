@@ -1,0 +1,95 @@
+import { fireEvent, render, screen } from '@testing-library/react-native';
+
+import { LoginScreen } from '@/components/login-screen';
+
+const mockPush = jest.fn();
+let mockAuth: any;
+
+jest.mock('expo-router', () => ({ router: { push: mockPush } }));
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
+jest.mock('@/verification/verification-provider', () => ({
+  useVerification: () => ({ state: { record: null } }),
+}));
+
+function newUserAuth(overrides: Record<string, unknown> = {}) {
+  return {
+    initializing: false,
+    session: { user: { id: 'user-1' } },
+    account: { fullName: 'สมใจ ซื้อดี', role: null, source: 'backend' },
+    accountChecking: false,
+    accountError: null,
+    roleSaving: false,
+    roleError: null,
+    loginAdapter: undefined,
+    selectRole: jest.fn(),
+    retryAccount: jest.fn(),
+    logout: jest.fn(),
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockAuth = newUserAuth();
+});
+
+test('waits for account verification before showing first-role choices', async () => {
+  mockAuth = newUserAuth({ account: null, accountChecking: true });
+  await render(<LoginScreen />);
+
+  expect(screen.getByLabelText('กำลังตรวจสอบบัญชี')).toBeTruthy();
+  expect(screen.queryByText('ผู้ซื้อ')).toBeNull();
+});
+
+test.each([
+  ['ผู้ซื้อ', 'BUYER', 'บทบาทผู้ซื้อ'],
+  ['ผู้ขาย', 'SELLER', 'บทบาทผู้ขาย'],
+] as const)('selects %s, confirms it, and welcomes with the backend result', async (label, role, roleLabel) => {
+  const view = await render(<LoginScreen />);
+  const confirm = screen.getByRole('button', { name: 'ยืนยันบทบาท' });
+  expect(confirm.props.accessibilityState?.disabled ?? confirm.props.disabled).toBeTruthy();
+
+  await fireEvent.press(screen.getByRole('radio', { name: label }));
+  await fireEvent.press(screen.getByRole('button', { name: 'ยืนยันบทบาท' }));
+  expect(mockAuth.selectRole).toHaveBeenCalledWith(role);
+
+  mockAuth.account = { fullName: 'สมใจ ซื้อดี', role, source: 'backend' };
+  await view.rerender(<LoginScreen />);
+  expect(screen.getByText('ยินดีต้อนรับ สมใจ ซื้อดี')).toBeTruthy();
+  expect(screen.getByText(roleLabel)).toBeTruthy();
+  expect(screen.queryByText('เลือกบทบาทของคุณ')).toBeNull();
+});
+
+test('keeps the role page actionable after a save failure', async () => {
+  mockAuth = newUserAuth({ roleError: 'network-error' });
+  await render(<LoginScreen />);
+
+  await fireEvent.press(screen.getByRole('radio', { name: 'ผู้ซื้อ' }));
+  expect(screen.getByText('เชื่อมต่อเพื่อบันทึกบทบาทไม่ได้ กรุณาลองใหม่')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('button', { name: 'ลองบันทึกอีกครั้ง' }));
+  expect(mockAuth.selectRole).toHaveBeenCalledWith('BUYER');
+});
+
+test('an existing admin skips role selection and can log out', async () => {
+  mockAuth = newUserAuth({
+    account: { fullName: null, role: 'ADMIN', source: 'backend' },
+  });
+  await render(<LoginScreen />);
+
+  expect(screen.getByText('ยินดีต้อนรับ')).toBeTruthy();
+  expect(screen.getByText('บทบาทผู้ดูแลระบบ')).toBeTruthy();
+  expect(screen.queryByText('เลือกบทบาทของคุณ')).toBeNull();
+  expect(screen.getByText('ตรวจคำขอยืนยันตัวตน')).toBeTruthy();
+  await fireEvent.press(screen.getByText('ออกจากระบบ'));
+  expect(mockAuth.logout).toHaveBeenCalledTimes(1);
+});
+
+test('mock account cannot report a successful role save', async () => {
+  mockAuth = newUserAuth({
+    account: { fullName: null, role: null, source: 'mock' },
+  });
+  await render(<LoginScreen />);
+
+  expect(screen.getByText('กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ยืนยันบทบาท' }).props.accessibilityState.disabled).toBeTruthy();
+});

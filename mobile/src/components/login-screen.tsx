@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image ,ImageBackground} from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createLoginController, type LoginAdapter, type LoginState } from '@/auth/login-controller';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
 import { router } from 'expo-router';
 import type { VerificationStatus } from '@/services/verification-service';
 import { useVerification } from '@/verification/verification-provider';
+import type { MeErrorKind, SelectableRole } from '@/services/me-service';
 const googleLogo = require("@/assets/images/tabIcons/google-logo.jpg");
 
 const messages: Record<LoginState, string> = {
@@ -32,6 +33,58 @@ const verificationEntryLabels: Record<VerificationStatus, string> = {
   APPROVED: 'อนุมัติแล้ว',
   REJECTED: 'ถูกปฏิเสธ',
 };
+
+const roleErrorMessages: Partial<Record<MeErrorKind, string>> = {
+  unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+  forbidden: 'บัญชีนี้ไม่มีสิทธิ์เลือกบทบาท',
+  'validation-error': 'บทบาทที่เลือกไม่ถูกต้อง กรุณาเลือกใหม่',
+  'not-configured': 'ยังไม่ได้เชื่อมต่อ Backend จึงยังบันทึกบทบาทไม่ได้',
+  'network-error': 'เชื่อมต่อเพื่อบันทึกบทบาทไม่ได้ กรุณาลองใหม่',
+  'server-error': 'บันทึกบทบาทไม่สำเร็จ กรุณาลองใหม่ภายหลัง',
+};
+
+export function RoleSelection({ selectedRole, saving, error, backendReady = true, onSelect, onConfirm }: {
+  selectedRole: SelectableRole | null;
+  saving: boolean;
+  error: MeErrorKind | null;
+  backendReady?: boolean;
+  onSelect(role: SelectableRole): void;
+  onConfirm(): void;
+}) {
+  const disabled = saving || !backendReady;
+  return (
+    <View style={styles.roleSection}>
+      <ThemedText type="subtitle" style={styles.statusTitle}>เลือกบทบาทของคุณ</ThemedText>
+      <ThemedText style={styles.roleWarning}>เมื่อยืนยันแล้ว คุณจะไม่สามารถเปลี่ยนบทบาทเองได้</ThemedText>
+      <View style={styles.roleOptions}>
+        {([['BUYER', 'ผู้ซื้อ'], ['SELLER', 'ผู้ขาย']] as const).map(([role, label]) => (
+          <TouchableOpacity
+            key={role}
+            style={[styles.roleOption, selectedRole === role && styles.roleOptionSelected]}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: selectedRole === role, disabled }}
+            disabled={disabled}
+            onPress={() => onSelect(role)}
+          >
+            <Text style={styles.roleOptionText}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {saving && <ActivityIndicator accessibilityLabel="กำลังบันทึกบทบาท" />}
+      {error && <ThemedText accessibilityLiveRegion="polite">
+        {roleErrorMessages[error] ?? 'บันทึกบทบาทไม่สำเร็จ กรุณาลองใหม่'}
+      </ThemedText>}
+      <TouchableOpacity
+        style={[styles.button, (!selectedRole || disabled) && styles.buttonDisabled]}
+        accessibilityRole="button"
+        disabled={!selectedRole || disabled}
+        onPress={onConfirm}
+      >
+        <Text style={styles.buttonText}>{error ? 'ลองบันทึกอีกครั้ง' : 'ยืนยันบทบาท'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 /** ทางเข้าหน้าตรวจคำขอของผู้ดูแล แสดงเฉพาะบัญชีที่ backend บอกว่าเป็น ADMIN */
 function AdminReviewEntry() {
@@ -104,6 +157,7 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   const adapter = adapterOverride ?? auth.loginAdapter;
   const [controller] = useState(() => createLoginController(adapter));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const [roleChoice, setRoleChoice] = useState<{ userId: string; role: SelectableRole } | null>(null);
   const hadSession = useRef(false);
   useEffect(() => () => controller.cancel(), [controller]);
   useEffect(() => {
@@ -115,17 +169,22 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
       controller.reset();
     }
   }, [auth.session, controller]);
+  const selectedRole = auth.account?.role === null && roleChoice && roleChoice.userId === auth.session?.user.id
+    ? roleChoice.role
+    : null;
   const busy = state === 'waiting' || state === 'processing';
 
   if (auth.initializing) return (
     <ThemedView style={styles.container}><ActivityIndicator accessibilityLabel="กำลังกู้คืนเซสชัน" /></ThemedView>
   );
 
-  if (auth.session && (auth.account || auth.accountChecking || auth.accountError)) return (
+  if (auth.session) return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.content}>
         <ThemedText type="subtitle" style={styles.statusTitle}>
-          {auth.account ? 'เข้าสู่ระบบแล้ว' : 'กำลังตรวจสอบบัญชี'}
+          {auth.account?.role
+            ? (auth.account.fullName ? `ยินดีต้อนรับ ${auth.account.fullName}` : 'ยินดีต้อนรับ')
+            : 'กำลังตรวจสอบบัญชี'}
         </ThemedText>
         {auth.accountChecking && <ActivityIndicator accessibilityLabel="กำลังตรวจสอบบัญชี" />}
         {auth.account && <ThemedText>{roleMessage(auth.account.role)}</ThemedText>}
@@ -134,6 +193,19 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         </ThemedText>}
         {auth.account?.source === 'mock' && (
           <ThemedText type="small">กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม</ThemedText>
+        )}
+
+        {auth.account && auth.account.role === null && !auth.accountChecking && !auth.accountError && (
+          <RoleSelection
+            selectedRole={selectedRole}
+            saving={auth.roleSaving}
+            error={auth.roleError}
+            backendReady={auth.account.source === 'backend'}
+            onSelect={role => {
+              if (auth.session) setRoleChoice({ userId: auth.session.user.id, role });
+            }}
+            onConfirm={() => { if (selectedRole) void auth.selectRole(selectedRole); }}
+          />
         )}
 
         {auth.account?.role === 'SELLER' && <SellerVerificationEntry />}
@@ -228,6 +300,13 @@ const styles = StyleSheet.create({
   buttonDisabled: { backgroundColor: "#999" },
   icon: { width: 30, height: 30, resizeMode: "contain" },
   statusTitle: { alignSelf: 'stretch', flexShrink: 1, textAlign: 'center' },
+  roleSection: { width: '100%', alignItems: 'center', gap: Spacing.two, marginTop: Spacing.four },
+  roleWarning: { textAlign: 'center' },
+  roleOptions: { flexDirection: 'row', gap: Spacing.two },
+  roleOption: { minWidth: 110, padding: Spacing.three, borderWidth: 2, borderColor: '#778',
+    borderRadius: 10, alignItems: 'center', backgroundColor: '#fff' },
+  roleOptionSelected: { borderColor: '#243a73', backgroundColor: '#dce9ff' },
+  roleOptionText: { color: '#111', fontSize: 16, fontWeight: '600' },
   logo: { marginTop:70,width: 100, height: 100, borderRadius:20},
   circle: { width:80, height:80, borderRadius:40, backgroundColor:"#ffff"}
 });
