@@ -157,7 +157,8 @@ def count(db, model):
 
 def test_openapi_documents_update_and_cancel_errors():
     paths = app.openapi()["paths"]
-    patch_responses = paths["/products/{product_id}"]["patch"]["responses"]
+    patch_operation = paths["/products/{product_id}"]["patch"]
+    patch_responses = patch_operation["responses"]
     cancel_responses = paths["/products/{product_id}/cancel"]["post"]["responses"]
     assert {"200", "401", "403", "404", "409", "422", "500", "503"} <= set(
         patch_responses
@@ -165,6 +166,10 @@ def test_openapi_documents_update_and_cancel_errors():
     assert {"200", "401", "403", "404", "409", "422", "500", "503"} <= set(
         cancel_responses
     )
+    media = patch_operation["requestBody"]["content"]["application/json"]
+    assert "images" in media["schema"]["properties"]
+    assert {"edit_fields", "reorder_images", "replace_image"} == set(media["examples"])
+    assert {"id", "user_id", "status"}.isdisjoint(media["schema"]["properties"])
 
 
 def test_owner_updates_fields_and_receives_full_product(db):

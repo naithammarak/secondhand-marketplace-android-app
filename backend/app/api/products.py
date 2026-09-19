@@ -386,6 +386,104 @@ def create_product(
 @router.patch(
     "/products/{product_id}",
     summary="Update an available product",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "additionalProperties": False,
+                        "description": (
+                            "ส่งเฉพาะฟิลด์ที่ต้องการแก้ไข; images จะแทนที่รูปทั้งชุด"
+                        ),
+                        "properties": {
+                            "product_name": {"type": "string", "minLength": 1, "maxLength": 255},
+                            "description": {"type": "string", "minLength": 1, "maxLength": 1000},
+                            "price": {
+                                "type": "string",
+                                "pattern": r"^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$",
+                                "example": "250.00",
+                            },
+                            "category_id": {"type": "integer", "minimum": 1},
+                            "brand_id": {"type": "integer", "minimum": 1},
+                            "size": {"type": "string", "minLength": 1, "maxLength": 100},
+                            "condition": {
+                                "type": "string",
+                                "enum": ["NEW", "LIKE_NEW", "GOOD", "FAIR"],
+                            },
+                            "sale_type": {"type": "string", "enum": ["FIXED_PRICE"]},
+                            "images": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 10,
+                                "description": (
+                                    "รูปทั้งหมดหลังแก้ไข เรียงจาก MAIN ไป GALLERY; "
+                                    "แต่ละรายการส่ง image_id หรือ upload_id เพียงค่าเดียว"
+                                ),
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": False,
+                                            "required": ["image_id"],
+                                            "properties": {
+                                                "image_id": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                }
+                                            },
+                                        },
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": False,
+                                            "required": ["upload_id"],
+                                            "properties": {
+                                                "upload_id": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                }
+                                            },
+                                        },
+                                    ]
+                                },
+                            },
+                        },
+                    },
+                    "examples": {
+                        "edit_fields": {
+                            "summary": "แก้ชื่อและราคา",
+                            "value": {
+                                "product_name": "ชื่อสินค้าใหม่",
+                                "price": "250.00",
+                            },
+                        },
+                        "reorder_images": {
+                            "summary": "จัดลำดับรูปเดิมใหม่",
+                            "value": {
+                                "images": [
+                                    {"image_id": 4},
+                                    {"image_id": 2},
+                                    {"image_id": 3},
+                                ]
+                            },
+                        },
+                        "replace_image": {
+                            "summary": "เพิ่มรูปใหม่และเก็บรูปเดิมบางรูป",
+                            "value": {
+                                "images": [
+                                    {"upload_id": 10},
+                                    {"image_id": 2},
+                                    {"image_id": 3},
+                                ]
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    },
     responses={
         401: {"description": "Authentication required"},
         403: {"description": "Account or seller approval does not allow this action"},
