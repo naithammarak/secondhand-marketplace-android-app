@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app import database
@@ -41,6 +42,7 @@ ERROR_MESSAGES = {
     "IMAGE_TOO_LARGE": "รูปต้องมีขนาดไม่เกิน 5 MiB",
     "UPLOAD_QUOTA_EXCEEDED": "มีรูปที่รอใช้งานครบจำนวนแล้ว",
     "STORAGE_UNAVAILABLE": "ไม่สามารถจัดเก็บรูปได้ในขณะนี้",
+    "UPLOAD_SCHEMA_UNAVAILABLE": "ระบบอัปโหลดรูปยังไม่พร้อมใช้งาน",
     "UPLOAD_SAVE_FAILED": "ไม่สามารถบันทึกรูปได้ในขณะนี้",
 }
 
@@ -179,18 +181,27 @@ def upload_pending_product_image(
                 raise upload_error(422, "INVALID_IMAGE_DIMENSIONS") from exc
             raise upload_error(422, "INVALID_IMAGE") from exc
 
-        seller = db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+        seller = db.scalar(
+            select(User)
+            .where(User.id == current_user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         if seller is None:
             raise upload_error(403, "ACCOUNT_NOT_REGISTERED")
         require_approved_seller(current_user=seller, db=db)
         now = datetime.now(timezone.utc)
-        pending_count = db.scalar(
-            select(func.count(ProductUpload.id)).where(
-                ProductUpload.user_id == seller.id,
-                ProductUpload.state == "PENDING",
-                ProductUpload.expires_at > now,
+        try:
+            pending_count = db.scalar(
+                select(func.count(ProductUpload.id)).where(
+                    ProductUpload.user_id == seller.id,
+                    ProductUpload.state == "PENDING",
+                    ProductUpload.expires_at > now,
+                )
             )
-        )
+        except DBAPIError as exc:
+            logger.exception("PRODUCT-02 upload registry query failed")
+            raise upload_error(503, "UPLOAD_SCHEMA_UNAVAILABLE") from exc
         if pending_count >= MAX_PENDING_UPLOADS:
             raise upload_error(409, "UPLOAD_QUOTA_EXCEEDED")
 

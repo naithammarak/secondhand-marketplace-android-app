@@ -10,7 +10,8 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -21,7 +22,7 @@ from app.models.brand import Brand
 from app.models.category import Category
 from app.models.product import Product
 from app.models.product_upload import ProductUpload
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 from app.models.verification import Verification
 
 
@@ -140,6 +141,47 @@ def test_unapproved_seller_cannot_upload(pending_client):
     response = post_png(client)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "SELLER_NOT_APPROVED"
+    assert calls["upload"] == []
+
+
+def test_seller_status_is_refreshed_after_concurrent_suspension(pending_client):
+    client, db, seller, calls = pending_client
+    assert seller.status == UserStatus.ACTIVE
+
+    with Session(db.get_bind()) as other_db:
+        other_db.execute(
+            update(User).where(User.id == seller.id).values(status=UserStatus.CLOSED)
+        )
+        other_db.commit()
+
+    # The dependency still holds the previously loaded ACTIVE object. The locked
+    # query must refresh it from the database before checking seller access.
+    assert seller.status == UserStatus.ACTIVE
+    response = post_png(client)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ACCOUNT_INACTIVE"
+    assert calls["upload"] == []
+
+
+def test_missing_upload_registry_schema_returns_503(pending_client, monkeypatch):
+    client, db, _, calls = pending_client
+    original_scalar = db.scalar
+
+    def scalar_with_missing_registry(statement, *args, **kwargs):
+        if "product_uploads" in str(statement):
+            raise OperationalError(
+                "SELECT count(*) FROM product_uploads",
+                {},
+                Exception("no such table: product_uploads"),
+            )
+        return original_scalar(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db, "scalar", scalar_with_missing_registry)
+    response = post_png(client)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "UPLOAD_SCHEMA_UNAVAILABLE"
     assert calls["upload"] == []
 
 

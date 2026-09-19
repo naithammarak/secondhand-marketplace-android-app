@@ -14,6 +14,11 @@ the new schema has not been applied. Switching the shared bucket and applying
 shared migrations are separate rollout steps. The old product-ID upload route
 is no longer registered in the application.
 
+If the `product_uploads` registry is unavailable because its migration has not
+been applied, the endpoint returns HTTP 503 with
+`UPLOAD_SCHEMA_UNAVAILABLE`. This distinguishes an incomplete deployment from
+an ordinary upload save failure.
+
 ## New request and response
 
 ```sh
