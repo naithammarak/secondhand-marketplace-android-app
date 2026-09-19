@@ -6,17 +6,18 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.api import product_images
 from app import database
-from app.api.auth import get_current_user
 from app.database import get_db
-from app.main import app
+from app.main import app as main_app
 from app.models.product import Product
 from app.models.user import UserRole, UserStatus
+from app.services.product_seller_access import require_approved_seller
 
 
 def make_image(image_format):
@@ -120,6 +121,8 @@ class FakeDb:
 
 @pytest.fixture
 def upload_client(monkeypatch):
+    legacy_app = FastAPI()
+    legacy_app.include_router(product_images.router)
     store = FakeStore()
     user = SimpleNamespace(id=7, role=UserRole.SELLER, status=UserStatus.ACTIVE)
     calls = {"upload": [], "delete": [], "objects": set()}
@@ -135,12 +138,12 @@ def upload_client(monkeypatch):
 
     monkeypatch.setattr(product_images, "upload_object", fake_upload)
     monkeypatch.setattr(product_images, "delete_object", fake_delete)
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_db] = lambda: FakeDb(store)
+    legacy_app.dependency_overrides[require_approved_seller] = lambda: user
+    legacy_app.dependency_overrides[get_db] = lambda: FakeDb(store)
     try:
-        yield TestClient(app), store, user, calls
+        yield TestClient(legacy_app), store, user, calls
     finally:
-        app.dependency_overrides.clear()
+        legacy_app.dependency_overrides.clear()
 
 
 def post_image(client, content=PNG, filename="item.png", content_type="image/png"):
@@ -166,7 +169,11 @@ def test_upload_saves_decoded_image_metadata(
     assert response.json()["image_id"] == 1
     assert response.json()["product_id"] == 1
     assert response.json()["image_url"].startswith("https://example.supabase.co/")
-    assert store.images[0].file_size == len(content)
+    stored_bytes = calls["upload"][0][1]
+    assert store.images[0].file_size == len(stored_bytes)
+    with Image.open(BytesIO(stored_bytes)) as stored_image:
+        stored_image.load()
+        assert stored_image.format == ("PNG" if expected_type == "image/png" else "JPEG")
     assert store.images[0].photo_type == expected_type
     assert calls["upload"][0][0].startswith("1/")
     assert calls["upload"][0][0].endswith(extension)
@@ -226,6 +233,44 @@ def test_invalid_images_never_reach_storage(
     assert post_image(client, content, filename, content_type).status_code == expected_status
     assert calls["upload"] == []
     assert store.images == []
+
+
+def test_image_dimension_limit_is_checked_before_storage(upload_client):
+    client, store, _, calls = upload_client
+    output = BytesIO()
+    Image.new("RGB", (10_001, 1), "red").save(output, format="PNG")
+    response = post_image(client, output.getvalue())
+    assert response.status_code == 422
+    assert calls["upload"] == []
+    assert store.images == []
+
+
+def test_animated_png_is_rejected(upload_client):
+    client, store, _, calls = upload_client
+    output = BytesIO()
+    frames = [Image.new("RGB", (4, 4), color) for color in ("red", "blue")]
+    frames[0].save(output, format="PNG", save_all=True, append_images=frames[1:])
+    response = post_image(client, output.getvalue())
+    assert response.status_code == 415
+    assert calls["upload"] == []
+    assert store.images == []
+
+
+def test_jpeg_exif_is_removed_before_storage(upload_client):
+    client, store, _, calls = upload_client
+    output = BytesIO()
+    exif = Image.Exif()
+    exif[274] = 6
+    exif[270] = "private camera metadata"
+    Image.new("RGB", (4, 6), "red").save(output, format="JPEG", exif=exif)
+    response = post_image(client, output.getvalue(), "item.jpg", "image/jpeg")
+    assert response.status_code == 201
+    stored_bytes = calls["upload"][0][1]
+    assert b"private camera metadata" not in stored_bytes
+    with Image.open(BytesIO(stored_bytes)) as stored_image:
+        assert stored_image.size == (6, 4)
+        assert not stored_image.getexif()
+    assert store.images[0].file_size == len(stored_bytes)
 
 
 def test_other_seller_cannot_upload(upload_client):
@@ -433,10 +478,9 @@ def test_storage_delete_checks_http_status(monkeypatch):
 
 
 def test_upload_endpoint_is_in_openapi(upload_client):
-    client, _, _, _ = upload_client
-    paths = client.get("/openapi.json").json()["paths"]
-    assert "/products/{product_id}/images" in paths
-    assert "/products/{product_id}/images/preview" not in paths
+    paths = main_app.openapi()["paths"]
+    assert "/products/images/upload" in paths
+    assert "/products/{product_id}/images" not in paths
 
 
 def test_storage_headers_use_the_correct_key_format():

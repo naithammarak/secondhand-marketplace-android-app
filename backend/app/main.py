@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin_verifications import router as admin_verifications_router
 from app.api.auth import router as auth_router
-from app.api.product_images import router as product_images_router
+from app.api.product_uploads import router as product_uploads_router
 from app.api.orders import router as orders_router
 from app.api.verifications import router as verifications_router
 
@@ -26,8 +26,8 @@ app.add_middleware(
 
 # Register API routers.
 app.include_router(auth_router)
-# PRODUCT-02: เปิด API อัปโหลดรูปสินค้าใน /docs
-app.include_router(product_images_router)
+# PRODUCT-02: เปิด API อัปโหลดรูปก่อนสร้างสินค้าใน /docs
+app.include_router(product_uploads_router)
 app.include_router(verifications_router)
 app.include_router(admin_verifications_router)
 app.include_router(orders_router)

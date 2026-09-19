@@ -1,97 +1,111 @@
 # PRODUCT-02: Upload product images
 
-`POST /products/{product_id}/images` accepts one multipart field named `file`.
-The caller must be an active seller who owns the product. JPEG and PNG files
-must match their MIME type and extension, decode successfully, and be at most
-5 MiB each. Images over 25 million pixels are also rejected with HTTP 415
-to limit decoder resource use; **this pixel limit is pending team confirmation**.
-A product can have at most 10 images. The tenth succeeds; an
-eleventh returns HTTP 409. PostgreSQL locks the product row while checking
-the count and saving the new row, so concurrent requests through this API
-cannot both claim the last slot.
+The registered API on this branch is `POST /products/images/upload`. It accepts
+exactly one multipart `file` and no `product_id`. An approved active Seller
+receives a PENDING `upload_id`, a 300-second signed preview URL, and a 24-hour
+expiry. The object key stays on the server. A Seller can have at most 16 active
+pending uploads; a product must eventually bind 1–10 JPEG/PNG images.
 
-## Example
+Lead confirmed that approval uses the newest `verifications` row ordered by
+`created_at DESC, id DESC`. The backend rechecks this before uploading.
+
+The endpoint fails closed with 503 while `product-images` remains public or
+the new schema has not been applied. Switching the shared bucket and applying
+shared migrations are separate rollout steps. The old product-ID upload route
+is no longer registered in the application.
+
+## New request and response
 
 ```sh
-curl -X POST 'https://api.example.invalid/products/123/images' \
+curl -X POST 'https://api.example.invalid/products/images/upload' \
   -H 'Authorization: Bearer <SUPABASE_ACCESS_TOKEN>' \
   -F 'file=@item.jpg;type=image/jpeg'
 ```
 
 ```json
-{
-  "product_id": 123,
-  "image_id": 456,
-  "image_url": "https://PROJECT_REF.supabase.co/storage/v1/object/public/product-images/123/EXAMPLE.jpg",
-  "file_size": 248193,
-  "photo_type": "image/jpeg",
-  "uploaded_at": "2026-09-18T10:00:00Z"
-}
+{"data":{"upload_id":801,"image_url":"https://example.supabase.co/storage/v1/object/sign/product-images/pending/example.jpg?token=EXAMPLE","url_expires_at":"2026-09-18T10:05:00Z","expires_at":"2026-09-19T10:00:00Z","mime_type":"image/jpeg","file_size":120000,"uploaded_at":"2026-09-18T10:00:00Z"}}
 ```
 
-Success is HTTP 201. Common failures: 400 empty file, 403 wrong role or
-owner, 404 missing product, 409 already 10 images, 413 over 5 MiB,
-415 unsupported or unreadable image, 502 Storage upload failure, and
-503 missing Storage configuration. Server errors use a generic response
-without credentials or object paths.
+## Live integration verification
 
-## Supabase Storage setup
+Verified against the shared development Supabase project on 2026-09-19:
 
-Create a **public** bucket named `product-images` in the same Supabase
-project as the database. Public reads are needed because the API returns a
-public object URL. Set `SUPABASE_URL` and either `SUPABASE_SECRET_KEY`
-(preferred) or `SUPABASE_SERVICE_ROLE_KEY` in the backend environment.
-Keep the key server-side and out of Git. Use `backend/.env.example` as a
-placeholder template. Run the existing Alembic migrations before using the
-endpoint. The backend uses the privileged key for uploads and deletes; clients
-must call the API rather than write directly to this bucket.
-See Supabase's [bucket access guide](https://supabase.com/docs/guides/storage/buckets/fundamentals)
-and [API key guide](https://supabase.com/docs/guides/getting-started/api-keys).
+- `product-images` was private and limited to 5 MiB JPEG/PNG files.
+- An active Seller whose latest verification was APPROVED received HTTP 201.
+- The response contained an `upload_id` and a 300-second signed URL.
+- The corresponding `product_uploads` row was PENDING, unexpired, and not yet
+  attached to a product.
+- The private Storage object existed in `product-images`.
 
-## Find and remove orphaned objects
+Access tokens and signed-URL tokens are intentionally omitted from test
+evidence. The pending upload will be consumed by PRODUCT-03 or become eligible
+for cleanup after its 24-hour expiry.
 
-If Storage times out after receiving an upload, or the DB fails before
-`commit()`, the API attempts to delete the object and logs
-`PRODUCT-02 orphan cleanup failed` with its bucket and generated path when
-that delete fails. If `commit()` raises, its result may be uncertain. The
-API checks the image row through a new DB session. A confirmed row returns
-HTTP 201 and keeps its file. If the row cannot be confirmed, the API returns
-HTTP 500, keeps the file, and logs `PRODUCT-02 commit outcome uncertain`
-with the path for manual reconciliation. It never deletes an object after
-an uncertain commit response.
+## Pending-upload registry migration
 
-An operator can run this **read-only** query in the Supabase SQL editor.
-The one-hour delay excludes uploads still in flight. Review each result
-against the product record before removal.
+Revision `7f4c2e91a6b0` adds `product_uploads`, with seller ownership,
+server-generated private object key, MIME type, file size, upload/expiry time,
+PENDING/ATTACHED/DETACHED state, and optional attached product. It has foreign
+keys, unique object keys, constraints, a seller/state/expiry index, and RLS
+without Mobile policies. Revision `54ca8e0731bd` adds nullable `upload_id`
+and `sort_order` to existing product images, preserving every existing row and
+public URL. These revisions descend from `c6b19e0d4f2a`, so they can be
+applied without pulling in Verify/Order. Separate revision `9a18d37ce520`
+joins the two branches. The configured database was read-only checked at
+`c6b19e0d4f2a`; `alembic upgrade head` would also apply unrelated
+Verify/Order migrations. PR #71 may add another verification revision, so
+re-check/reconcile Alembic heads after merging it.
 
-```sql
-SELECT o.name AS object_path, o.created_at
-FROM storage.objects AS o
-WHERE o.bucket_id = 'product-images'
-  AND o.created_at < now() - interval '1 hour'
-  AND o.name ~ '^[0-9]+/[0-9a-f]{32}\.(jpg|png)$'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM public.product_images AS pi
-    WHERE pi.image_url LIKE
-      '%/storage/v1/object/public/product-images/' || o.name
-  )
-ORDER BY o.created_at;
+Only run `alembic upgrade head` against an isolated test database until the
+whole migration chain is reviewed. No shared database has been migrated. A
+downgrade drops only the new table, but any pending upload metadata in it
+would be lost; reconcile its Storage objects before downgrading a database
+that has accepted uploads. A read-only check on 2026-09-18 found zero
+`product_images` rows, zero objects in `product-images`, and a public bucket.
+Repeat that check immediately before any privacy change. If data has appeared,
+copy and verify every referenced object before changing bucket visibility;
+never delete the original until references and signed reads are verified.
+
+After applying the schema and deploying the new upload endpoint, review
+pending uploads and orphaned `pending/` objects with:
+
+```sh
+python -m scripts.cleanup_product_uploads
 ```
 
-Delete confirmed orphans through the Supabase Storage dashboard, or the
-Storage remove API using the exact bucket and path. Do **not** delete rows
-from `storage.objects` directly; that would leave the actual object behind.
-Run the query after a Storage or database incident and when reviewing cleanup
-error logs. A commit whose acknowledgement is lost may need a separate
-manual check of both the product image row and Storage object before action.
-The [Storage schema guide](https://supabase.com/docs/guides/storage/schema/design)
-explains why direct metadata deletion is unsafe.
+The default is read-only and reports counts. `--apply` deletes only expired
+PENDING or DETACHED registry objects that no product image references, plus
+unreferenced `pending/` objects older than 24 hours. The command rechecks
+references before each delete and removes objects through the Storage API;
+it does not delete `storage.objects` rows with SQL. Use `--limit` to bound one
+run. Keep the backend secret key on the server only.
 
-## Decisions pending from other work
+## Storage and legacy-image rollout
 
-PRODUCT-00 must define which product states permit image uploads, the minimum
-number of images before publication, and the product creation API. VERIFY-03
-must define which status or source proves seller approval. This endpoint
-continues the existing active-seller and ownership checks until those
-decisions are made.
+The `product-images` bucket must be **private** before this endpoint accepts
+uploads. Set `SUPABASE_URL` and a server-only `SUPABASE_SECRET_KEY` or
+`SUPABASE_SERVICE_ROLE_KEY`; do not expose either key to Mobile. The backend
+checks bucket visibility, writes the object, and returns a signed URL valid
+for 300 seconds. The database stores the private object key. Existing public
+URLs are retained as legacy data until a separate migration copies or moves
+each object, checks its checksum and reference, and verifies signed reads.
+Do not flip a populated bucket to private until existing product images have
+a working signed-read path. See the [Supabase bucket guide](https://supabase.com/docs/guides/storage/buckets/fundamentals).
+
+The former `POST /products/{product_id}/images` route is not registered.
+Its rows and URLs are preserved by the new migrations. A read-only legacy
+object audit can compare `storage.objects` with `product_images` before
+changing access or removing files. Remove confirmed orphans through the
+Storage API or dashboard, never by deleting `storage.objects` rows in SQL.
+See the [Storage schema guide](https://supabase.com/docs/guides/storage/schema/design).
+
+## Remaining integration
+
+PRODUCT-03 must call the binding helper in the same database transaction as
+product creation. It checks ownership, PENDING state, expiry and the 1–10
+limit before attaching images. PRODUCT-04 must make the same check when
+replacing images on an owned, undeleted AVAILABLE product. A read endpoint
+must create a fresh 300-second signed URL after checking read permission.
+These create/edit/read endpoints are outside PRODUCT-02 and are not yet
+available on this branch. The maximum decoded image size of 25 million
+pixels is a protective limit awaiting Lead confirmation.
