@@ -42,13 +42,21 @@ MIN_ACCOUNT_DIGITS = 10
 MAX_ACCOUNT_DIGITS = 15
 
 
-def require_seller(current_user: User = Depends(get_current_user)) -> User:
+def require_active_seller(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != UserRole.SELLER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Seller role is required for verification requests",
         )
+    if current_user.status != UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not active",
+        )
     return current_user
+
+
+require_seller = require_active_seller
 
 
 def validation_error(fields: dict) -> HTTPException:
@@ -104,7 +112,7 @@ def to_response(record: Verification | None) -> VerificationResponse:
 
 @router.get("/me", response_model=VerificationResponse)
 def get_my_verification(
-    current_user: User = Depends(require_seller),
+    current_user: User = Depends(require_active_seller),
     db: Session = Depends(get_db),
 ):
     return to_response(latest_verification(db, current_user.id))
@@ -116,16 +124,10 @@ def submit_verification(
     bank_account_name: str | None = Form(default=None),
     bank_account_number: str | None = Form(default=None),
     id_card_image: UploadFile | None = File(default=None),
-    current_user: User = Depends(require_seller),
+    current_user: User = Depends(require_active_seller),
     db: Session = Depends(get_db),
     storage=Depends(id_card_storage_dependency),
 ):
-    if current_user.status != UserStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is not active",
-        )
-
     existing = latest_verification(db, current_user.id)
     if existing is not None and existing.verification_status in {
         VerificationStatus.PENDING.value,

@@ -320,9 +320,25 @@ def test_storage_failure_does_not_create_a_request():
         db.close()
 
 
-def test_suspended_seller_cannot_submit(storage):
+def test_suspended_seller_cannot_read_or_submit(storage):
     _, headers = create_user(status=UserStatus.SUSPENDED)
-    assert submit(headers).status_code == 403
+    get_res = client.get("/verifications/me", headers=headers)
+    assert get_res.status_code == 403
+    assert get_res.json()["detail"] == "Account is not active"
+    post_res = submit(headers)
+    assert post_res.status_code == 403
+    assert post_res.json()["detail"] == "Account is not active"
+    assert storage.uploads == []
+
+
+def test_closed_seller_cannot_read_or_submit(storage):
+    _, headers = create_user(status=UserStatus.CLOSED)
+    get_res = client.get("/verifications/me", headers=headers)
+    assert get_res.status_code == 403
+    assert get_res.json()["detail"] == "Account is not active"
+    post_res = submit(headers)
+    assert post_res.status_code == 403
+    assert post_res.json()["detail"] == "Account is not active"
     assert storage.uploads == []
 
 
