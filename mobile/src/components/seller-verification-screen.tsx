@@ -70,21 +70,53 @@ export function SellerVerificationScreen() {
   const canSubmit = record ? record.canSubmit : true;
   const busy = state.submitting;
 
+  const isSeller = auth.account?.role === 'SELLER';
+
   useEffect(() => {
     // owner ถูกตั้งหลัง effect ของหน้าจอนี้รอบแรก จึงต้องโหลดอีกครั้งเมื่อผูกบัญชีแล้ว
-    if (!state.owner || state.loading || state.refreshing) return;
+    if (!isSeller || !state.owner || state.loading || state.refreshing) return;
     if (!state.record && !state.loadError) void store.load();
-  }, [state.loadError, state.loading, state.owner, state.record, state.refreshing, store]);
+  }, [isSeller, state.loadError, state.loading, state.owner, state.record, state.refreshing, store]);
 
   if (!auth.session) return <Redirect href="/" />;
 
-  if (auth.account && auth.account.role !== 'SELLER') {
+  // ระหว่างที่ยังไม่รู้บทบาทจาก backend ต้องไม่แสดงฟอร์มหรือข้อมูลไปก่อน
+  if (!auth.account) {
+    return (
+      <ThemedView style={styles.screen}>
+        <SafeAreaView style={[styles.content, styles.center]}>
+          {auth.accountError ? (
+            <>
+              <ThemedText accessibilityLiveRegion="polite">ตรวจสอบสิทธิ์บัญชีไม่สำเร็จ</ThemedText>
+              <Pressable
+                style={[styles.secondaryButton, auth.accountChecking && styles.buttonDisabled]}
+                disabled={auth.accountChecking}
+                accessibilityRole="button"
+                onPress={() => { void auth.retryAccount(); }}>
+                <ThemedText type="smallBold">ลองใหม่อีกครั้ง</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <ActivityIndicator accessibilityLabel="กำลังตรวจสอบสิทธิ์บัญชี" />
+              <ThemedText type="small">กำลังตรวจสอบสิทธิ์บัญชี</ThemedText>
+            </>
+          )}
+          <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => router.back()}>
+            <ThemedText type="smallBold">กลับหน้าหลัก</ThemedText>
+          </Pressable>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  if (!isSeller) {
     return (
       <ThemedView style={styles.screen}>
         <SafeAreaView style={styles.content}>
           <ThemedText type="subtitle">ยืนยันตัวตนผู้ขาย</ThemedText>
           <ThemedText>หน้านี้สำหรับบัญชีผู้ขายเท่านั้น</ThemedText>
-          <Pressable style={styles.secondaryButton} onPress={() => router.back()}>
+          <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => router.back()}>
             <ThemedText type="smallBold">กลับ</ThemedText>
           </Pressable>
         </SafeAreaView>
