@@ -104,6 +104,30 @@ test('saves a role and refreshes an expired token only once', async () => {
     .toEqual(['Bearer old-token', 'Bearer fresh-token']);
 });
 
+test.each([
+  ['refresh returns an error', { data: { session: null }, error: new Error('refresh failed') }],
+  ['refresh returns no session', { data: { session: null }, error: null }],
+])('signs out instead of showing server-error when %s', async (_caseName, refreshResult) => {
+  mockSupabase.auth.refreshSession.mockResolvedValue(refreshResult);
+  const calls: string[] = [];
+  jest.spyOn(global, 'fetch').mockImplementation(async input => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith('/auth/google') || url.endsWith('/auth/me')) return response('Expired User', null);
+    return new Response('', { status: 401 });
+  });
+
+  await render(<AuthProvider><Probe /></AuthProvider>);
+  await waitFor(() => expect(screen.getByTestId('account').props.children).toBe('Expired User:NONE'));
+  await fireEvent.press(screen.getByText('SELECT_BUYER'));
+
+  await waitFor(() => expect(screen.getByText('SIGNED_OUT')).toBeTruthy());
+  expect(screen.getByTestId('role-error').props.children).not.toBe('server-error');
+  expect(mockSupabase.auth.refreshSession).toHaveBeenCalledTimes(1);
+  expect(mockSupabase.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  expect(calls.filter(url => url.endsWith('/auth/role'))).toHaveLength(1);
+});
+
 test('reloads the stored backend role after a 409 conflict', async () => {
   let meCalls = 0;
   jest.spyOn(global, 'fetch').mockImplementation(async input => {
