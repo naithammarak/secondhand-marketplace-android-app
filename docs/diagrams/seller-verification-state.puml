@@ -21,13 +21,13 @@ state "REJECTED\nถูกปฏิเสธ" as REJECTED #FDECEC
 
 [*] --> NOT_SUBMITTED : ผู้ใช้เลือกบทบาท SELLER
 
-NOT_SUBMITTED --> PENDING : ส่งข้อมูลสมมติและรูปเอกสาร\n[UserStatus = ACTIVE และ Consent = GRANTED]\n/ สร้าง SellerVerification และ AuditLog
+NOT_SUBMITTED --> PENDING : ส่งข้อมูลสมมติและรูปเอกสาร\n[Role = SELLER และ UserStatus = ACTIVE]\n/ สร้าง SellerVerification
 
 PENDING --> APPROVED : Admin อนุมัติ\n[สถานะปัจจุบัน = PENDING]\n/ ตั้ง reviewedAt, verifiedAt และผู้ตรวจ
 
 PENDING --> REJECTED : Admin ปฏิเสธพร้อมเหตุผล\n[สถานะปัจจุบัน = PENDING]\n/ ตั้ง reviewedAt, rejectReason และผู้ตรวจ
 
-REJECTED --> PENDING : Seller แก้ข้อมูลและส่งใหม่\n[UserStatus = ACTIVE และ Consent = GRANTED]\n/ ใช้แถวเดิม แทนที่ไฟล์ และล้างผลตรวจเดิม
+REJECTED --> PENDING : Seller แก้ข้อมูลและส่งใหม่\n[Role = SELLER และ UserStatus = ACTIVE]\n/ สร้าง SellerVerification แถวใหม่
 
 APPROVED --> [*] : มีสิทธิ์เรียก API ลงขายสินค้า
 
@@ -38,9 +38,9 @@ note right of NOT_SUBMITTED
 end note
 
 note right of REJECTED
-  Class Diagram กำหนด SellerVerification 0..1
-  การส่งใหม่จึงอัปเดตแถวเดิม
-  และเก็บประวัติเหตุการณ์ใน AuditLog
+  คำขอเดิมยังอยู่เป็นประวัติ
+  Database อนุญาต PENDING
+  ได้ครั้งละหนึ่งแถวต่อ Seller
 end note
 
 note right of APPROVED
