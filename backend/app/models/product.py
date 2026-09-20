@@ -1,5 +1,5 @@
 from datetime import datetime
-
+from decimal import Decimal
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,7 +52,7 @@ class Product(Base):
         nullable=False,
     )
 
-    price: Mapped[float] = mapped_column(
+    price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
     )
