@@ -220,14 +220,14 @@ def detail(db: Session, product_id: int, seller_id: int | None = None) -> dict:
     return product_result(product, category, brand, signed_product_images(images))
 
 
-@router.get("/products/me", summary="List my products")
+@router.get("/products/me", summary="ดูรายการสินค้าของฉัน", description="กด Authorize ด้วยบัญชีผู้ขายก่อน จากนั้นกด Try it out และ Execute เพื่อดูสินค้าของตนเอง")
 def my_products(
     request: Request,
     response: Response,
-    q: str | None = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
-    status: str | None = None,
+    q: str | None = Query(None, description="คำค้นจากชื่อสินค้า เช่น เสื้อ — ไม่จำเป็นต้องกรอก ปล่อยว่างเพื่อดูทั้งหมด ตัว q สีจางเป็นข้อความตัวอย่างในช่อง"),
+    page: int = Query(1, ge=1, description="หน้าที่ต้องการดู เริ่มจาก 1 — ทดลองครั้งแรกใช้ 1 ตามเดิม"),
+    page_size: int = Query(20, ge=1, le=50, description="จำนวนสินค้าต่อหน้า ตั้งแต่ 1–50 — ใช้ 20 ตามเดิมได้"),
+    status: str | None = Query(None, description="สถานะที่ต้องการดู: AVAILABLE = พร้อมขาย, RESERVED = จองแล้ว, SOLD = ขายแล้ว, CANCELLED = ยกเลิก — ปล่อยว่างเพื่อดูทุกสถานะ"),
     user: User = Depends(owner_seller),
     db: Session = Depends(get_db),
 ):
@@ -238,7 +238,7 @@ def my_products(
     return list_products(db, page=page, page_size=page_size, term=search_term(q), seller_id=user.id, status=status)
 
 
-@router.get("/products/me/{product_id}", summary="Get my product")
+@router.get("/products/me/{product_id}", summary="ดูรายละเอียดสินค้าของฉัน", description="กด Authorize ด้วยบัญชีผู้ขาย แล้วใส่ product_id จากช่อง id ในผลลัพธ์ GET /products/me เพื่อดูรายละเอียดสินค้าของตนเอง")
 def my_product_detail(
     product_id: int,
     request: Request,
@@ -253,13 +253,13 @@ def my_product_detail(
     return detail(db, product_id, seller_id=user.id)
 
 
-@router.get("/products", summary="Browse available products")
+@router.get("/products", summary="ดูรายการและค้นหาสินค้าที่พร้อมขาย", description="ไม่ต้องเข้าสู่ระบบ กด Try it out แล้วกรอกคำค้น หรือปล่อยว่างเพื่อดูสินค้าทั้งหมดที่พร้อมขาย จากนั้นกด Execute การเรียกนี้เป็นการดูข้อมูลสินค้า")
 def public_products(
     request: Request,
     response: Response,
-    q: str | None = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
+    q: str | None = Query(None, description="คำค้นจากชื่อสินค้า เช่น เสื้อ — ไม่จำเป็นต้องกรอก ปล่อยว่างเพื่อดูทั้งหมด ตัว q สีจางเป็นข้อความตัวอย่างในช่อง"),
+    page: int = Query(1, ge=1, description="หน้าที่ต้องการดู เริ่มจาก 1 — ทดลองครั้งแรกใช้ 1 ตามเดิม"),
+    page_size: int = Query(20, ge=1, le=50, description="จำนวนสินค้าต่อหน้า ตั้งแต่ 1–50 — ใช้ 20 ตามเดิมได้"),
     db: Session = Depends(get_db),
 ):
     validate_query(request, {"q", "page", "page_size"})
@@ -267,7 +267,7 @@ def public_products(
     return list_products(db, page=page, page_size=page_size, term=search_term(q))
 
 
-@router.get("/products/{product_id}", summary="Get an available product")
+@router.get("/products/{product_id}", summary="ดูรายละเอียดสินค้าที่พร้อมขาย", description="ไม่ต้องเข้าสู่ระบบ ใส่ product_id จากช่อง id ในผลลัพธ์ GET /products แล้วกด Execute เพื่อดูข้อมูลและรูปทั้งหมดของสินค้านั้น")
 def public_product_detail(
     product_id: int, request: Request, response: Response, db: Session = Depends(get_db)
 ):
@@ -278,7 +278,7 @@ def public_product_detail(
     return detail(db, product_id)
 
 
-@router.get("/categories", tags=["Product options"], summary="List categories")
+@router.get("/categories", tags=["Product options"], summary="ดูหมวดหมู่สินค้า", description="ไม่ต้องกรอกข้อมูล กด Try it out แล้ว Execute ใช้ค่า id ที่ได้เป็น category_id ตอนสร้างหรือแก้ไขสินค้า")
 def categories(request: Request, response: Response, db: Session = Depends(get_db)):
     validate_query(request, set())
     response.headers["Cache-Control"] = "no-store"
@@ -290,7 +290,7 @@ def categories(request: Request, response: Response, db: Session = Depends(get_d
     }
 
 
-@router.get("/brands", tags=["Product options"], summary="List brands")
+@router.get("/brands", tags=["Product options"], summary="ดูแบรนด์สินค้า", description="ไม่ต้องกรอกข้อมูล กด Try it out แล้ว Execute ใช้ค่า id ที่ได้เป็น brand_id ตอนสร้างหรือแก้ไขสินค้า")
 def brands(request: Request, response: Response, db: Session = Depends(get_db)):
     validate_query(request, set())
     response.headers["Cache-Control"] = "no-store"
