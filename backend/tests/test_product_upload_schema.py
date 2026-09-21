@@ -1,14 +1,18 @@
-"""Check the new pending-upload registry without touching the shared database."""
+"""Check product upload schema without touching a shared database."""
 
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -172,10 +176,177 @@ def test_migration_follows_both_existing_heads():
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["9a18d37ce520"]
+    assert set(script.get_heads()) == {"9a18d37ce520", "f02a03c91801"}
     upload_revision = script.get_revision("7f4c2e91a6b0")
     assert upload_revision.down_revision == "c6b19e0d4f2a"
     merge_revision = script.get_revision("9a18d37ce520")
     image_revision = script.get_revision("54ca8e0731bd")
     assert image_revision.down_revision == "7f4c2e91a6b0"
     assert set(merge_revision.down_revision) == {"54ca8e0731bd", "e8a4f1c02d77"}
+
+
+def _alembic_config() -> Config:
+    backend_dir = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    return config
+
+
+@pytest.fixture(scope="module")
+def migrated_product_database():
+    raw_url = os.getenv("TEST_DATABASE_URL")
+    if not raw_url:
+        pytest.skip("TEST_DATABASE_URL is not set (isolated PostgreSQL required)")
+
+    parsed_url = make_url(raw_url)
+    if not parsed_url.drivername.startswith("postgresql"):
+        pytest.fail("TEST_DATABASE_URL must use PostgreSQL")
+    if "test" not in (parsed_url.database or "").lower():
+        pytest.fail("TEST_DATABASE_URL database name must contain 'test'")
+
+    previous_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = raw_url
+    engine = create_engine(raw_url, pool_pre_ping=True)
+    config = _alembic_config()
+    try:
+        with engine.connect() as connection:
+            existing_tables = inspect(connection).get_table_names(schema="public")
+        if existing_tables:
+            pytest.fail(
+                "TEST_DATABASE_URL must point to an empty database; found tables: "
+                + ", ".join(sorted(existing_tables))
+            )
+
+        command.upgrade(config, "c6b19e0d4f2a")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO users
+                        (supabase_user_id, full_name, email, role, status)
+                    VALUES
+                        ('00000000-0000-0000-0000-000000000001',
+                         'Legacy Seller', 'legacy@example.test', 'SELLER', 'ACTIVE')
+                    """
+                )
+            )
+            connection.execute(
+                text("INSERT INTO categories (category_name) VALUES ('Legacy Category')")
+            )
+            connection.execute(
+                text("INSERT INTO brands (brand_name) VALUES ('Legacy Brand')")
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Legacy Product', 'Existing data', 'M',
+                            'GOOD', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_images
+                        (product_id, image_id, image_url, file_size, uploaded_at, photo_type)
+                    VALUES (1, 1, 'legacy/image.jpg', 100, now(), 'image/jpeg')
+                    """
+                )
+            )
+
+        command.upgrade(config, "54ca8e0731bd")
+        yield engine
+    finally:
+        try:
+            command.downgrade(config, "base")
+            with engine.begin() as connection:
+                connection.execute(text("DROP TABLE IF EXISTS public.alembic_version"))
+        finally:
+            engine.dispose()
+            if previous_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = previous_url
+
+
+def test_product_migration_preserves_data_and_enforces_schema(
+    migrated_product_database,
+):
+    with migrated_product_database.connect() as connection:
+        assert MigrationContext.configure(connection).get_current_revision() == "54ca8e0731bd"
+        assert "product_uploads" in inspect(connection).get_table_names(schema="public")
+        product_upload_columns = {
+            column["name"] for column in inspect(connection).get_columns("product_uploads")
+        }
+        assert {"id", "user_id", "object_key", "state", "attached_product_id"} <= product_upload_columns
+
+        image_columns = {
+            column["name"] for column in inspect(connection).get_columns("product_images")
+        }
+        assert {"upload_id", "sort_order"} <= image_columns
+
+        legacy = connection.execute(
+            text(
+                "SELECT product_name, image_url, sort_order "
+                "FROM products JOIN product_images "
+                "ON products.id = product_images.product_id"
+            )
+        ).one()
+        assert legacy == ("Legacy Product", "legacy/image.jpg", 0)
+
+        upload_foreign_keys = inspect(connection).get_foreign_keys("product_uploads")
+        assert {
+            (foreign_key["referred_table"], tuple(foreign_key["constrained_columns"]))
+            for foreign_key in upload_foreign_keys
+        } == {("users", ("user_id",)), ("products", ("attached_product_id",))}
+
+        image_foreign_keys = inspect(connection).get_foreign_keys("product_images")
+        assert any(
+            foreign_key["referred_table"] == "product_uploads"
+            and foreign_key["constrained_columns"] == ["upload_id"]
+            for foreign_key in image_foreign_keys
+        )
+
+        connection.execute(
+            text(
+                """
+                INSERT INTO product_uploads
+                    (user_id, object_key, mime_type, file_size, expires_at)
+                VALUES (1, 'legacy/new.jpg', 'image/jpeg', 100, now() + interval '1 day')
+                """
+            )
+        )
+        with pytest.raises(IntegrityError) as duplicate_sort_order_error:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_images
+                        (product_id, image_id, image_url, file_size, uploaded_at,
+                         photo_type, sort_order)
+                    VALUES (1, 2, 'duplicate.jpg', 100, now(), 'image/jpeg', 0)
+                    """
+                )
+            )
+        assert "uq_product_images_product_sort_order" in str(
+            duplicate_sort_order_error.value
+        )
+
+
+def test_product_migration_rollback_keeps_legacy_rows(migrated_product_database):
+    config = _alembic_config()
+    command.downgrade(config, "c6b19e0d4f2a")
+    with migrated_product_database.connect() as connection:
+        assert MigrationContext.configure(connection).get_current_revision() == "c6b19e0d4f2a"
+        assert "product_uploads" not in inspect(connection).get_table_names(schema="public")
+        legacy = connection.execute(
+            text(
+                "SELECT product_name, image_url "
+                "FROM products JOIN product_images "
+                "ON products.id = product_images.product_id"
+            )
+        ).one()
+        assert legacy == ("Legacy Product", "legacy/image.jpg")
+    command.upgrade(config, "54ca8e0731bd")
