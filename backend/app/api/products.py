@@ -60,7 +60,9 @@ def product_error(status_code: int, code: str, fields: dict | None = None) -> HT
 def validation_fields(exc: RequestValidationError) -> dict[str, list[str]]:
     fields: dict[str, list[str]] = {}
     for error in exc.errors():
-        path = ".".join(str(part) for part in error["loc"] if part != "body") or "body"
+        path = ".".join(
+            str(part) for part in error["loc"] if part not in {"body", "query", "path"}
+        ) or "body"
         message = error.get("ctx", {}).get("error")
         fields.setdefault(path, []).append(str(message or error["msg"]))
     return fields

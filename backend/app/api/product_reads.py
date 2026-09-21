@@ -1,0 +1,302 @@
+"""Public catalog and seller-owned product reads (PRODUCT-05)."""
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.api.auth import get_current_user
+from app.api.products import ProductCreateRoute, product_error, product_result, sign_images
+from app.database import get_db
+from app.models.brand import Brand
+from app.models.category import Category
+from app.models.product import Product
+from app.models.product_image import ProductImage
+from app.models.user import User, UserRole, UserStatus
+from app.models.verification import Verification
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["Products"], route_class=ProductCreateRoute)
+OWNER_STATUSES = {"AVAILABLE", "RESERVED", "SOLD", "CANCELLED"}
+
+
+def owner_seller(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> User:
+    # The authentication dependency can have loaded this row into the identity map.
+    user = db.scalar(
+        select(User)
+        .where(User.id == current_user.id)
+        .execution_options(populate_existing=True)
+    )
+    if user is None:
+        raise product_error(403, "ACCOUNT_NOT_REGISTERED")
+    if user.status != UserStatus.ACTIVE:
+        raise product_error(403, "ACCOUNT_INACTIVE")
+    if user.role != UserRole.SELLER:
+        raise product_error(403, "SELLER_ONLY")
+    return user
+
+
+def latest_approval_status():
+    return (
+        select(Verification.verification_status)
+        .where(Verification.user_id == User.id)
+        .order_by(Verification.created_at.desc(), Verification.id.desc())
+        .limit(1)
+        .correlate(User)
+        .scalar_subquery()
+    )
+
+
+def public_product_filter():
+    return (
+        Product.status == "AVAILABLE",
+        Product.deleted_at.is_(None),
+        User.status == UserStatus.ACTIVE,
+        User.role == UserRole.SELLER,
+        latest_approval_status() == "APPROVED",
+        ~select(Verification.id)
+        .where(Verification.user_id == User.id, Verification.verification_status == "PENDING")
+        .correlate(User)
+        .exists(),
+    )
+
+
+def validate_query(request: Request, allowed: set[str]) -> None:
+    unknown = set(request.query_params) - allowed
+    if unknown:
+        raise product_error(
+            422,
+            "FIELD_NOT_ALLOWED",
+            {name: ["ไม่อนุญาตให้ใช้พารามิเตอร์นี้"] for name in sorted(unknown)},
+        )
+    duplicates = {name for name in allowed if len(request.query_params.getlist(name)) > 1}
+    if duplicates:
+        raise product_error(
+            422,
+            "VALIDATION_ERROR",
+            {name: ["ส่งพารามิเตอร์ได้เพียงค่าเดียว"] for name in sorted(duplicates)},
+        )
+
+
+def search_term(q: str | None) -> str | None:
+    term = q.strip() if q is not None else ""
+    if len(term) > 255:
+        raise product_error(422, "VALIDATION_ERROR", {"q": ["คำค้นต้องไม่เกิน 255 ตัวอักษร"]})
+    return term or None
+
+
+def name_filter(term: str):
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return Product.product_name.ilike(f"%{escaped}%", escape="\\")
+
+
+def signed_product_images(images: list[ProductImage]):
+    try:
+        return sign_images(images)
+    except Exception as exc:
+        logger.exception("PRODUCT-05 could not sign product images")
+        raise product_error(503, "STORAGE_UNAVAILABLE") from exc
+
+
+def list_products(
+    db: Session,
+    *,
+    page: int,
+    page_size: int,
+    term: str | None,
+    seller_id: int | None = None,
+    status: str | None = None,
+) -> dict:
+    filters = [Product.deleted_at.is_(None)]
+    if seller_id is None:
+        filters.extend(public_product_filter())
+    else:
+        filters.append(Product.user_id == seller_id)
+        if status is not None:
+            filters.append(Product.status == status)
+    if term is not None:
+        filters.append(name_filter(term))
+
+    try:
+        count_query = select(func.count(Product.id)).select_from(Product)
+        rows_query = select(Product).order_by(Product.created_at.desc(), Product.id.desc())
+        if seller_id is None:
+            count_query = count_query.join(User, User.id == Product.user_id)
+            rows_query = rows_query.join(User, User.id == Product.user_id)
+        total = db.scalar(count_query.where(*filters)) or 0
+        products = db.scalars(
+            rows_query.where(*filters).offset((page - 1) * page_size).limit(page_size)
+        ).all()
+        product_ids = [product.id for product in products]
+        images = (
+            db.scalars(
+                select(ProductImage)
+                .where(ProductImage.product_id.in_(product_ids))
+                .order_by(
+                    ProductImage.product_id,
+                    ProductImage.sort_order,
+                    ProductImage.image_id,
+                )
+            ).all()
+            if product_ids
+            else []
+        )
+    except Exception as exc:
+        logger.exception("PRODUCT-05 catalog lookup failed")
+        raise product_error(503, "APPROVAL_STATE_UNAVAILABLE" if seller_id is None else "PRODUCT_SAVE_FAILED") from exc
+
+    main_images: dict[int, ProductImage] = {}
+    for image in images:
+        main_images.setdefault(image.product_id, image)
+    signed = signed_product_images(list(main_images.values()))
+    signed_by_product = {
+        image.product_id: (image, url, expires_at)
+        for image, url, expires_at in signed
+    }
+    data = []
+    for product in products:
+        main = signed_by_product.get(product.id)
+        data.append(
+            {
+                "id": product.id,
+                "product_name": product.product_name,
+                "price": format(product.price, ".2f"),
+                "condition": product.condition,
+                "status": product.status,
+                "main_image": (
+                    {
+                        "image_id": main[0].image_id,
+                        "image_url": main[1],
+                        "url_expires_at": main[2],
+                    }
+                    if main
+                    else None
+                ),
+            }
+        )
+    total_pages = (total + page_size - 1) // page_size
+    return {
+        "data": data,
+        "meta": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+        },
+    }
+
+
+def detail(db: Session, product_id: int, seller_id: int | None = None) -> dict:
+    try:
+        query = (
+            select(Product, Category, Brand)
+            .join(Category, Category.id == Product.category_id)
+            .join(Brand, Brand.id == Product.brand_id)
+            .where(Product.id == product_id, Product.deleted_at.is_(None))
+        )
+        if seller_id is None:
+            query = query.join(User, User.id == Product.user_id).where(*public_product_filter())
+        else:
+            query = query.where(Product.user_id == seller_id)
+        row = db.execute(query).one_or_none()
+        if row is None:
+            raise product_error(404, "PRODUCT_NOT_FOUND")
+        product, category, brand = row
+        images = db.scalars(
+            select(ProductImage)
+            .where(ProductImage.product_id == product_id)
+            .order_by(ProductImage.sort_order, ProductImage.image_id)
+        ).all()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("PRODUCT-05 detail lookup failed")
+        raise product_error(503, "APPROVAL_STATE_UNAVAILABLE" if seller_id is None else "PRODUCT_SAVE_FAILED") from exc
+    return product_result(product, category, brand, signed_product_images(images))
+
+
+@router.get("/products/me", summary="List my products")
+def my_products(
+    request: Request,
+    response: Response,
+    q: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    status: str | None = None,
+    user: User = Depends(owner_seller),
+    db: Session = Depends(get_db),
+):
+    validate_query(request, {"q", "page", "page_size", "status"})
+    if status is not None and status not in OWNER_STATUSES:
+        raise product_error(422, "VALIDATION_ERROR", {"status": ["สถานะสินค้าไม่ถูกต้อง"]})
+    response.headers["Cache-Control"] = "no-store"
+    return list_products(db, page=page, page_size=page_size, term=search_term(q), seller_id=user.id, status=status)
+
+
+@router.get("/products/me/{product_id}", summary="Get my product")
+def my_product_detail(
+    product_id: int,
+    request: Request,
+    response: Response,
+    user: User = Depends(owner_seller),
+    db: Session = Depends(get_db),
+):
+    validate_query(request, set())
+    if product_id < 1:
+        raise product_error(422, "VALIDATION_ERROR", {"product_id": ["ID ต้องมากกว่า 0"]})
+    response.headers["Cache-Control"] = "no-store"
+    return detail(db, product_id, seller_id=user.id)
+
+
+@router.get("/products", summary="Browse available products")
+def public_products(
+    request: Request,
+    response: Response,
+    q: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    validate_query(request, {"q", "page", "page_size"})
+    response.headers["Cache-Control"] = "no-store"
+    return list_products(db, page=page, page_size=page_size, term=search_term(q))
+
+
+@router.get("/products/{product_id}", summary="Get an available product")
+def public_product_detail(
+    product_id: int, request: Request, response: Response, db: Session = Depends(get_db)
+):
+    validate_query(request, set())
+    if product_id < 1:
+        raise product_error(422, "VALIDATION_ERROR", {"product_id": ["ID ต้องมากกว่า 0"]})
+    response.headers["Cache-Control"] = "no-store"
+    return detail(db, product_id)
+
+
+@router.get("/categories", tags=["Product options"], summary="List categories")
+def categories(request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_query(request, set())
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "data": [
+            {"id": row.id, "category_name": row.category_name, "parent_category_id": row.parent_category_id}
+            for row in db.scalars(select(Category).order_by(Category.id)).all()
+        ]
+    }
+
+
+@router.get("/brands", tags=["Product options"], summary="List brands")
+def brands(request: Request, response: Response, db: Session = Depends(get_db)):
+    validate_query(request, set())
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "data": [
+            {"id": row.id, "brand_name": row.brand_name}
+            for row in db.scalars(select(Brand).order_by(Brand.id)).all()
+        ]
+    }
