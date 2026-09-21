@@ -47,6 +47,14 @@ Success returns `200` with the same full Product shape as create. Every private
 image URL is signed for 300 seconds and has a conservative per-image
 `url_expires_at`.
 
+Images preserved from before PRODUCT-02 have no `upload_id` and may still
+contain a full public URL. Update returns that stored URL unchanged with
+`url_expires_at: null`; it does not try to sign the URL as a private object key.
+Whether the old URL remains readable depends on the separate audited legacy
+Storage migration. Removing a legacy image from the product deletes only its
+`product_images` row. The old Storage object is kept for that audit and is
+never automatically deleted by this endpoint.
+
 ## Cancel example
 
 The body may be omitted or be `{}`.

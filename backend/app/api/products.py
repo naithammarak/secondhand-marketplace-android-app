@@ -179,18 +179,22 @@ def committed_product_matches(bind, seller_id: int, result: dict) -> bool:
             for image in expected_images
         ]:
             return False
-        image_ids = [image.image_id for image in images]
+        upload_ids = [image.upload_id for image in images if image.upload_id is not None]
         uploads = inspection_db.scalars(
             select(ProductUpload)
-            .where(ProductUpload.id.in_(image_ids))
+            .where(ProductUpload.id.in_(upload_ids))
             .order_by(ProductUpload.id)
         ).all()
-        return (
-            len(uploads) == len(image_ids)
-            and all(
-                upload.state == "ATTACHED" and upload.attached_product_id == product_id
-                for upload in uploads
+        uploads_by_id = {upload.id: upload for upload in uploads}
+        return all(
+            image.upload_id is None
+            or (
+                (upload := uploads_by_id.get(image.upload_id)) is not None
+                and upload.state == "ATTACHED"
+                and upload.attached_product_id == product_id
+                and upload.object_key == image.image_url
             )
+            for image in images
         )
 
 
@@ -243,9 +247,14 @@ def product_result(product, category, brand, signed_images) -> dict:
     }
 
 
-def sign_images(images: list[ProductImage]) -> list[tuple[ProductImage, str, datetime]]:
+def sign_images(images: list[ProductImage]) -> list[tuple[ProductImage, str, datetime | None]]:
     signed_images = []
     for image in images:
+        if image.upload_id is None:
+            # Migration keeps existing public URLs until a separate audited move.
+            # Return the stored legacy URL without passing it to private signing.
+            signed_images.append((image, image.image_url, None))
+            continue
         signing_started_at = datetime.now(timezone.utc)
         signed_images.append(
             (

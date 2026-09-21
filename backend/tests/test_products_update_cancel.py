@@ -150,6 +150,24 @@ def make_product(db, user_id, category_id, brand_id, *, status="AVAILABLE", imag
     return product.id, image_ids
 
 
+def add_legacy_image(db, product_id, image_id=100, sort_order=0):
+    legacy_url = "https://storage.example.invalid/storage/v1/object/public/product-images/old.jpg"
+    db.add(
+        ProductImage(
+            product_id=product_id,
+            image_id=image_id,
+            upload_id=None,
+            image_url=legacy_url,
+            file_size=123,
+            uploaded_at=datetime.now(timezone.utc),
+            photo_type="MAIN" if sort_order == 0 else "GALLERY",
+            sort_order=sort_order,
+        )
+    )
+    db.commit()
+    return legacy_url
+
+
 def count(db, model):
     db.expire_all()
     return db.scalar(select(func.count()).select_from(model))
@@ -199,6 +217,54 @@ def test_owner_updates_fields_and_receives_full_product(db):
     assert [image["image_id"] for image in data["images"]] == image_ids
     db.expire_all()
     assert db.get(Product, product_id).product_name == "ชื่อใหม่"
+
+
+def test_scalar_update_preserves_legacy_image_without_private_signing(db, monkeypatch):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, seller_id, category_id, brand_id, image_count=0)
+    legacy_url = add_legacy_image(db, product_id)
+
+    async def unexpected_sign(_path):
+        raise AssertionError("legacy public URL must not be signed as a private key")
+
+    monkeypatch.setattr(products_module, "sign_private_object", unexpected_sign)
+    response = client.patch(
+        f"/products/{product_id}", headers=headers, json={"price": "125.00"}
+    )
+
+    assert response.status_code == 200
+    image = response.json()["data"]["images"][0]
+    assert image["image_url"] == legacy_url
+    assert image["url_expires_at"] is None
+    db.expire_all()
+    assert db.get(ProductImage, (product_id, 100)).image_url == legacy_url
+
+
+def test_replace_legacy_image_keeps_old_storage_object(db, setup):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, seller_id, category_id, brand_id, image_count=0)
+    legacy_url = add_legacy_image(db, product_id)
+    new_upload_id = pending_upload(db, seller_id)
+
+    response = client.patch(
+        f"/products/{product_id}",
+        headers=headers,
+        json={"images": [{"upload_id": new_upload_id}]},
+    )
+
+    assert response.status_code == 200
+    assert [image["image_id"] for image in response.json()["data"]["images"]] == [
+        new_upload_id
+    ]
+    db.expire_all()
+    assert db.get(ProductImage, (product_id, 100)) is None
+    assert db.get(ProductUpload, new_upload_id).state == "ATTACHED"
+    assert legacy_url not in setup
+    assert setup == []
 
 
 def test_update_replaces_reorders_and_detaches_images_atomically(db, setup):
@@ -645,6 +711,78 @@ def test_lost_update_commit_acknowledgement_returns_confirmed_result(db):
 
     assert response.status_code == 200
     assert response.json()["data"]["price"] == "88.00"
+    db.expire_all()
+    assert format(db.get(Product, product_id).price, ".2f") == "88.00"
+
+
+def test_lost_update_acknowledgement_with_distinct_image_and_upload_ids(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, image_ids = make_product(db, seller_id, category_id, brand_id, image_count=1)
+    original_image = db.get(ProductImage, (product_id, image_ids[0]))
+    original_image.image_id = 101
+    db.commit()
+    uncertain_db = SessionLocal()
+    real_commit = uncertain_db.commit
+
+    def commit_then_raise():
+        real_commit()
+        raise RuntimeError("lost acknowledgement")
+
+    uncertain_db.commit = commit_then_raise
+
+    def uncertain_get_db():
+        try:
+            yield uncertain_db
+        finally:
+            uncertain_db.close()
+
+    app.dependency_overrides[get_db] = uncertain_get_db
+    try:
+        response = client.patch(
+            f"/products/{product_id}", headers=headers, json={"price": "88.00"}
+        )
+    finally:
+        app.dependency_overrides[get_db] = _session_dependency
+
+    assert response.status_code == 200
+    assert response.json()["data"]["images"][0]["image_id"] == 101
+    db.expire_all()
+    assert db.get(ProductImage, (product_id, 101)).upload_id == image_ids[0]
+
+
+def test_lost_update_acknowledgement_with_legacy_image(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, seller_id, category_id, brand_id, image_count=0)
+    legacy_url = add_legacy_image(db, product_id)
+    uncertain_db = SessionLocal()
+    real_commit = uncertain_db.commit
+
+    def commit_then_raise():
+        real_commit()
+        raise RuntimeError("lost acknowledgement")
+
+    uncertain_db.commit = commit_then_raise
+
+    def uncertain_get_db():
+        try:
+            yield uncertain_db
+        finally:
+            uncertain_db.close()
+
+    app.dependency_overrides[get_db] = uncertain_get_db
+    try:
+        response = client.patch(
+            f"/products/{product_id}", headers=headers, json={"price": "88.00"}
+        )
+    finally:
+        app.dependency_overrides[get_db] = _session_dependency
+
+    assert response.status_code == 200
+    assert response.json()["data"]["images"][0]["image_url"] == legacy_url
     db.expire_all()
     assert format(db.get(Product, product_id).price, ".2f") == "88.00"
 

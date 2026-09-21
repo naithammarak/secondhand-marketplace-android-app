@@ -174,6 +174,11 @@ def replace_product_images(
 
     detached_paths = []
     for image in removed:
+        if image.upload_id is None:
+            # Legacy URLs have no upload registry entry. Keep their Storage
+            # objects for the separate audited migration/cleanup process.
+            db.delete(image)
+            continue
         upload = removed_uploads_by_id.get(image.upload_id)
         if (
             upload is None
