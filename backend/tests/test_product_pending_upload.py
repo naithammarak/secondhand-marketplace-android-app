@@ -136,7 +136,7 @@ def test_legacy_product_id_field_is_rejected_before_storage(pending_client):
 
 def test_unapproved_seller_cannot_upload(pending_client):
     client, db, _, calls = pending_client
-    db.query(Verification).update({"verification_status": "REJECTED"})
+    db.query(Verification).update({"verification_status": "REJECTED", "reject_reason": "Test rejection reason"})
     db.commit()
     response = post_png(client)
     assert response.status_code == 403

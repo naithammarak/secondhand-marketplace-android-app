@@ -172,7 +172,10 @@ def test_migration_follows_both_existing_heads():
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["9a18d37ce520"]
+    assert len(script.get_heads()) == 1
+    ancestors = {revision.revision for revision in script.walk_revisions()}
+    assert {"9a18d37ce520", "f02a03c91801", "a62f095d810e"} <= ancestors
+    assert set(script.get_revision("a62f095d810e").down_revision) == {"9a18d37ce520", "f02a03c91801"}
     upload_revision = script.get_revision("7f4c2e91a6b0")
     assert upload_revision.down_revision == "c6b19e0d4f2a"
     merge_revision = script.get_revision("9a18d37ce520")

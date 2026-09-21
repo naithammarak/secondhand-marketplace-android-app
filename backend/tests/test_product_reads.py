@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -65,6 +65,7 @@ def approve(db, user_id, status="APPROVED", created_at=None):
         bank_account_number="1111111111",
         bank_name="Test Bank",
         verification_status=status,
+        reject_reason="เหตุผลทดสอบการปฏิเสธ" if status == "REJECTED" else None,
         created_at=created_at or datetime.now(timezone.utc),
     )
     db.add(verification)
@@ -312,4 +313,28 @@ def test_list_query_count_does_not_grow_with_products(db):
         event.remove(engine, "before_cursor_execute", track)
     assert response.status_code == 200
     assert response.json()["meta"]["total"] == 10
-    assert len(statements) == 3  # count, one page, all page images in a batch
+    assert len(statements) == 4  # approval integrity, count, page, batch images
+
+
+def test_malformed_approval_returns_503_for_public_reads(db):
+    seller_id, _ = create_user(db, UserRole.SELLER)
+    # Simulate legacy data from a database without the new CHECK constraint.
+    db.execute(text("PRAGMA ignore_check_constraints=ON"))
+    approve(db, seller_id, "INVALID_STATE")
+    db.execute(text("PRAGMA ignore_check_constraints=OFF"))
+    category_id, brand_id = catalog(db)
+    product_id = product(db, seller_id, category_id, brand_id)
+    for path in ["/products", f"/products/{product_id}"]:
+        response = client.get(path)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "APPROVAL_STATE_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("table, path", [("categories", "/categories"), ("brands", "/brands")])
+def test_options_missing_schema_returns_safe_json(db, table, path):
+    db.execute(text(f"DROP TABLE {table}"))
+    db.commit()
+    response = client.get(path)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PRODUCT_READ_UNAVAILABLE"
+    assert response.json()["error"]["request_id"]

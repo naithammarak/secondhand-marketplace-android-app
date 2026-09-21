@@ -32,6 +32,7 @@ from app.services.product_upload_binding import bind_pending_uploads, replace_pr
 logger = logging.getLogger(__name__)
 
 ERROR_MESSAGES = {
+    "PRODUCT_READ_UNAVAILABLE": "ไม่สามารถอ่านข้อมูลสินค้าได้ในขณะนี้ กรุณาลองใหม่ภายหลัง",
     "AUTH_REQUIRED": "กรุณาเข้าสู่ระบบใหม่",
     "ACCOUNT_NOT_REGISTERED": "กรุณาเข้าสู่ระบบให้เสร็จก่อน",
     "ACCOUNT_INACTIVE": "บัญชีนี้ไม่สามารถทำรายการได้",

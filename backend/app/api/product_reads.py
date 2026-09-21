@@ -3,7 +3,8 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
@@ -58,11 +59,33 @@ def public_product_filter():
         User.status == UserStatus.ACTIVE,
         User.role == UserRole.SELLER,
         latest_approval_status() == "APPROVED",
-        ~select(Verification.id)
-        .where(Verification.user_id == User.id, Verification.verification_status == "PENDING")
-        .correlate(User)
-        .exists(),
     )
+
+
+def check_catalog_approval(db: Session, *, product_id=None, term=None):
+    """Fail closed for malformed approval data before returning a catalog result."""
+    latest = latest_approval_status()
+    pending_count = (
+        select(func.count(Verification.id))
+        .where(Verification.user_id == User.id, Verification.verification_status == "PENDING")
+        .correlate(User).scalar_subquery()
+    )
+    invalid_time = (
+        select(Verification.id)
+        .where(Verification.user_id == User.id, Verification.created_at.is_(None))
+        .correlate(User).exists()
+    )
+    query = select(Product.id).join(User, User.id == Product.user_id).where(
+        Product.deleted_at.is_(None), Product.status == "AVAILABLE",
+        User.status == UserStatus.ACTIVE, User.role == UserRole.SELLER,
+        or_(latest.not_in(["APPROVED", "PENDING", "REJECTED"]), pending_count > 1, invalid_time),
+    )
+    if product_id is not None:
+        query = query.where(Product.id == product_id)
+    if term is not None:
+        query = query.where(name_filter(term))
+    if db.scalar(query.limit(1)) is not None:
+        raise product_error(503, "APPROVAL_STATE_UNAVAILABLE")
 
 
 def validate_query(request: Request, allowed: set[str]) -> None:
@@ -122,6 +145,8 @@ def list_products(
         filters.append(name_filter(term))
 
     try:
+        if seller_id is None:
+            check_catalog_approval(db, term=term)
         count_query = select(func.count(Product.id)).select_from(Product)
         rows_query = select(Product).order_by(Product.created_at.desc(), Product.id.desc())
         if seller_id is None:
@@ -145,6 +170,8 @@ def list_products(
             if product_ids
             else []
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("PRODUCT-05 catalog lookup failed")
         raise product_error(503, "APPROVAL_STATE_UNAVAILABLE" if seller_id is None else "PRODUCT_SAVE_FAILED") from exc
@@ -193,6 +220,8 @@ def list_products(
 
 def detail(db: Session, product_id: int, seller_id: int | None = None) -> dict:
     try:
+        if seller_id is None:
+            check_catalog_approval(db, product_id=product_id)
         query = (
             select(Product, Category, Brand)
             .join(Category, Category.id == Product.category_id)
@@ -281,11 +310,15 @@ def public_product_detail(
 @router.get("/categories", tags=["Product options"], summary="ดูหมวดหมู่สินค้า", description="ไม่ต้องกรอกข้อมูล กด Try it out แล้ว Execute ใช้ค่า id ที่ได้เป็น category_id ตอนสร้างหรือแก้ไขสินค้า")
 def categories(request: Request, response: Response, db: Session = Depends(get_db)):
     validate_query(request, set())
+    try:
+        rows = db.scalars(select(Category).order_by(Category.id)).all()
+    except SQLAlchemyError as exc:
+        raise product_error(503, "PRODUCT_READ_UNAVAILABLE") from exc
     response.headers["Cache-Control"] = "no-store"
     return {
         "data": [
             {"id": row.id, "category_name": row.category_name, "parent_category_id": row.parent_category_id}
-            for row in db.scalars(select(Category).order_by(Category.id)).all()
+            for row in rows
         ]
     }
 
@@ -293,10 +326,14 @@ def categories(request: Request, response: Response, db: Session = Depends(get_d
 @router.get("/brands", tags=["Product options"], summary="ดูแบรนด์สินค้า", description="ไม่ต้องกรอกข้อมูล กด Try it out แล้ว Execute ใช้ค่า id ที่ได้เป็น brand_id ตอนสร้างหรือแก้ไขสินค้า")
 def brands(request: Request, response: Response, db: Session = Depends(get_db)):
     validate_query(request, set())
+    try:
+        rows = db.scalars(select(Brand).order_by(Brand.id)).all()
+    except SQLAlchemyError as exc:
+        raise product_error(503, "PRODUCT_READ_UNAVAILABLE") from exc
     response.headers["Cache-Control"] = "no-store"
     return {
         "data": [
             {"id": row.id, "brand_name": row.brand_name}
-            for row in db.scalars(select(Brand).order_by(Brand.id)).all()
+            for row in rows
         ]
     }

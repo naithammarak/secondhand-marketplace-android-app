@@ -1,6 +1,6 @@
 # PRODUCT-05: รายการ ค้นหา รายละเอียด และตัวเลือกสินค้า
 
-API นี้อ้างอิง [PRODUCT-00 Contract v1.0](https://github.com/naithammarak/SA-Project/issues/42) และ [PRODUCT-05 #47](https://github.com/naithammarak/SA-Project/issues/47) ใช้ข้อมูลจริงจากตารางสินค้า ผู้ขาย การอนุมัติ รูป หมวดหมู่ และแบรนด์ ไม่ต้องมี migration เพิ่ม
+API นี้อ้างอิง [PRODUCT-00 Contract v1.0](https://github.com/naithammarak/SA-Project/issues/42) และ [PRODUCT-05 #47](https://github.com/naithammarak/SA-Project/issues/47) ใช้ข้อมูลจริงจากตารางสินค้า ผู้ขาย การอนุมัติ รูป หมวดหมู่ และแบรนด์ มี merge revision สำหรับเชื่อมประวัติ migration หลังรวม main ตามรายละเอียดท้ายเอกสาร
 
 ## สำหรับหน้าร้าน (ไม่ต้องเข้าสู่ระบบ)
 
@@ -55,9 +55,13 @@ Authorization: Bearer <access_token>
 - `q` ถูก trim ก่อนค้น; ช่องว่างล้วนหมายถึงไม่กรอง; ยาวได้สูงสุด 255 ตัวอักษร
 - ค้นหาบางส่วนของ `product_name` แบบไม่แยกตัวพิมพ์เล็กใหญ่; `%`, `_`, `\` เป็นตัวอักษรจริง
 - เรียง `created_at DESC, id DESC` เสมอ หน้าเกินข้อมูลคืน `200` พร้อม `data: []` และ `total` จริง
-- รายการใช้ query นับ, query หน้าปัจจุบัน และ query รูปของหน้านั้นหนึ่งครั้ง จึงไม่อ่านรูปทีละสินค้า
+- รายการตรวจความถูกต้องของ approval, นับจำนวน, อ่านหน้าปัจจุบัน และอ่านรูปแบบรวม รวม 4 query ต่อหน้าที่มีสินค้า จึงไม่อ่านรูปทีละสินค้า
 - ถ้ามีการสร้างหรือยกเลิกสินค้าระหว่างเปิดหน้าต่าง ๆ offset pagination ไม่รับประกัน snapshot เดิม แอปควรโหลดหน้าแรกใหม่เมื่อข้อมูลเปลี่ยน
 
 ข้อผิดพลาดใช้ `{"error":{"code":"...","message":"...","fields":{},"request_id":"..."}}` เช่น `422` สำหรับพารามิเตอร์ผิด, `404 PRODUCT_NOT_FOUND`, `403 SELLER_ONLY`, `503 STORAGE_UNAVAILABLE` เมื่อสร้าง signed URL ไม่ได้
 
 ทดสอบใน `backend`: `python -m pytest tests/test_product_reads.py -q`
+
+หลังรวม main มี merge revision `a62f095d810e` เชื่อมประวัติ migration Product และ Verify ให้เหลือ head เดียว ตัว merge revision ไม่มีคำสั่งเปลี่ยนข้อมูล แต่การ upgrade จะรัน migration ที่ฐานนั้นยังขาดด้วย ผู้ดูแลฐานต้องตรวจรายการก่อนรัน; งานนี้ไม่ได้รัน migration บน Supabase
+
+เมื่อ approval ผิดรูปแบบ ตอบ `503 APPROVAL_STATE_UNAVAILABLE`; เมื่ออ่านหมวดหมู่/แบรนด์จากฐานข้อมูลไม่ได้ ตอบ `503 PRODUCT_READ_UNAVAILABLE` พร้อม JSON error และ request_id
