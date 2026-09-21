@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 from enum import Enum
 from typing import Optional
 from uuid import UUID
@@ -12,6 +11,10 @@ class AllowedRole(str, Enum):
 
 class GoogleLoginRequest(BaseModel):
     role: Optional[AllowedRole] = None  # อนุญาตให้เลือกได้เฉพาะ BUYER หรือ SELLER
+
+
+class SetRoleRequest(BaseModel):
+    role: AllowedRole
 
 
 class UserResponse(BaseModel):

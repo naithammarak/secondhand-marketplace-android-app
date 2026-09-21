@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,6 +16,26 @@ class Verification(Base):
             unique=True,
             sqlite_where=text("verification_status = 'PENDING'"),
             postgresql_where=text("verification_status = 'PENDING'"),
+        ),
+        Index(
+            "ix_verifications_queue",
+            "verification_status",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_verifications_owner_latest",
+            "user_id",
+            "created_at",
+            "id",
+        ),
+        CheckConstraint(
+            "verification_status IN ('PENDING', 'APPROVED', 'REJECTED')",
+            name="ck_verifications_status",
+        ),
+        CheckConstraint(
+            "verification_status != 'REJECTED' OR (reject_reason IS NOT NULL AND length(trim(reject_reason)) BETWEEN 5 AND 500)",
+            name="ck_verifications_reject_reason",
         ),
     )
 

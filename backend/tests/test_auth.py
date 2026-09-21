@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import uuid
 from unittest.mock import patch
@@ -6,7 +7,8 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,6 +22,7 @@ client = TestClient(app)
 TEST_SECRET = "test-secret-key-for-jwt-testing-12345678901234567890"
 TEST_AUDIENCE = "authenticated"
 TEST_ISSUER = "https://hzromkehaftcfthhrunm.supabase.co/auth/v1"
+AUTH_TEST_DATABASE_URL = os.getenv("AUTH_TEST_DATABASE_URL")
 
 test_engine = create_engine(
     "sqlite:///:memory:",
@@ -277,11 +280,153 @@ def test_login_and_me_lifecycle():
     res_repeat = client.post("/auth/google", json={"role": "SELLER"}, headers=headers)
     assert res_repeat.status_code == 200
     assert res_repeat.json()["id"] == data["id"]
+    assert res_repeat.json()["role"] == "BUYER"
 
     # 3. เรียกดูโปรไฟล์ตนเอง /me
     res_me = client.get("/auth/me", headers=headers)
     assert res_me.status_code == 200
     assert res_me.json()["supabase_user_id"] == test_uid
+
+
+def create_user_without_role(name="New User", user_status=UserStatus.ACTIVE):
+    test_uid = uuid.uuid4()
+    with TestingSessionLocal() as session:
+        session.add(User(
+            supabase_user_id=test_uid,
+            full_name=name,
+            email=f"{test_uid}@example.com",
+            role=None,
+            status=user_status,
+        ))
+        session.commit()
+    token = make_token({"sub": str(test_uid)})
+    return test_uid, {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.parametrize("role", ["BUYER", "SELLER"])
+def test_user_without_role_can_select_buyer_or_seller(role):
+    test_uid, headers = create_user_without_role("Role Picker")
+
+    response = client.post("/auth/role", json={"role": role}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["full_name"] == "Role Picker"
+    assert response.json()["role"] == role
+    with TestingSessionLocal() as session:
+        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role == UserRole(role)
+
+
+def test_selecting_same_role_is_idempotent_but_different_role_conflicts():
+    test_uid, headers = create_user_without_role()
+    first = client.post("/auth/role", json={"role": "BUYER"}, headers=headers)
+    repeated = client.post("/auth/role", json={"role": "BUYER"}, headers=headers)
+    conflict = client.post("/auth/role", json={"role": "SELLER"}, headers=headers)
+
+    assert first.status_code == repeated.status_code == 200
+    assert first.json()["id"] == repeated.json()["id"]
+    assert conflict.status_code == 409
+    with TestingSessionLocal() as session:
+        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role == UserRole.BUYER
+
+
+@pytest.mark.parametrize("user_status", [UserStatus.SUSPENDED, UserStatus.CLOSED])
+def test_inactive_user_cannot_select_a_role(user_status):
+    test_uid, headers = create_user_without_role(user_status=user_status)
+
+    response = client.post("/auth/role", json={"role": "BUYER"}, headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Account is not active"
+    with TestingSessionLocal() as session:
+        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role is None
+
+
+@pytest.mark.parametrize("body", [
+    {"role": "ADMIN"},
+    {"role": "INSPECTOR"},
+    {"role": None},
+    {"role": ""},
+    {"role": "UNKNOWN"},
+    {},
+])
+def test_set_role_rejects_unsupported_or_missing_role(body):
+    test_uid, headers = create_user_without_role()
+
+    response = client.post("/auth/role", json=body, headers=headers)
+
+    assert response.status_code == 422
+    with TestingSessionLocal() as session:
+        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role is None
+
+
+def test_set_role_requires_a_valid_token():
+    assert client.post("/auth/role", json={"role": "BUYER"}).status_code in (401, 403)
+    response = client.post(
+        "/auth/role",
+        json={"role": "BUYER"},
+        headers={"Authorization": "Bearer invalid"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.skipif(
+    not AUTH_TEST_DATABASE_URL,
+    reason="AUTH_TEST_DATABASE_URL is not set (isolated PostgreSQL required)",
+)
+def test_different_roles_racing_on_postgresql_have_exactly_one_winner():
+    parsed = make_url(AUTH_TEST_DATABASE_URL)
+    if parsed.get_backend_name() != "postgresql":
+        raise RuntimeError("AUTH_TEST_DATABASE_URL must use PostgreSQL")
+    if parsed.host not in {"localhost", "127.0.0.1", "::1"} or "test" not in (parsed.database or ""):
+        raise RuntimeError("AUTH_TEST_DATABASE_URL must be an isolated local test database")
+
+    engine = create_engine(AUTH_TEST_DATABASE_URL, pool_size=4)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    test_uid = uuid.uuid4()
+    with factory() as session:
+        session.add(User(
+            supabase_user_id=test_uid,
+            full_name="Concurrent Role User",
+            email=f"{test_uid}@example.com",
+            role=None,
+            status=UserStatus.ACTIVE,
+        ))
+        session.commit()
+
+    def override_get_db():
+        with factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    headers = {"Authorization": f"Bearer {make_token({'sub': str(test_uid)})}"}
+    barrier = threading.Barrier(2)
+    responses = [None, None]
+
+    def select_role(index, role):
+        barrier.wait()
+        with TestClient(app) as thread_client:
+            responses[index] = thread_client.post("/auth/role", json={"role": role}, headers=headers)
+
+    threads = [
+        threading.Thread(target=select_role, args=(0, "BUYER")),
+        threading.Thread(target=select_role, args=(1, "SELLER")),
+    ]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        assert all(not thread.is_alive() for thread in threads)
+        assert sorted(response.status_code for response in responses) == [200, 409]
+        with factory() as session:
+            saved_role = session.scalar(select(User.role).where(User.supabase_user_id == test_uid))
+            assert saved_role in {UserRole.BUYER, UserRole.SELLER}
+            session.query(User).filter(User.supabase_user_id == test_uid).delete()
+            session.commit()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        engine.dispose()
 
 
 def test_first_login_concurrent_race_condition():
