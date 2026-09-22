@@ -458,7 +458,7 @@ def migrated_product_database():
                         (user_id, category_id, brand_id, product_name, description,
                          size, condition, price, sale_type, status)
                     VALUES (1, 1, 1, 'Legacy Product', 'Existing data', 'M',
-                            'GOOD', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                            'ดี', 10.00, 'FIXED_PRICE', 'AVAILABLE')
                     """
                 )
             )
@@ -505,6 +505,12 @@ def test_product_migration_preserves_data_and_enforces_schema(
         }
         assert {"upload_id", "sort_order", "photo_type"} <= image_columns
 
+        # Verify legacy product condition normalized from 'ดี' to 'GOOD'
+        legacy_product_condition = connection.execute(
+            text("SELECT condition FROM products WHERE id = 1")
+        ).scalar_one()
+        assert legacy_product_condition == "GOOD"
+
         # Verify legacy images preserved and photo_type normalized
         legacy_images = connection.execute(
             text(
@@ -532,129 +538,137 @@ def test_product_migration_preserves_data_and_enforces_schema(
 
         # Constraint: price must be > 0
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO products
-                        (user_id, category_id, brand_id, product_name, description,
-                         size, condition, price, sale_type, status)
-                    VALUES (1, 1, 1, 'Bad Price', 'Desc', 'M',
-                            'GOOD', 0.00, 'FIXED_PRICE', 'AVAILABLE')
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO products
+                            (user_id, category_id, brand_id, product_name, description,
+                             size, condition, price, sale_type, status)
+                        VALUES (1, 1, 1, 'Bad Price', 'Desc', 'M',
+                                'GOOD', 0.00, 'FIXED_PRICE', 'AVAILABLE')
+                        """
+                    )
                 )
-            )
 
         # Constraint: condition must be valid
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO products
-                        (user_id, category_id, brand_id, product_name, description,
-                         size, condition, price, sale_type, status)
-                    VALUES (1, 1, 1, 'Bad Condition', 'Desc', 'M',
-                            'BROKEN', 10.00, 'FIXED_PRICE', 'AVAILABLE')
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO products
+                            (user_id, category_id, brand_id, product_name, description,
+                             size, condition, price, sale_type, status)
+                        VALUES (1, 1, 1, 'Bad Condition', 'Desc', 'M',
+                                'BROKEN', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                        """
+                    )
                 )
-            )
 
         # Constraint: sale_type must be FIXED_PRICE
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO products
-                        (user_id, category_id, brand_id, product_name, description,
-                         size, condition, price, sale_type, status)
-                    VALUES (1, 1, 1, 'Bad Sale Type', 'Desc', 'M',
-                            'GOOD', 10.00, 'AUCTION', 'AVAILABLE')
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO products
+                            (user_id, category_id, brand_id, product_name, description,
+                             size, condition, price, sale_type, status)
+                        VALUES (1, 1, 1, 'Bad Sale Type', 'Desc', 'M',
+                                'GOOD', 10.00, 'AUCTION', 'AVAILABLE')
+                        """
+                    )
                 )
-            )
 
         # Constraint: status must be valid
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO products
-                        (user_id, category_id, brand_id, product_name, description,
-                         size, condition, price, sale_type, status)
-                    VALUES (1, 1, 1, 'Bad Status', 'Desc', 'M',
-                            'GOOD', 10.00, 'FIXED_PRICE', 'ARCHIVED')
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO products
+                            (user_id, category_id, brand_id, product_name, description,
+                             size, condition, price, sale_type, status)
+                        VALUES (1, 1, 1, 'Bad Status', 'Desc', 'M',
+                                'GOOD', 10.00, 'FIXED_PRICE', 'ARCHIVED')
+                        """
+                    )
                 )
-            )
 
         # Constraint: sort_order between 0 and 9
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO product_images
-                        (product_id, image_id, image_url, file_size, uploaded_at,
-                         photo_type, sort_order)
-                    VALUES (1, 10, 'out_of_range.jpg', 100, now(), 'GALLERY', 10)
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO product_images
+                            (product_id, image_id, image_url, file_size, uploaded_at,
+                             photo_type, sort_order)
+                        VALUES (1, 10, 'out_of_range.jpg', 100, now(), 'GALLERY', 10)
+                        """
+                    )
                 )
-            )
 
         # Constraint: duplicate sort_order rejected
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO product_images
-                        (product_id, image_id, image_url, file_size, uploaded_at,
-                         photo_type, sort_order)
-                    VALUES (1, 11, 'duplicate.jpg', 100, now(), 'MAIN', 0)
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO product_images
+                            (product_id, image_id, image_url, file_size, uploaded_at,
+                             photo_type, sort_order)
+                        VALUES (1, 11, 'duplicate.jpg', 100, now(), 'MAIN', 0)
+                        """
+                    )
                 )
-            )
 
         # Constraint: sort_order 0 must be MAIN
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO products
-                        (user_id, category_id, brand_id, product_name, description,
-                         size, condition, price, sale_type, status)
-                    VALUES (1, 1, 1, 'Product 2', 'Desc', 'M',
-                            'GOOD', 10.00, 'FIXED_PRICE', 'AVAILABLE')
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO products
+                            (user_id, category_id, brand_id, product_name, description,
+                             size, condition, price, sale_type, status)
+                        VALUES (1, 1, 1, 'Product 2', 'Desc', 'M',
+                                'GOOD', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                        """
+                    )
                 )
-            )
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO product_images
-                        (product_id, image_id, image_url, file_size, uploaded_at,
-                         photo_type, sort_order)
-                    VALUES (2, 20, 'bad_main.jpg', 100, now(), 'GALLERY', 0)
-                    """
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO product_images
+                            (product_id, image_id, image_url, file_size, uploaded_at,
+                             photo_type, sort_order)
+                        VALUES (2, 20, 'bad_main.jpg', 100, now(), 'GALLERY', 0)
+                        """
+                    )
                 )
-            )
 
         # Constraint: sort_order > 0 must be GALLERY
         with pytest.raises(IntegrityError):
-            connection.execute(
-                text(
-                    """
-                    INSERT INTO product_images
-                        (product_id, image_id, image_url, file_size, uploaded_at,
-                         photo_type, sort_order)
-                    VALUES (1, 21, 'bad_gallery.jpg', 100, now(), 'MAIN', 2)
-                    """
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO product_images
+                            (product_id, image_id, image_url, file_size, uploaded_at,
+                             photo_type, sort_order)
+                        VALUES (1, 21, 'bad_gallery.jpg', 100, now(), 'MAIN', 2)
+                        """
+                    )
                 )
-            )
 
 
 def test_product_migration_rollback_keeps_legacy_rows(migrated_product_database):
     config = _alembic_config()
     command.downgrade(config, "c6b19e0d4f2a")
     with migrated_product_database.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_revision() == "c6b19e0d4f2a"
+        assert "c6b19e0d4f2a" in MigrationContext.configure(connection).get_current_heads()
         assert "product_uploads" not in inspect(connection).get_table_names(schema="public")
         legacy = connection.execute(
             text(

@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
 import { formatBaht, formatDateTime, orderStatusLabels, paymentStatusLabels } from '@/orders/order-format';
 import { useOrderDetail, useOrdersList } from '@/orders/orders-provider';
+import { CONDITION_LABELS } from '@/services/product-service';
 
 export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const auth = useAuth();
@@ -90,7 +91,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
               <Card>
                 <ThemedText type="smallBold">{order.product.name}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  สภาพ {order.product.condition} • ไซซ์ {order.product.size}
+                  สภาพ {CONDITION_LABELS[order.product.condition] ?? order.product.condition} • ไซซ์ {order.product.size}
                 </ThemedText>
                 <Row label="ราคาสินค้า" value={formatBaht(order.amounts.itemPrice)} />
                 {isBuyer ? (

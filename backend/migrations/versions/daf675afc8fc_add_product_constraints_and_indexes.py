@@ -21,6 +21,37 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
 
+    # Normalize legacy values before constraints:
+    op.execute(
+        """
+        UPDATE products
+        SET sale_type = 'FIXED_PRICE'
+        WHERE sale_type != 'FIXED_PRICE' OR sale_type IS NULL;
+        """
+    )
+
+    op.execute(
+        """
+        UPDATE products
+        SET condition = CASE
+            WHEN condition IN ('NEW', 'ใหม่', 'ของใหม่') THEN 'NEW'
+            WHEN condition IN ('LIKE_NEW', 'เหมือนใหม่', 'สภาพเหมือนใหม่') THEN 'LIKE_NEW'
+            WHEN condition IN ('GOOD', 'ดี', 'สภาพดี') THEN 'GOOD'
+            WHEN condition IN ('FAIR', 'พอใช้', 'สภาพพอใช้', 'มีตำหนิ') THEN 'FAIR'
+            ELSE 'GOOD'
+        END
+        WHERE condition NOT IN ('NEW', 'LIKE_NEW', 'GOOD', 'FAIR');
+        """
+    )
+
+    op.execute(
+        """
+        UPDATE products
+        SET status = 'AVAILABLE'
+        WHERE status NOT IN ('AVAILABLE', 'RESERVED', 'SOLD', 'CANCELLED') OR status IS NULL;
+        """
+    )
+
     op.create_check_constraint(
         "ck_products_price_positive",
         "products",

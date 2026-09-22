@@ -19,9 +19,17 @@ export type ProductInput = Omit<Product, 'id' | 'saleType'>;
 // Auction is out of scope for PRODUCT-06: every product is created as FIXED_PRICE.
 export const SALE_TYPE: SaleType = 'FIXED_PRICE';
 
-// TODO(PRODUCT-06): placeholder option lists until the backend exposes real
-// category/condition values (from the Product model / class diagram).
-export const CONDITION_OPTIONS = ['ใหม่', 'เหมือนใหม่', 'สภาพดี', 'พอใช้', 'มีตำหนิ'];
+// Standardized condition codes matching backend constraint ck_products_condition
+export const CONDITION_OPTIONS = ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR'] as const;
+export type ProductCondition = (typeof CONDITION_OPTIONS)[number];
+
+export const CONDITION_LABELS: Record<string, string> = {
+  NEW: 'ใหม่',
+  LIKE_NEW: 'เหมือนใหม่',
+  GOOD: 'สภาพดี',
+  FAIR: 'พอใช้',
+};
+
 export const CATEGORY_OPTIONS = ['เสื้อผ้า', 'รองเท้า', 'กระเป๋า', 'เครื่องประดับ', 'อิเล็กทรอนิกส์', 'อื่น ๆ'];
 
 export type ProductServiceErrorKind = 'not-found';

@@ -280,7 +280,7 @@ def test_missing_or_soft_deleted_product_is_not_found(world, db):
         assert response.json()["detail"]["code"] == "product_not_found"
 
 
-@pytest.mark.parametrize("status_", ["RESERVED", "SOLD", "DRAFT", "HIDDEN"])
+@pytest.mark.parametrize("status_", ["RESERVED", "SOLD", "CANCELLED"])
 def test_unavailable_product_is_rejected(world, db, status_):
     product_id = create_product(db, world["seller"], status=status_)
     response = post_order(world["a"], order_body(product_id))
@@ -655,12 +655,12 @@ def test_order_snapshot_does_not_follow_product_edits(world, db):
     product = db.get(Product, world["product_id"])
     product.price = Decimal("9999.00")
     product.product_name = "ชื่อใหม่"
-    product.condition = "พอใช้"
+    product.condition = "FAIR"
     db.commit()
 
     detail = client.get(f"/orders/{order['id']}", headers=world["a"]).json()
     assert detail["product"]["name"] == "เสื้อแจ็กเก็ตมือสอง"
-    assert detail["product"]["condition"] == "ดี"
+    assert detail["product"]["condition"] == "GOOD"
     assert detail["amounts"]["item_price"] == "1200.00"
     assert detail["amounts"]["total_amount"] == "1350.00"
 
