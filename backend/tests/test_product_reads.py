@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select, text
+from sqlalchemy.exc import OperationalError, TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -338,3 +339,41 @@ def test_options_missing_schema_returns_safe_json(db, table, path):
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "PRODUCT_READ_UNAVAILABLE"
     assert response.json()["error"]["request_id"]
+    assert response.headers["cache-control"] == "no-store"
+    assert set(response.json()["error"]) == {"code", "message", "fields", "request_id"}
+
+
+def test_duplicate_pending_returns_503_for_list_and_detail(db):
+    seller_id, _ = create_user(db, UserRole.SELLER)
+    # Only this isolated SQLite fixture omits the index to model damaged legacy data.
+    db.execute(text("DROP INDEX uq_verifications_user_pending"))
+    approve(db, seller_id, "PENDING")
+    approve(db, seller_id, "PENDING")
+    category_id, brand_id = catalog(db)
+    product_id = product(db, seller_id, category_id, brand_id)
+    for path in ["/products", f"/products/{product_id}"]:
+        response = client.get(path)
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "APPROVAL_STATE_UNAVAILABLE"
+        assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("path", ["/categories", "/brands"])
+@pytest.mark.parametrize("failure", [
+    DatabaseTimeout("private connection details"),
+    OperationalError("private query", {}, RuntimeError("private connection details")),
+])
+def test_options_connection_failure_returns_safe_error(db, monkeypatch, path, failure):
+    def fail_read(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(db, "scalars", fail_read)
+    app.dependency_overrides[get_db] = lambda: db
+    response = client.get(path)
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert set(error) == {"code", "message", "fields", "request_id"}
+    assert error["code"] == "PRODUCT_READ_UNAVAILABLE"
+    assert error["request_id"].startswith("req-")
+    assert response.headers["cache-control"] == "no-store"
+    assert "private" not in response.text
