@@ -6,5 +6,7 @@
 import { createProductCatalogService } from '../services/product-catalog-service.ts';
 import { createProductCatalogStore } from './product-catalog-store.ts';
 
-export const productCatalogService = createProductCatalogService();
+export const productCatalogService = createProductCatalogService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+});
 export const productCatalogStore = createProductCatalogStore({ service: productCatalogService });
