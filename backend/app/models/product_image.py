@@ -1,21 +1,45 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Identity, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Identity,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
+
 
 from app.database import Base
 
 
 class ProductImage(Base):
     __tablename__ = "product_images"
+
     __table_args__ = (
-        UniqueConstraint("upload_id", name="uq_product_images_upload_id"),
+        UniqueConstraint(
+            "upload_id",
+            name="uq_product_images_upload_id",
+        ),
         Index(
             "uq_product_images_product_sort_order",
             "product_id",
             "sort_order",
             unique=True,
             postgresql_where=text("sort_order IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "sort_order >= 0 AND sort_order <= 9",
+            name="ck_product_images_sort_order",
+        ),
+        CheckConstraint(
+            "(sort_order = 0 AND photo_type = 'MAIN') "
+            "OR (sort_order > 0 AND photo_type = 'GALLERY')",
+            name="ck_product_images_photo_type",
         ),
     )
 
@@ -50,7 +74,14 @@ class ProductImage(Base):
         String(50),
         nullable=False,
     )
+
     upload_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("product_uploads.id"), nullable=True
+        Integer,
+        ForeignKey("product_uploads.id"),
+        nullable=True,
     )
-    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )

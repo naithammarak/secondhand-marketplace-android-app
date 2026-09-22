@@ -10,7 +10,7 @@ import {
 } from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
 import { createImageUploadService } from '@/services/image-upload-service';
-import { CATEGORY_OPTIONS, CONDITION_OPTIONS } from '@/services/product-service';
+import { CATEGORY_OPTIONS, CONDITION_LABELS, CONDITION_OPTIONS } from '@/services/product-service';
 
 export type { ProductFormValues } from '@/products/product-form';
 
@@ -162,7 +162,7 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
               disabled={disabled}
             >
               <Text style={[styles.chipText, values.condition === option && styles.chipTextSelected]}>
-                {option}
+                {CONDITION_LABELS[option] ?? option}
               </Text>
             </TouchableOpacity>
           ))}
