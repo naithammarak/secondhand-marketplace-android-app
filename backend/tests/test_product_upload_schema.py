@@ -458,7 +458,7 @@ def migrated_product_database():
                         (user_id, category_id, brand_id, product_name, description,
                          size, condition, price, sale_type, status)
                     VALUES (1, 1, 1, 'Legacy Product', 'Existing data', 'M',
-                            'ดี', 10.00, 'FIXED_PRICE', 'พร้อมขาย')
+                            'ดี', 10.00, 'ราคาคงที่', 'พร้อมขาย')
                     """
                 )
             )
@@ -505,10 +505,11 @@ def test_product_migration_preserves_data_and_enforces_schema(
         }
         assert {"upload_id", "sort_order", "photo_type"} <= image_columns
 
-        # Verify legacy product condition and status normalized
-        legacy_product_condition, legacy_product_status = connection.execute(
-            text("SELECT condition, status FROM products WHERE id = 1")
+        # Verify legacy product sale_type, condition and status normalized
+        legacy_sale_type, legacy_product_condition, legacy_product_status = connection.execute(
+            text("SELECT sale_type, condition, status FROM products WHERE id = 1")
         ).one()
+        assert legacy_sale_type == "FIXED_PRICE"
         assert legacy_product_condition == "GOOD"
         assert legacy_product_status == "AVAILABLE"
 
@@ -718,5 +719,75 @@ def test_product_migration_aborts_on_unmapped_status(migrated_product_database):
         with migrated_product_database.begin() as connection:
             connection.execute(
                 text("DELETE FROM products WHERE product_name IN ('Draft Product', 'Hidden Product')")
+            )
+        command.upgrade(config, "9446ec1a2c5d")
+
+
+def test_product_migration_aborts_on_unmapped_sale_type(migrated_product_database):
+    config = _alembic_config()
+    command.downgrade(config, "f3862bffea77")
+    try:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES
+                        (1, 1, 1, 'Auction Product', 'Auction item', 'M',
+                         'GOOD', 10.00, 'AUCTION', 'AVAILABLE')
+                    """
+                )
+            )
+
+        with pytest.raises(Exception, match="unmapped/unsupported sale_type"):
+            command.upgrade(config, "daf675afc8fc")
+
+        # Confirm sale_type was NOT converted to FIXED_PRICE
+        with migrated_product_database.connect() as connection:
+            sale_type = connection.execute(
+                text("SELECT sale_type FROM products WHERE product_name = 'Auction Product'")
+            ).scalar_one()
+            assert sale_type == "AUCTION"
+    finally:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text("DELETE FROM products WHERE product_name = 'Auction Product'")
+            )
+        command.upgrade(config, "9446ec1a2c5d")
+
+
+def test_product_migration_aborts_on_unmapped_condition(migrated_product_database):
+    config = _alembic_config()
+    command.downgrade(config, "f3862bffea77")
+    try:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES
+                        (1, 1, 1, 'Broken Product', 'Broken item', 'M',
+                         'BROKEN', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                    """
+                )
+            )
+
+        with pytest.raises(Exception, match="unmapped/unknown condition"):
+            command.upgrade(config, "daf675afc8fc")
+
+        # Confirm condition was NOT converted to GOOD
+        with migrated_product_database.connect() as connection:
+            condition = connection.execute(
+                text("SELECT condition FROM products WHERE product_name = 'Broken Product'")
+            ).scalar_one()
+            assert condition == "BROKEN"
+    finally:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text("DELETE FROM products WHERE product_name = 'Broken Product'")
             )
         command.upgrade(config, "9446ec1a2c5d")

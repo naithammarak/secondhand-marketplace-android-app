@@ -113,9 +113,9 @@ python -m alembic upgrade head
 ```
 
 ในขั้นตอนนี้:
-- `condition` เดิมภาษาไทย (`'ใหม่'`, `'เหมือนใหม่'`, `'ดี'`, `'พอใช้'`) จะถูก normalize เป็น `'NEW'`, `'LIKE_NEW'`, `'GOOD'`, `'FAIR'`
-- `status` ที่มีความหมายตรงกัน (`'พร้อมขาย'`, `'จองแล้ว'`, `'ขายแล้ว'`, `'ยกเลิก'`) จะถูก normalize เป็น `'AVAILABLE'`, `'RESERVED'`, `'SOLD'`, `'CANCELLED'`
-- **ความปลอดภัยของสถานะสินค้า**: หากพบสินค้าที่มีสถานะไม่รู้จักหรือไม่พร้อมขาย (เช่น `'DRAFT'`, `'HIDDEN'` หรือ `NULL`) ระบบจะ **หยุด (abort) migration ทันที** พร้อมแจ้งรายการ id ที่ต้องจัดการ เพื่อป้องกันไม่ให้สินค้าฉบับร่างหรือสินค้าที่ซ่อนอยู่ถูกเปิดเป็นพร้อมขาย (`AVAILABLE`) โดยเจ้าของไม่ได้สั่งเผยแพร่
+- `sale_type`: แปลงเฉพาะ alias ที่รู้จัก (`'FIXED_PRICE'`, `'fixed_price'`, `'ราคาคงที่'`) เป็น `'FIXED_PRICE'` หากพบค่าอื่น (เช่น `'AUCTION'` หรือ `NULL`) ระบบจะ **หยุด (abort) migration ทันที** เพื่อป้องกันการเปลี่ยนประเภทการขายโดยพลการ
+- `condition`: แปลงเฉพาะ alias ที่รู้จัก (`'NEW'`, `'ใหม่'`, `'ของใหม่'`, `'LIKE_NEW'`, `'เหมือนใหม่'`, `'GOOD'`, `'ดี'`, `'FAIR'`, `'พอใช้'`) หากพบค่าที่ไม่รู้จัก (เช่น `'BROKEN'` หรือ `NULL`) ระบบจะ **หยุด (abort) migration ทันที** โดยไม่เดาหรือเลื่อนสภาพสินค้าเป็น `'GOOD'`
+- `status`: แปลงเฉพาะ alias ที่รู้จัก (`'พร้อมขาย'`, `'จองแล้ว'`, `'ขายแล้ว'`, `'ยกเลิก'`) เป็น `'AVAILABLE'`, `'RESERVED'`, `'SOLD'`, `'CANCELLED'` หากพบค่าที่ไม่รู้จักหรือไม่พร้อมขาย (เช่น `'DRAFT'`, `'HIDDEN'` หรือ `NULL`) ระบบจะ **หยุด (abort) migration ทันที** พร้อมแจ้งรายการ id ที่ต้องจัดการ เพื่อป้องกันไม่ให้สินค้าฉบับร่างหรือสินค้าที่ซ่อนอยู่ถูกเปิดเป็นพร้อมขาย (`AVAILABLE`) โดยเจ้าของไม่ได้สั่งเผยแพร่
 - `sort_order` ที่ยังว่างจะถูก backfill ให้เรียงลำดับต่อเนื่อง 0, 1, 2...
 - `photo_type` เดิมที่เป็น MIME เช่น `image/jpeg` จะถูก normalize เป็น `MAIN` (สำหรับ sort_order 0) และ `GALLERY` (สำหรับ sort_order > 0)
 - ข้อมูล `product_id`, `image_id`, `image_url`, `file_size`, จำนวนแถว และ foreign key references ทั้งหมดจะคงเดิม ไม่มีการลบหรือแก้ไขคีย์
@@ -222,7 +222,7 @@ PostgreSQL, ชื่อฐานมี `test`, และฐานว่าง�
 
 - single Alembic head (`9446ec1a2c5d`)
 - upgrade: `c6b19e0d4f2a` -> `9446ec1a2c5d`
-- legacy data: รูปเดิม `photo_type='image/jpeg'` ถูก normalize เป็น `MAIN`/`GALLERY` ตามลำดับ, `condition` ภาษาไทยถูก normalize เป็น `'NEW'`/`'LIKE_NEW'`/`'GOOD'`/`'FAIR'`, และ `status` ภาษาไทยถูก normalize เป็น `'AVAILABLE'`
-- status safety: สินค้าที่มี `status` ไม่รู้จัก (เช่น `'DRAFT'`, `'HIDDEN'`) จะระงับ migration ทันที ไม่เปลี่ยนเป็น `'AVAILABLE'` โดยพลการ
+- legacy data: รูปเดิม `photo_type='image/jpeg'` ถูก normalize เป็น `MAIN`/`GALLERY` ตามลำดับ, `condition` ภาษาไทยถูก normalize เป็น `'NEW'`/`'LIKE_NEW'`/`'GOOD'`/`'FAIR'`, `status` ภาษาไทยถูก normalize เป็น `'AVAILABLE'`, และ `sale_type` ภาษาไทยถูก normalize เป็น `'FIXED_PRICE'`
+- strict validation (no guessing): สินค้าที่มี `sale_type` (เช่น `'AUCTION'`), `condition` (เช่น `'BROKEN'`), หรือ `status` (เช่น `'DRAFT'`, `'HIDDEN'`) ที่ไม่รู้จัก จะระงับ (abort) migration ทันที ไม่มีการเดาหรือเปลี่ยนค่าเดิมโดยพลการ
 - constraints: price > 0, condition, sale_type, status, sort_order 0–9, photo_type ตาม sort_order
 - rollback: `9446ec1a2c5d` -> `c6b19e0d4f2a` ข้อมูลเดิมไม่สูญหาย

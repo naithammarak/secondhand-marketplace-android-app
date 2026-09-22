@@ -21,12 +21,14 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
 
-    # Normalize legacy values before constraints:
+    bind = op.get_bind()
+
+    # 1. Normalize known aliases with matching meanings:
     op.execute(
         """
         UPDATE products
         SET sale_type = 'FIXED_PRICE'
-        WHERE sale_type != 'FIXED_PRICE' OR sale_type IS NULL;
+        WHERE sale_type IN ('FIXED_PRICE', 'fixed_price', 'ราคาคงที่');
         """
     )
 
@@ -34,17 +36,16 @@ def upgrade() -> None:
         """
         UPDATE products
         SET condition = CASE
-            WHEN condition IN ('NEW', 'ใหม่', 'ของใหม่') THEN 'NEW'
-            WHEN condition IN ('LIKE_NEW', 'เหมือนใหม่', 'สภาพเหมือนใหม่') THEN 'LIKE_NEW'
-            WHEN condition IN ('GOOD', 'ดี', 'สภาพดี') THEN 'GOOD'
-            WHEN condition IN ('FAIR', 'พอใช้', 'สภาพพอใช้', 'มีตำหนิ') THEN 'FAIR'
-            ELSE 'GOOD'
+            WHEN condition IN ('NEW', 'new', 'ใหม่', 'ของใหม่') THEN 'NEW'
+            WHEN condition IN ('LIKE_NEW', 'like_new', 'เหมือนใหม่', 'สภาพเหมือนใหม่') THEN 'LIKE_NEW'
+            WHEN condition IN ('GOOD', 'good', 'ดี', 'สภาพดี') THEN 'GOOD'
+            WHEN condition IN ('FAIR', 'fair', 'พอใช้', 'สภาพพอใช้', 'มีตำหนิ') THEN 'FAIR'
+            ELSE condition
         END
-        WHERE condition NOT IN ('NEW', 'LIKE_NEW', 'GOOD', 'FAIR');
+        WHERE condition IS NOT NULL;
         """
     )
 
-    # Normalize status values with matching meanings:
     op.execute(
         """
         UPDATE products
@@ -59,8 +60,49 @@ def upgrade() -> None:
         """
     )
 
-    # Stop migration if any unknown status (e.g. DRAFT, HIDDEN) or NULL is present
-    bind = op.get_bind()
+    # 2. Stop migration if unmapped sale_type (e.g. AUCTION) or NULL is present
+    unmapped_sale_type_rows = bind.execute(
+        sa.text(
+            """
+            SELECT id, sale_type
+            FROM products
+            WHERE sale_type != 'FIXED_PRICE' OR sale_type IS NULL
+            ORDER BY id
+            """
+        )
+    ).all()
+
+    if unmapped_sale_type_rows:
+        sample = ", ".join(f"id={row[0]} (sale_type={row[1]!r})" for row in unmapped_sale_type_rows[:10])
+        total = len(unmapped_sale_type_rows)
+        more = f" and {total - 10} more" if total > 10 else ""
+        raise RuntimeError(
+            f"Migration daf675afc8fc aborted: found {total} product(s) with unmapped/unsupported sale_type ({sample}{more}). "
+            f"sale_type must be 'FIXED_PRICE'. Auction or unmapped products must not be automatically converted to 'FIXED_PRICE'."
+        )
+
+    # 3. Stop migration if unmapped condition (e.g. BROKEN) or NULL is present
+    unmapped_condition_rows = bind.execute(
+        sa.text(
+            """
+            SELECT id, condition
+            FROM products
+            WHERE condition NOT IN ('NEW', 'LIKE_NEW', 'GOOD', 'FAIR') OR condition IS NULL
+            ORDER BY id
+            """
+        )
+    ).all()
+
+    if unmapped_condition_rows:
+        sample = ", ".join(f"id={row[0]} (condition={row[1]!r})" for row in unmapped_condition_rows[:10])
+        total = len(unmapped_condition_rows)
+        more = f" and {total - 10} more" if total > 10 else ""
+        raise RuntimeError(
+            f"Migration daf675afc8fc aborted: found {total} product(s) with unmapped/unknown condition ({sample}{more}). "
+            f"condition must be one of 'NEW', 'LIKE_NEW', 'GOOD', 'FAIR'. Unknown conditions must not be automatically guessed or promoted to 'GOOD'."
+        )
+
+    # 4. Stop migration if unmapped status (e.g. DRAFT, HIDDEN) or NULL is present
     unmapped_status_rows = bind.execute(
         sa.text(
             """
@@ -78,8 +120,7 @@ def upgrade() -> None:
         more = f" and {total - 10} more" if total > 10 else ""
         raise RuntimeError(
             f"Migration daf675afc8fc aborted: found {total} product(s) with unmapped/unknown status ({sample}{more}). "
-            f"Status must be one of 'AVAILABLE', 'RESERVED', 'SOLD', 'CANCELLED'. "
-            f"Draft or hidden products must not be automatically converted to 'AVAILABLE' to prevent unintended listing."
+            f"status must be one of 'AVAILABLE', 'RESERVED', 'SOLD', 'CANCELLED'. Draft or hidden products must not be automatically converted to 'AVAILABLE' to prevent unintended listing."
         )
 
     op.create_check_constraint(
