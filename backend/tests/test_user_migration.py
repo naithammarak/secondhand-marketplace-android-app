@@ -128,7 +128,7 @@ def user_session(migrated_database):
         session.rollback()
 
     with migrated_database.begin() as connection:
-        connection.execute(text("TRUNCATE TABLE public.users RESTART IDENTITY"))
+        connection.execute(text("TRUNCATE TABLE public.users RESTART IDENTITY CASCADE"))
 
 
 def test_migration_upgrades_database_and_enables_rls_without_policies(

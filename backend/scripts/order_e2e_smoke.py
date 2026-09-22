@@ -111,7 +111,7 @@ def main() -> int:
 
         def product(name, status="AVAILABLE", deleted=False, owner="seller_owner", price="1200.00"):
             item = Product(user_id=people[owner][0], category_id=category.id, brand_id=brand.id,
-                           product_name=name, description="สมมติ", size="M", condition="ดี",
+                           product_name=name, description="สมมติ", size="M", condition="GOOD",
                            price=Decimal(price), sale_type="FIXED_PRICE", status=status)
             if deleted:
                 item.deleted_at = func.now()

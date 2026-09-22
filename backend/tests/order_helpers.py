@@ -97,7 +97,7 @@ def create_product(
         product_name=name,
         description="สินค้าสำหรับทดสอบ",
         size="M",
-        condition="ดี",
+        condition="GOOD",
         price=Decimal(price),
         sale_type="FIXED_PRICE",
         status=status,

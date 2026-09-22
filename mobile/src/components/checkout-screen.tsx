@@ -10,6 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { emptyAddressForm, type AddressFormValues } from '@/orders/checkout-form';
 import { formatBaht } from '@/orders/order-format';
 import { useCheckout } from '@/orders/orders-provider';
+import { CONDITION_LABELS } from '@/services/product-service';
 
 const FIELDS: { field: keyof AddressFormValues; label: string; placeholder: string; numeric?: boolean }[] = [
   { field: 'recipientName', label: 'ชื่อผู้รับ', placeholder: 'ชื่อ-นามสกุลผู้รับสินค้า' },
@@ -90,7 +91,7 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
               <Card>
                 <ThemedText type="smallBold">{quote.product.name}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  สภาพ {quote.product.condition} • ไซซ์ {quote.product.size}
+                  สภาพ {CONDITION_LABELS[quote.product.condition] ?? quote.product.condition} • ไซซ์ {quote.product.size}
                 </ThemedText>
                 <Row label="ราคาสินค้า" value={formatBaht(quote.itemPrice)} />
                 <Row label="ค่าจัดส่ง" value={formatBaht(quote.shippingFee)} />
