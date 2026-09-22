@@ -82,6 +82,7 @@ def approve(db, user_id, status="APPROVED"):
             bank_account_number="1111111111",
             bank_name="ธนาคารทดสอบ",
             verification_status=status,
+            reject_reason="Test rejection reason" if status == "REJECTED" else None,
             created_at=datetime.now(timezone.utc),
         )
     )

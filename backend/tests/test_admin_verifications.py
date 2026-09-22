@@ -475,3 +475,48 @@ def test_a_rejection_reaches_the_seller_and_lets_them_send_a_new_request(storage
     queue = client.get("/admin/verifications", headers=admin_headers).json()
     assert queue["total"] == 1
     assert queue["items"][0]["id"] != first_id
+
+
+def test_reject_reason_boundary_acceptance():
+    # 5 characters accepted
+    _, v1 = seller_with_pending()
+    _, h1 = create_user()
+    r1 = client.post(
+        f"/admin/verifications/{v1}/decision",
+        json={"decision": "REJECTED", "reject_reason": "12345"},
+        headers=h1,
+    )
+    assert r1.status_code == 200
+
+    # 500 characters accepted
+    _, v2 = seller_with_pending()
+    _, h2 = create_user()
+    r2 = client.post(
+        f"/admin/verifications/{v2}/decision",
+        json={"decision": "REJECTED", "reject_reason": "ก" * 500},
+        headers=h2,
+    )
+    assert r2.status_code == 200
+
+
+def test_admin_data_minimization():
+    _, verification_id = seller_with_pending()
+    _, admin_headers = create_user()
+
+    # List endpoint
+    list_res = client.get("/admin/verifications", headers=admin_headers)
+    assert list_res.status_code == 200
+    item = list_res.json()["items"][0]
+    assert "bank_account_number" not in item
+    assert "id_card_image_url" not in item
+    assert item["bank_account_last4"] == "7890"
+    assert item["has_id_card_image"] is True
+
+    # Detail endpoint
+    detail_res = client.get(f"/admin/verifications/{verification_id}", headers=admin_headers)
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert "bank_account_number" not in detail
+    assert "id_card_image_url" not in detail
+    assert detail["bank_account_last4"] == "7890"
+    assert detail["has_id_card_image"] is True

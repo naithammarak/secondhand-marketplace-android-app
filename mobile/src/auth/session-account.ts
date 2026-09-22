@@ -2,13 +2,13 @@ import type { MeResult } from '../services/me-service';
 
 type UnauthorizedError = Error & { kind?: string };
 
-export async function verifyAccountWithRefresh(options: {
+export async function withTokenRefresh<T>(options: {
   accessToken: string;
-  getMe(token: string): Promise<MeResult>;
+  request(token: string): Promise<T>;
   refresh(): Promise<{ accessToken: string } | null>;
-}): Promise<MeResult> {
+}): Promise<T> {
   try {
-    return await options.getMe(options.accessToken);
+    return await options.request(options.accessToken);
   } catch (error) {
     if ((error as UnauthorizedError).kind !== 'unauthorized') throw error;
   }
@@ -18,5 +18,17 @@ export async function verifyAccountWithRefresh(options: {
     error.kind = 'unauthorized';
     throw error;
   }
-  return options.getMe(refreshed.accessToken);
+  return options.request(refreshed.accessToken);
+}
+
+export function verifyAccountWithRefresh(options: {
+  accessToken: string;
+  getMe(token: string): Promise<MeResult>;
+  refresh(): Promise<{ accessToken: string } | null>;
+}): Promise<MeResult> {
+  return withTokenRefresh({
+    accessToken: options.accessToken,
+    request: options.getMe,
+    refresh: options.refresh,
+  });
 }

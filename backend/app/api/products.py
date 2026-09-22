@@ -32,6 +32,7 @@ from app.services.product_upload_binding import bind_pending_uploads, replace_pr
 logger = logging.getLogger(__name__)
 
 ERROR_MESSAGES = {
+    "PRODUCT_READ_UNAVAILABLE": "ไม่สามารถอ่านข้อมูลสินค้าได้ในขณะนี้ กรุณาลองใหม่ภายหลัง",
     "AUTH_REQUIRED": "กรุณาเข้าสู่ระบบใหม่",
     "ACCOUNT_NOT_REGISTERED": "กรุณาเข้าสู่ระบบให้เสร็จก่อน",
     "ACCOUNT_INACTIVE": "บัญชีนี้ไม่สามารถทำรายการได้",
@@ -60,7 +61,9 @@ def product_error(status_code: int, code: str, fields: dict | None = None) -> HT
 def validation_fields(exc: RequestValidationError) -> dict[str, list[str]]:
     fields: dict[str, list[str]] = {}
     for error in exc.errors():
-        path = ".".join(str(part) for part in error["loc"] if part != "body") or "body"
+        path = ".".join(
+            str(part) for part in error["loc"] if part not in {"body", "query", "path"}
+        ) or "body"
         message = error.get("ctx", {}).get("error")
         fields.setdefault(path, []).append(str(message or error["msg"]))
     return fields

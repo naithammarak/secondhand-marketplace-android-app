@@ -3,13 +3,14 @@ import uuid
 from functools import lru_cache
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import jwt
 
 from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
-from app.schemas.auth import GoogleLoginRequest, UserResponse
+from app.schemas.auth import GoogleLoginRequest, SetRoleRequest, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
@@ -222,3 +223,45 @@ def google_login(
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/role", response_model=UserResponse)
+def set_role(
+    body: SetRoleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set a user's first self-service role exactly once.
+
+    The conditional update is the concurrency boundary: after one request commits,
+    every competing request observes a zero row count and must keep the stored role.
+    """
+    selected_role = UserRole(body.role.value)
+    result = db.execute(
+        update(User)
+        .where(
+            User.id == current_user.id,
+            User.role.is_(None),
+            User.status == UserStatus.ACTIVE,
+        )
+        .values(role=selected_role)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 1:
+        db.commit()
+        db.refresh(current_user)
+        return current_user
+
+    db.rollback()
+    db.refresh(current_user)
+    if current_user.status != UserStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is not active",
+        )
+    if current_user.role == selected_role:
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Role has already been selected",
+    )
