@@ -130,7 +130,7 @@ def test_image_binding_keeps_old_urls_and_prevents_reusing_an_upload(registry_db
         image_url="https://example.invalid/storage/v1/object/public/product-images/old.jpg",
         file_size=100,
         uploaded_at=datetime.now(timezone.utc),
-        photo_type="image/jpeg",
+        photo_type="MAIN",
         sort_order=0,
     )
     registry_db.add(old_image)
@@ -171,18 +171,233 @@ def test_image_binding_keeps_old_urls_and_prevents_reusing_an_upload(registry_db
         registry_db.commit()
 
 
-def test_migration_follows_both_existing_heads():
+def test_product_model_constraints_enforced(registry_db):
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                Product(
+                    user_id=1,
+                    category_id=1,
+                    brand_id=1,
+                    product_name="Bad Price",
+                    description="Desc",
+                    size="M",
+                    condition="GOOD",
+                    price=Decimal("0.00"),
+                    sale_type="FIXED_PRICE",
+                    status="AVAILABLE",
+                )
+            )
+            registry_db.flush()
+
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                Product(
+                    user_id=1,
+                    category_id=1,
+                    brand_id=1,
+                    product_name="Neg Price",
+                    description="Desc",
+                    size="M",
+                    condition="GOOD",
+                    price=Decimal("-10.00"),
+                    sale_type="FIXED_PRICE",
+                    status="AVAILABLE",
+                )
+            )
+            registry_db.flush()
+
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                Product(
+                    user_id=1,
+                    category_id=1,
+                    brand_id=1,
+                    product_name="Bad Condition",
+                    description="Desc",
+                    size="M",
+                    condition="INVALID_COND",
+                    price=Decimal("10.00"),
+                    sale_type="FIXED_PRICE",
+                    status="AVAILABLE",
+                )
+            )
+            registry_db.flush()
+
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                Product(
+                    user_id=1,
+                    category_id=1,
+                    brand_id=1,
+                    product_name="Bad Sale",
+                    description="Desc",
+                    size="M",
+                    condition="GOOD",
+                    price=Decimal("10.00"),
+                    sale_type="AUCTION",
+                    status="AVAILABLE",
+                )
+            )
+            registry_db.flush()
+
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                Product(
+                    user_id=1,
+                    category_id=1,
+                    brand_id=1,
+                    product_name="Bad Status",
+                    description="Desc",
+                    size="M",
+                    condition="GOOD",
+                    price=Decimal("10.00"),
+                    sale_type="FIXED_PRICE",
+                    status="UNKNOWN",
+                )
+            )
+            registry_db.flush()
+
+
+def test_product_image_model_constraints_enforced(registry_db):
+    product = Product(
+        user_id=1,
+        category_id=1,
+        brand_id=1,
+        product_name="Valid Product",
+        description="Desc",
+        size="M",
+        condition="GOOD",
+        price=Decimal("100.00"),
+        sale_type="FIXED_PRICE",
+        status="AVAILABLE",
+    )
+    registry_db.add(product)
+    registry_db.flush()
+
+    # sort_order < 0 rejected
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                ProductImage(
+                    product_id=product.id,
+                    image_id=10,
+                    image_url="neg.jpg",
+                    file_size=100,
+                    uploaded_at=datetime.now(timezone.utc),
+                    photo_type="MAIN",
+                    sort_order=-1,
+                )
+            )
+            registry_db.flush()
+
+    # sort_order > 9 rejected
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                ProductImage(
+                    product_id=product.id,
+                    image_id=11,
+                    image_url="ten.jpg",
+                    file_size=100,
+                    uploaded_at=datetime.now(timezone.utc),
+                    photo_type="GALLERY",
+                    sort_order=10,
+                )
+            )
+            registry_db.flush()
+
+    # sort_order 0 with GALLERY rejected
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                ProductImage(
+                    product_id=product.id,
+                    image_id=12,
+                    image_url="bad_main.jpg",
+                    file_size=100,
+                    uploaded_at=datetime.now(timezone.utc),
+                    photo_type="GALLERY",
+                    sort_order=0,
+                )
+            )
+            registry_db.flush()
+
+    # sort_order > 0 with MAIN rejected
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                ProductImage(
+                    product_id=product.id,
+                    image_id=13,
+                    image_url="bad_gal.jpg",
+                    file_size=100,
+                    uploaded_at=datetime.now(timezone.utc),
+                    photo_type="MAIN",
+                    sort_order=1,
+                )
+            )
+            registry_db.flush()
+
+    # Valid: 0 is MAIN, 1 is GALLERY
+    valid_main = ProductImage(
+        product_id=product.id,
+        image_id=1,
+        image_url="main.jpg",
+        file_size=100,
+        uploaded_at=datetime.now(timezone.utc),
+        photo_type="MAIN",
+        sort_order=0,
+    )
+    valid_gal = ProductImage(
+        product_id=product.id,
+        image_id=2,
+        image_url="gallery.jpg",
+        file_size=100,
+        uploaded_at=datetime.now(timezone.utc),
+        photo_type="GALLERY",
+        sort_order=1,
+    )
+    registry_db.add(valid_main)
+    registry_db.add(valid_gal)
+    registry_db.flush()
+
+    # Duplicate sort_order rejected
+    with pytest.raises(IntegrityError):
+        with registry_db.begin_nested():
+            registry_db.add(
+                ProductImage(
+                    product_id=product.id,
+                    image_id=3,
+                    image_url="dup.jpg",
+                    file_size=100,
+                    uploaded_at=datetime.now(timezone.utc),
+                    photo_type="MAIN",
+                    sort_order=0,
+                )
+            )
+            registry_db.flush()
+
+
+def test_migration_graph_unifies_to_single_head():
     backend_dir = Path(__file__).resolve().parents[1]
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert set(script.get_heads()) == {"9a18d37ce520", "f02a03c91801"}
-    upload_revision = script.get_revision("7f4c2e91a6b0")
-    assert upload_revision.down_revision == "c6b19e0d4f2a"
-    merge_revision = script.get_revision("9a18d37ce520")
-    image_revision = script.get_revision("54ca8e0731bd")
-    assert image_revision.down_revision == "7f4c2e91a6b0"
-    assert set(merge_revision.down_revision) == {"54ca8e0731bd", "e8a4f1c02d77"}
+    assert script.get_heads() == ["9446ec1a2c5d"]
+
+    merge_revision = script.get_revision("f3862bffea77")
+    assert set(merge_revision.down_revision) == {"9a18d37ce520", "f02a03c91801"}
+
+    product_revision = script.get_revision("daf675afc8fc")
+    assert product_revision.down_revision == "f3862bffea77"
+
+    image_revision = script.get_revision("9446ec1a2c5d")
+    assert image_revision.down_revision == "daf675afc8fc"
 
 
 def _alembic_config() -> Config:
@@ -252,12 +467,14 @@ def migrated_product_database():
                     """
                     INSERT INTO product_images
                         (product_id, image_id, image_url, file_size, uploaded_at, photo_type)
-                    VALUES (1, 1, 'legacy/image.jpg', 100, now(), 'image/jpeg')
+                    VALUES
+                        (1, 1, 'legacy/image.jpg', 100, now(), 'image/jpeg'),
+                        (1, 2, 'legacy/gallery.jpg', 200, now(), 'image/jpeg')
                     """
                 )
             )
 
-        command.upgrade(config, "54ca8e0731bd")
+        command.upgrade(config, "9446ec1a2c5d")
         yield engine
     finally:
         try:
@@ -276,7 +493,7 @@ def test_product_migration_preserves_data_and_enforces_schema(
     migrated_product_database,
 ):
     with migrated_product_database.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_revision() == "54ca8e0731bd"
+        assert MigrationContext.configure(connection).get_current_revision() == "9446ec1a2c5d"
         assert "product_uploads" in inspect(connection).get_table_names(schema="public")
         product_upload_columns = {
             column["name"] for column in inspect(connection).get_columns("product_uploads")
@@ -286,16 +503,19 @@ def test_product_migration_preserves_data_and_enforces_schema(
         image_columns = {
             column["name"] for column in inspect(connection).get_columns("product_images")
         }
-        assert {"upload_id", "sort_order"} <= image_columns
+        assert {"upload_id", "sort_order", "photo_type"} <= image_columns
 
-        legacy = connection.execute(
+        # Verify legacy images preserved and photo_type normalized
+        legacy_images = connection.execute(
             text(
-                "SELECT product_name, image_url, sort_order "
-                "FROM products JOIN product_images "
-                "ON products.id = product_images.product_id"
+                "SELECT image_id, image_url, sort_order, photo_type "
+                "FROM product_images WHERE product_id = 1 "
+                "ORDER BY sort_order"
             )
-        ).one()
-        assert legacy == ("Legacy Product", "legacy/image.jpg", 0)
+        ).all()
+        assert len(legacy_images) == 2
+        assert legacy_images[0] == (1, "legacy/image.jpg", 0, "MAIN")
+        assert legacy_images[1] == (2, "legacy/gallery.jpg", 1, "GALLERY")
 
         upload_foreign_keys = inspect(connection).get_foreign_keys("product_uploads")
         assert {
@@ -310,29 +530,124 @@ def test_product_migration_preserves_data_and_enforces_schema(
             for foreign_key in image_foreign_keys
         )
 
-        connection.execute(
-            text(
-                """
-                INSERT INTO product_uploads
-                    (user_id, object_key, mime_type, file_size, expires_at)
-                VALUES (1, 'legacy/new.jpg', 'image/jpeg', 100, now() + interval '1 day')
-                """
+        # Constraint: price must be > 0
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Bad Price', 'Desc', 'M',
+                            'GOOD', 0.00, 'FIXED_PRICE', 'AVAILABLE')
+                    """
+                )
             )
-        )
-        with pytest.raises(IntegrityError) as duplicate_sort_order_error:
+
+        # Constraint: condition must be valid
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Bad Condition', 'Desc', 'M',
+                            'BROKEN', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                    """
+                )
+            )
+
+        # Constraint: sale_type must be FIXED_PRICE
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Bad Sale Type', 'Desc', 'M',
+                            'GOOD', 10.00, 'AUCTION', 'AVAILABLE')
+                    """
+                )
+            )
+
+        # Constraint: status must be valid
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Bad Status', 'Desc', 'M',
+                            'GOOD', 10.00, 'FIXED_PRICE', 'ARCHIVED')
+                    """
+                )
+            )
+
+        # Constraint: sort_order between 0 and 9
+        with pytest.raises(IntegrityError):
             connection.execute(
                 text(
                     """
                     INSERT INTO product_images
                         (product_id, image_id, image_url, file_size, uploaded_at,
                          photo_type, sort_order)
-                    VALUES (1, 2, 'duplicate.jpg', 100, now(), 'image/jpeg', 0)
+                    VALUES (1, 10, 'out_of_range.jpg', 100, now(), 'GALLERY', 10)
                     """
                 )
             )
-        assert "uq_product_images_product_sort_order" in str(
-            duplicate_sort_order_error.value
-        )
+
+        # Constraint: duplicate sort_order rejected
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_images
+                        (product_id, image_id, image_url, file_size, uploaded_at,
+                         photo_type, sort_order)
+                    VALUES (1, 11, 'duplicate.jpg', 100, now(), 'MAIN', 0)
+                    """
+                )
+            )
+
+        # Constraint: sort_order 0 must be MAIN
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES (1, 1, 1, 'Product 2', 'Desc', 'M',
+                            'GOOD', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_images
+                        (product_id, image_id, image_url, file_size, uploaded_at,
+                         photo_type, sort_order)
+                    VALUES (2, 20, 'bad_main.jpg', 100, now(), 'GALLERY', 0)
+                    """
+                )
+            )
+
+        # Constraint: sort_order > 0 must be GALLERY
+        with pytest.raises(IntegrityError):
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO product_images
+                        (product_id, image_id, image_url, file_size, uploaded_at,
+                         photo_type, sort_order)
+                    VALUES (1, 21, 'bad_gallery.jpg', 100, now(), 'MAIN', 2)
+                    """
+                )
+            )
 
 
 def test_product_migration_rollback_keeps_legacy_rows(migrated_product_database):
@@ -343,10 +658,10 @@ def test_product_migration_rollback_keeps_legacy_rows(migrated_product_database)
         assert "product_uploads" not in inspect(connection).get_table_names(schema="public")
         legacy = connection.execute(
             text(
-                "SELECT product_name, image_url "
-                "FROM products JOIN product_images "
-                "ON products.id = product_images.product_id"
+                "SELECT image_id, image_url "
+                "FROM product_images WHERE product_id = 1 "
+                "ORDER BY image_id"
             )
-        ).one()
-        assert legacy == ("Legacy Product", "legacy/image.jpg")
-    command.upgrade(config, "54ca8e0731bd")
+        ).all()
+        assert legacy == [(1, "legacy/image.jpg"), (2, "legacy/gallery.jpg")]
+    command.upgrade(config, "9446ec1a2c5d")

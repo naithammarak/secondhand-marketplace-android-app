@@ -21,6 +21,40 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
 
+    # Backfill sort_order for any existing product images where sort_order IS NULL.
+    op.execute(
+        """
+        WITH ranked_nulls AS (
+            SELECT
+                product_id,
+                image_id,
+                COALESCE(
+                    (SELECT MAX(sort_order) FROM product_images existing WHERE existing.product_id = pi.product_id),
+                    -1
+                ) + ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY image_id) AS assigned_sort_order
+            FROM product_images pi
+            WHERE sort_order IS NULL
+        )
+        UPDATE product_images AS img
+        SET sort_order = ranked_nulls.assigned_sort_order
+        FROM ranked_nulls
+        WHERE img.product_id = ranked_nulls.product_id
+          AND img.image_id = ranked_nulls.image_id
+        """
+    )
+
+    # Normalize photo_type before adding constraint:
+    # sort_order = 0 -> 'MAIN', sort_order > 0 -> 'GALLERY'
+    op.execute(
+        """
+        UPDATE product_images
+        SET photo_type = CASE
+            WHEN sort_order = 0 THEN 'MAIN'
+            ELSE 'GALLERY'
+        END
+        """
+    )
+
     # sort_order must exist for every product image.
     op.alter_column(
         "product_images",
