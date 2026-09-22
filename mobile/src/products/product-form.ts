@@ -1,4 +1,9 @@
-import { CATEGORY_OPTIONS, CONDITION_OPTIONS, type ProductInput } from '../services/product-service.ts';
+import {
+  CONDITION_OPTIONS,
+  type BrandOption,
+  type CategoryOption,
+  type ProductInput,
+} from '../services/product-service.ts';
 
 export type ProductFormValues = ProductInput;
 
@@ -8,21 +13,40 @@ export const emptyProductFormValues: ProductFormValues = {
   size: '',
   condition: CONDITION_OPTIONS[0],
   price: 0,
-  category: CATEGORY_OPTIONS[0],
-  categoryId: 1,
+  category: '',
+  categoryId: undefined,
   brand: '',
-  brandId: 1,
+  brandId: undefined,
   images: [],
 };
 
-export type ProductFieldErrors = { name?: string; price?: string };
+export type ProductFieldErrors = {
+  name?: string;
+  price?: string;
+  category?: string;
+  brand?: string;
+};
 
-export function validateProductForm(values: ProductFormValues, priceText: string): ProductFieldErrors {
+export function validateProductForm(
+  values: ProductFormValues,
+  priceText: string,
+  options?: { categories?: CategoryOption[]; brands?: BrandOption[] },
+): ProductFieldErrors {
   const errors: ProductFieldErrors = {};
   if (!values.name.trim()) errors.name = 'กรุณากรอกชื่อสินค้า';
   const price = Number(priceText);
   if (!priceText.trim() || !Number.isFinite(price) || price <= 0) {
     errors.price = 'กรุณากรอกราคาที่มากกว่า 0';
+  }
+  if (options?.categories && options.categories.length > 0) {
+    if (!values.categoryId || !options.categories.some(c => c.id === values.categoryId)) {
+      errors.category = 'กรุณาเลือกหมวดหมู่สินค้า';
+    }
+  }
+  if (options?.brands && options.brands.length > 0) {
+    if (!values.brandId || !options.brands.some(b => b.id === values.brandId)) {
+      errors.brand = 'กรุณาเลือกแบรนด์สินค้า';
+    }
   }
   return errors;
 }

@@ -45,6 +45,16 @@ function deferred() {
 describe('ProductForm', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetCategories.mockResolvedValue([
+      { id: 1, name: 'เสื้อผ้า' },
+      { id: 2, name: 'รองเท้า' },
+      { id: 10, name: 'หมวดหมู่พิเศษ' },
+    ]);
+    mockGetBrands.mockResolvedValue([
+      { id: 1, name: 'ไม่ระบุแบรนด์' },
+      { id: 2, name: 'Nike' },
+      { id: 99, name: 'แบรนด์พิเศษ' },
+    ]);
   });
 
   test('preserves user edits and removed images when an image upload resolves', async () => {
@@ -338,6 +348,119 @@ describe('ProductForm', () => {
         categoryId: 10,
         brand: 'แบรนด์พิเศษ',
         brandId: 99,
+      }),
+    );
+  });
+
+  test('binds initial category name to real API ID instead of stale default ID', async () => {
+    mockGetCategories.mockResolvedValueOnce([
+      { id: 42, name: 'เสื้อผ้า' },
+      { id: 43, name: 'รองเท้า' },
+    ]);
+    mockGetBrands.mockResolvedValueOnce([
+      { id: 101, name: 'ไม่ระบุแบรนด์' },
+      { id: 102, name: 'Nike' },
+    ]);
+
+    const onSubmit = jest.fn();
+    const initialValues = {
+      name: 'เสื้อยืดตัวอย่าง',
+      description: 'คำอธิบาย',
+      size: 'M',
+      condition: 'NEW',
+      price: 290,
+      category: 'เสื้อผ้า',
+      brand: 'ไม่ระบุแบรนด์',
+      images: [],
+    };
+
+    render(
+      <ProductForm
+        mode="create"
+        initialValues={initialValues}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // Wait for options to load and category chip to appear
+    await screen.findByText('เสื้อผ้า');
+
+    const submitBtn = screen.getByText('ลงขายสินค้า');
+    await act(async () => {
+      fireEvent.press(submitBtn);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'เสื้อยืดตัวอย่าง',
+        price: 290,
+        category: 'เสื้อผ้า',
+        categoryId: 42,
+        brand: 'ไม่ระบุแบรนด์',
+        brandId: 101,
+      }),
+    );
+  });
+
+  test('displays error and retry button when loading options fails, and allows submission after retry', async () => {
+    mockGetCategories.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+    const onSubmit = jest.fn();
+
+    render(
+      <ProductForm
+        mode="create"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    // Error banner should appear
+    const errorText = await screen.findByText('503 Service Unavailable');
+    expect(errorText).toBeTruthy();
+
+    // Submit button should be disabled
+    const submitBtn = screen.getByText('ลงขายสินค้า');
+    await act(async () => {
+      fireEvent.press(submitBtn);
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    // Mock successful retry
+    mockGetCategories.mockResolvedValueOnce([
+      { id: 42, name: 'เสื้อผ้า' },
+      { id: 43, name: 'รองเท้า' },
+    ]);
+    mockGetBrands.mockResolvedValueOnce([
+      { id: 101, name: 'ไม่ระบุแบรนด์' },
+    ]);
+
+    const retryBtn = screen.getByText('ลองใหม่อีกครั้ง');
+    await act(async () => {
+      fireEvent.press(retryBtn);
+    });
+
+    // Error banner should disappear and category chip should appear
+    await screen.findByText('เสื้อผ้า');
+    expect(screen.queryByText('503 Service Unavailable')).toBeNull();
+
+    // Fill in required fields and submit
+    const nameInput = screen.getByPlaceholderText('เช่น เสื้อยืดสีขาว');
+    const priceInput = screen.getByPlaceholderText('0');
+    await act(async () => {
+      fireEvent.changeText(nameInput, 'กางเกงยีนส์');
+      fireEvent.changeText(priceInput, '790');
+    });
+
+    await act(async () => {
+      fireEvent.press(submitBtn);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'กางเกงยีนส์',
+        price: 790,
+        category: 'เสื้อผ้า',
+        categoryId: 42,
+        brandId: 101,
       }),
     );
   });

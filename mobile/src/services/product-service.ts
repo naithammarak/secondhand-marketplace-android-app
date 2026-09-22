@@ -420,21 +420,10 @@ export function createProductService(options: ProductServiceOptions = {}) {
         ];
       }
 
-      try {
-        const res = await request('/categories', { method: 'GET' });
-        const json = await res.json();
-        const list = json.data ?? [];
-        return list.map((c: any) => ({ id: c.id, name: c.category_name }));
-      } catch {
-        // Return standard fallback options on temporary connection failure
-        return [
-          { id: 1, name: 'เสื้อผ้า' },
-          { id: 2, name: 'รองเท้า' },
-          { id: 3, name: 'กระเป๋า' },
-          { id: 4, name: 'เครื่องประดับ' },
-          { id: 5, name: 'อื่น ๆ' },
-        ];
-      }
+      const res = await request('/categories', { method: 'GET' });
+      const json = await res.json();
+      const list = json.data ?? [];
+      return list.map((c: any) => ({ id: c.id, name: c.category_name }));
     },
 
     async getBrands(): Promise<BrandOption[]> {
@@ -448,21 +437,10 @@ export function createProductService(options: ProductServiceOptions = {}) {
         ];
       }
 
-      try {
-        const res = await request('/brands', { method: 'GET' });
-        const json = await res.json();
-        const list = json.data ?? [];
-        return list.map((b: any) => ({ id: b.id, name: b.brand_name }));
-      } catch {
-        // Return standard fallback options on temporary connection failure
-        return [
-          { id: 1, name: 'ไม่ระบุแบรนด์' },
-          { id: 2, name: 'Nike' },
-          { id: 3, name: 'Adidas' },
-          { id: 4, name: 'Uniqlo' },
-          { id: 5, name: 'Zara' },
-        ];
-      }
+      const res = await request('/brands', { method: 'GET' });
+      const json = await res.json();
+      const list = json.data ?? [];
+      return list.map((b: any) => ({ id: b.id, name: b.brand_name }));
     },
 
     async cancelProduct(id: string, explicitToken?: string): Promise<Product> {

@@ -30,6 +30,33 @@ test('a valid name and price pass validation', () => {
   assert.deepEqual(validateProductForm(validValues, '150'), {});
 });
 
+test('category is required when categories options are provided', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const errors = validateProductForm({ ...validValues, categoryId: undefined }, '150', { categories });
+  assert.equal(errors.category, 'กรุณาเลือกหมวดหมู่สินค้า');
+});
+
+test('invalid categoryId not in categories is rejected', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const errors = validateProductForm({ ...validValues, categoryId: 999 }, '150', { categories });
+  assert.equal(errors.category, 'กรุณาเลือกหมวดหมู่สินค้า');
+});
+
+test('brand is required when brands options are provided and brandId is missing or invalid', () => {
+  const brands = [{ id: 1, name: 'ไม่ระบุแบรนด์' }, { id: 2, name: 'Nike' }];
+  const errorsMissing = validateProductForm({ ...validValues, brandId: undefined }, '150', { brands });
+  assert.equal(errorsMissing.brand, 'กรุณาเลือกแบรนด์สินค้า');
+  const errorsInvalid = validateProductForm({ ...validValues, brandId: 999 }, '150', { brands });
+  assert.equal(errorsInvalid.brand, 'กรุณาเลือกแบรนด์สินค้า');
+});
+
+test('valid categoryId and brandId matching options pass validation', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const brands = [{ id: 1, name: 'ไม่ระบุแบรนด์' }, { id: 2, name: 'Nike' }];
+  const errors = validateProductForm({ ...validValues, categoryId: 42, brandId: 1 }, '150', { categories, brands });
+  assert.deepEqual(errors, {});
+});
+
 test('a valid form reports both fields missing together', () => {
   const errors = validateProductForm(emptyProductFormValues, '');
   assert.equal(typeof errors.name, 'string');

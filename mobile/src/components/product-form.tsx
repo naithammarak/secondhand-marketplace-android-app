@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
@@ -6,14 +6,13 @@ import {
   emptyProductFormValues,
   uploadProductImage,
   validateProductForm,
+  type ProductFieldErrors,
   type ProductFormValues,
 } from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
 import { pickProductImage } from '@/products/pick-product-image';
 import { createImageUploadService } from '@/services/image-upload-service';
 import {
-  BRAND_OPTIONS,
-  CATEGORY_OPTIONS,
   CONDITION_LABELS,
   CONDITION_OPTIONS,
   createProductService,
@@ -43,8 +42,58 @@ const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
 });
 
-const defaultCategories: CategoryOption[] = CATEGORY_OPTIONS.map((name, i) => ({ id: i + 1, name }));
-const defaultBrands: BrandOption[] = BRAND_OPTIONS.map((name, i) => ({ id: i + 1, name }));
+export function syncValuesWithOptions(
+  current: ProductFormValues,
+  catList: CategoryOption[],
+  brandList: BrandOption[],
+): ProductFormValues {
+  const updated = { ...current };
+
+  // Category sync:
+  // Match by name first to ensure the real ID from API is used (e.g. "เสื้อผ้า" -> ID 42 instead of stale 1)
+  const matchedCatByName = current.category
+    ? catList.find(c => c.name.trim().toLowerCase() === current.category.trim().toLowerCase())
+    : undefined;
+  const matchedCatById = current.categoryId
+    ? catList.find(c => c.id === current.categoryId)
+    : undefined;
+  const matchedCat = matchedCatByName ?? matchedCatById;
+
+  if (matchedCat) {
+    updated.category = matchedCat.name;
+    updated.categoryId = matchedCat.id;
+  } else if (catList.length > 0 && !current.category) {
+    updated.category = catList[0].name;
+    updated.categoryId = catList[0].id;
+  } else {
+    updated.categoryId = undefined;
+  }
+
+  // Brand sync:
+  const matchedBrandByName = current.brand
+    ? brandList.find(b => b.name.trim().toLowerCase() === current.brand.trim().toLowerCase())
+    : undefined;
+  const matchedBrandById = current.brandId
+    ? brandList.find(b => b.id === current.brandId)
+    : undefined;
+  const matchedBrand = matchedBrandByName ?? matchedBrandById;
+
+  if (matchedBrand) {
+    updated.brand = matchedBrand.name;
+    updated.brandId = matchedBrand.id;
+  } else {
+    // If brand is custom/unlisted or empty, assign the real ID of "ไม่ระบุแบรนด์" from database
+    const unbranded = brandList.find(b => b.name === 'ไม่ระบุแบรนด์') ?? brandList[0];
+    if (unbranded) {
+      updated.brandId = unbranded.id;
+      if (!current.brand) {
+        updated.brand = unbranded.name;
+      }
+    }
+  }
+
+  return updated;
+}
 
 export function ProductForm({
   mode,
@@ -57,24 +106,65 @@ export function ProductForm({
 }: Props) {
   const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
   const [priceText, setPriceText] = useState(initialValues ? String(initialValues.price) : '');
-  const [categories, setCategories] = useState<CategoryOption[]>(defaultCategories);
-  const [brands, setBrands] = useState<BrandOption[]>(defaultBrands);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [brands, setBrands] = useState<BrandOption[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<ReturnType<typeof validateProductForm>>({});
+  const [fieldErrors, setFieldErrors] = useState<ProductFieldErrors>({});
+
+  const applyLoadedOptions = useCallback((catList: CategoryOption[], brandList: BrandOption[]) => {
+    if (catList.length === 0) {
+      setCategories([]);
+      setBrands([]);
+      setOptionsError('ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ');
+      return;
+    }
+    setCategories(catList);
+    setBrands(brandList);
+    setValues(current => syncValuesWithOptions(current, catList, brandList));
+  }, []);
+
+  const handleRetryOptions = useCallback(async () => {
+    setLoadingOptions(true);
+    setOptionsError(null);
+    try {
+      const [catList, brandList] = await Promise.all([
+        productService.getCategories(),
+        productService.getBrands(),
+      ]);
+      applyLoadedOptions(catList, brandList);
+    } catch (err) {
+      setCategories([]);
+      setBrands([]);
+      setOptionsError(err instanceof Error ? err.message : 'โหลดหมวดหมู่และแบรนด์ไม่สำเร็จ');
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, [applyLoadedOptions]);
 
   useEffect(() => {
     let active = true;
-    void productService.getCategories().then(list => {
-      if (active && list.length > 0) setCategories(list);
-    });
-    void productService.getBrands().then(list => {
-      if (active && list.length > 0) setBrands(list);
+    Promise.all([
+      productService.getCategories(),
+      productService.getBrands(),
+    ]).then(([catList, brandList]) => {
+      if (!active) return;
+      applyLoadedOptions(catList, brandList);
+      setLoadingOptions(false);
+    }).catch(err => {
+      if (!active) return;
+      setCategories([]);
+      setBrands([]);
+      setOptionsError(err instanceof Error ? err.message : 'โหลดหมวดหมู่และแบรนด์ไม่สำเร็จ');
+      setLoadingOptions(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [applyLoadedOptions]);
 
   const disabled = submitting || submitSuccess;
+  const cannotSubmit = disabled || loadingOptions || !!optionsError || categories.length === 0;
 
   async function handleAddImage() {
     setUploadingImage(true);
@@ -111,6 +201,7 @@ export function ProductForm({
 
   function moveImage(fromIndex: number, toIndex: number) {
     setValues(current => {
+      if (toIndex < 0 || toIndex >= current.images.length) return current;
       const list = [...current.images];
       const [moved] = list.splice(fromIndex, 1);
       list.splice(toIndex, 0, moved);
@@ -119,7 +210,8 @@ export function ProductForm({
   }
 
   function handleSubmit() {
-    const errors = validateProductForm(values, priceText);
+    if (cannotSubmit) return;
+    const errors = validateProductForm(values, priceText, { categories, brands });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     void onSubmit({ ...values, price: Number(priceText) });
@@ -127,15 +219,29 @@ export function ProductForm({
 
   const nameError = fieldErrors.name || serverFieldErrors?.name || serverFieldErrors?.product_name;
   const descError = serverFieldErrors?.description;
-  const brandError = serverFieldErrors?.brand || serverFieldErrors?.brand_id;
+  const brandError = fieldErrors.brand || serverFieldErrors?.brand || serverFieldErrors?.brand_id;
   const sizeError = serverFieldErrors?.size;
   const priceError = fieldErrors.price || serverFieldErrors?.price;
-  const categoryError = serverFieldErrors?.category || serverFieldErrors?.category_id;
+  const categoryError = fieldErrors.category || serverFieldErrors?.category || serverFieldErrors?.category_id;
   const conditionError = serverFieldErrors?.condition;
   const imagesError = serverFieldErrors?.images || serverFieldErrors?.photos || serverFieldErrors?.product_images;
 
   return (
     <View style={styles.form}>
+      {optionsError && (
+        <View style={styles.optionsErrorBox}>
+          <Text style={styles.optionsErrorText}>{optionsError}</Text>
+          <TouchableOpacity
+            style={styles.retryOptionsBtn}
+            onPress={() => { void handleRetryOptions(); }}
+            accessibilityRole="button"
+            accessibilityLabel="ลองโหลดตัวเลือกใหม่"
+          >
+            <Text style={styles.retryOptionsBtnText}>ลองใหม่อีกครั้ง</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.field}>
         <Text style={styles.label}>ชื่อสินค้า *</Text>
         <TextInput
@@ -179,25 +285,32 @@ export function ProductForm({
             }}
             placeholder="เช่น Uniqlo"
             placeholderTextColor="#9aa3af"
-            editable={!disabled}
+            editable={!disabled && !loadingOptions}
           />
-          <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
-            {brands.map(option => {
-              const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[styles.chip, isSelected && styles.chipSelected]}
-                  onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
-                  disabled={disabled}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {option.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {loadingOptions ? (
+            <View style={styles.optionsInlineLoading}>
+              <ActivityIndicator size="small" color={ACCENT} />
+              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
+            </View>
+          ) : brands.length === 0 ? null : (
+            <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
+              {brands.map(option => {
+                const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {option.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
           {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
         </View>
         <View style={[styles.field, styles.rowItem]}>
@@ -232,24 +345,33 @@ export function ProductForm({
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>หมวดหมู่</Text>
-        <View style={styles.chipRow}>
-          {categories.map(option => {
-            const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
-            return (
-              <TouchableOpacity
-                key={option.id}
-                style={[styles.chip, isSelected && styles.chipSelected]}
-                onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
-                disabled={disabled}
-              >
-                <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                  {option.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <Text style={styles.label}>หมวดหมู่ *</Text>
+        {loadingOptions ? (
+          <View style={styles.optionsInlineLoading}>
+            <ActivityIndicator size="small" color={ACCENT} />
+            <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
+          </View>
+        ) : categories.length === 0 ? (
+          <Text style={styles.fieldErrorText}>ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ</Text>
+        ) : (
+          <View style={styles.chipRow}>
+            {categories.map(option => {
+              const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.chip, isSelected && styles.chipSelected]}
+                  onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                    {option.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
         {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
       </View>
 
@@ -359,9 +481,9 @@ export function ProductForm({
       {submitError && <Text accessibilityLiveRegion="polite" style={styles.formErrorText}>{submitError}</Text>}
 
       <TouchableOpacity
-        style={[styles.submitButton, disabled && !submitSuccess && styles.submitButtonDisabled,
+        style={[styles.submitButton, cannotSubmit && !submitSuccess && styles.submitButtonDisabled,
           submitSuccess && styles.submitButtonSuccess]}
-        disabled={disabled}
+        disabled={cannotSubmit}
         onPress={handleSubmit}
       >
         {submitting ? (
@@ -377,6 +499,41 @@ export function ProductForm({
 }
 
 const styles = StyleSheet.create({
+  optionsInlineLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.one,
+  },
+  optionsInlineLoadingText: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  optionsErrorBox: {
+    backgroundColor: '#fff1f0',
+    borderWidth: 1,
+    borderColor: '#ffa39e',
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  optionsErrorText: {
+    fontSize: 13,
+    color: '#cf1322',
+    textAlign: 'center',
+  },
+  retryOptionsBtn: {
+    backgroundColor: ACCENT,
+    borderRadius: Spacing.one + 2,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+  },
+  retryOptionsBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   form: { gap: Spacing.three },
   field: { gap: Spacing.one },
   row: { flexDirection: 'row', gap: Spacing.three },
