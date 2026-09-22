@@ -118,6 +118,25 @@ function SellerVerificationEntry() {
   );
 }
 
+/**
+ * TEMPORARY PRODUCT-07 entry point — navigation เข้าหน้าค้นหา/รายการสินค้าเท่านั้น
+ * ลบ block นี้ได้ทันทีเมื่อมี navigation ถาวร (เช่น tab bar) มาแทนที่
+ * หมายเหตุ: /products และ /products/[id] เป็น public ตาม contract (ไม่ต้อง login)
+ * แต่ตอนนี้ยังไม่มีทางเข้าผ่าน UI สำหรับผู้ใช้ที่ยังไม่ login หรือบัญชี ADMIN
+ */
+function ProductCatalogEntry() {
+  return (
+    <TouchableOpacity
+      style={styles.button}
+      accessibilityRole="button"
+      accessibilityLabel="ไปหน้าค้นหาสินค้า"
+      onPress={() => router.push('/products')}
+    >
+      <Text style={styles.buttonText}>ค้นหาสินค้า</Text>
+    </TouchableOpacity>
+  );
+}
+
 /** ทางเข้างานสั่งซื้อ: ผู้ซื้อเห็นคำสั่งซื้อและทางเข้าซื้อชั่วคราว ผู้ขายเห็นคำสั่งซื้อสินค้าของตน */
 function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
   return (
@@ -213,6 +232,7 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && (
           <OrderEntries role={auth.account.role} />
         )}
+        {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && <ProductCatalogEntry />}
 
         {auth.accountError && (
           <TouchableOpacity
