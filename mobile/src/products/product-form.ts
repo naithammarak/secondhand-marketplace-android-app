@@ -9,7 +9,9 @@ export const emptyProductFormValues: ProductFormValues = {
   condition: CONDITION_OPTIONS[0],
   price: 0,
   category: CATEGORY_OPTIONS[0],
+  categoryId: 1,
   brand: '',
+  brandId: 1,
   images: [],
 };
 

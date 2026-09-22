@@ -2,6 +2,16 @@
 
 export type SaleType = 'FIXED_PRICE';
 
+export interface CategoryOption {
+  id: number;
+  name: string;
+}
+
+export interface BrandOption {
+  id: number;
+  name: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -10,7 +20,9 @@ export interface Product {
   condition: string;
   price: number;
   category: string;
+  categoryId?: number;
   brand: string;
+  brandId?: number;
   images: string[];
   saleType: SaleType;
   status?: string;
@@ -156,13 +168,15 @@ function transformBackendProduct(data: any): Product {
     }
   }
 
+  const categoryId = data.category?.id ?? data.category_id ?? 1;
   const categoryName =
     data.category?.category_name ??
-    CATEGORY_ID_TO_NAME[data.category_id] ??
+    CATEGORY_ID_TO_NAME[categoryId] ??
     'อื่น ๆ';
+  const brandId = data.brand?.id ?? data.brand_id ?? 1;
   const brandName =
     data.brand?.brand_name ??
-    BRAND_ID_TO_NAME[data.brand_id] ??
+    BRAND_ID_TO_NAME[brandId] ??
     'ไม่ระบุแบรนด์';
 
   return {
@@ -173,7 +187,9 @@ function transformBackendProduct(data: any): Product {
     condition: data.condition ?? 'GOOD',
     price: typeof data.price === 'string' ? parseFloat(data.price) : Number(data.price || 0),
     category: categoryName,
+    categoryId,
     brand: brandName,
+    brandId,
     images,
     saleType: data.sale_type ?? SALE_TYPE,
     status: data.status,
@@ -285,12 +301,15 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return { upload_id: uploadId };
       });
 
+      const categoryId = input.categoryId ?? toBackendCategoryId(input.category);
+      const brandId = input.brandId ?? toBackendBrandId(input.brand);
+
       const body = {
         product_name: input.name.trim(),
         description: input.description.trim() || input.name.trim(),
         price: formatBackendPrice(input.price),
-        category_id: toBackendCategoryId(input.category),
-        brand_id: toBackendBrandId(input.brand),
+        category_id: categoryId,
+        brand_id: brandId,
         size: input.size.trim() || 'M',
         condition: input.condition,
         sale_type: SALE_TYPE,
@@ -328,12 +347,15 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return num ? { upload_id: num } : { upload_id: 1 };
       });
 
+      const categoryId = input.categoryId ?? toBackendCategoryId(input.category);
+      const brandId = input.brandId ?? toBackendBrandId(input.brand);
+
       const body: Record<string, any> = {
         product_name: input.name.trim(),
         description: input.description.trim() || input.name.trim(),
         price: formatBackendPrice(input.price),
-        category_id: toBackendCategoryId(input.category),
-        brand_id: toBackendBrandId(input.brand),
+        category_id: categoryId,
+        brand_id: brandId,
         size: input.size.trim() || 'M',
         condition: input.condition,
         sale_type: SALE_TYPE,
@@ -360,6 +382,21 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return found ? cloneProduct(found) : null;
       }
 
+      const token = await resolveAccessToken(explicitToken);
+      // For sellers editing/managing their products, prefer the owner endpoint /products/me/{id}
+      if (token) {
+        try {
+          const res = await request(`/products/me/${id}`, { method: 'GET' }, token);
+          const json = await res.json();
+          return transformBackendProduct(json.data ?? json);
+        } catch (error) {
+          if (error instanceof ProductServiceError && error.kind === 'not-found') {
+            return null;
+          }
+          // If forbidden (e.g. non-owner or buyer), fall back to public read below
+        }
+      }
+
       try {
         const res = await request(`/products/${id}`, { method: 'GET' }, explicitToken);
         const json = await res.json();
@@ -369,6 +406,62 @@ export function createProductService(options: ProductServiceOptions = {}) {
           return null;
         }
         throw error;
+      }
+    },
+
+    async getCategories(): Promise<CategoryOption[]> {
+      if (!baseUrl) {
+        return [
+          { id: 1, name: 'เสื้อผ้า' },
+          { id: 2, name: 'รองเท้า' },
+          { id: 3, name: 'กระเป๋า' },
+          { id: 4, name: 'เครื่องประดับ' },
+          { id: 5, name: 'อื่น ๆ' },
+        ];
+      }
+
+      try {
+        const res = await request('/categories', { method: 'GET' });
+        const json = await res.json();
+        const list = json.data ?? [];
+        return list.map((c: any) => ({ id: c.id, name: c.category_name }));
+      } catch {
+        // Return standard fallback options on temporary connection failure
+        return [
+          { id: 1, name: 'เสื้อผ้า' },
+          { id: 2, name: 'รองเท้า' },
+          { id: 3, name: 'กระเป๋า' },
+          { id: 4, name: 'เครื่องประดับ' },
+          { id: 5, name: 'อื่น ๆ' },
+        ];
+      }
+    },
+
+    async getBrands(): Promise<BrandOption[]> {
+      if (!baseUrl) {
+        return [
+          { id: 1, name: 'ไม่ระบุแบรนด์' },
+          { id: 2, name: 'Nike' },
+          { id: 3, name: 'Adidas' },
+          { id: 4, name: 'Uniqlo' },
+          { id: 5, name: 'Zara' },
+        ];
+      }
+
+      try {
+        const res = await request('/brands', { method: 'GET' });
+        const json = await res.json();
+        const list = json.data ?? [];
+        return list.map((b: any) => ({ id: b.id, name: b.brand_name }));
+      } catch {
+        // Return standard fallback options on temporary connection failure
+        return [
+          { id: 1, name: 'ไม่ระบุแบรนด์' },
+          { id: 2, name: 'Nike' },
+          { id: 3, name: 'Adidas' },
+          { id: 4, name: 'Uniqlo' },
+          { id: 5, name: 'Zara' },
+        ];
       }
     },
 

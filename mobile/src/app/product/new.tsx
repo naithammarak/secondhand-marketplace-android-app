@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/auth-provider';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { createProductService } from '@/services/product-service';
+import { createProductService, ProductServiceError } from '@/services/product-service';
 
 const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
@@ -17,17 +17,24 @@ export default function NewProductScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
 
   async function handleSubmit(values: ProductFormValues) {
     setSubmitting(true);
     setError(null);
+    setServerFieldErrors({});
     try {
       await productService.createProduct(values, session?.access_token);
       setSuccess(true);
       if (router.canGoBack()) router.back();
       else router.replace('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
+      if (err instanceof ProductServiceError) {
+        setError(err.message);
+        setServerFieldErrors(err.fields ?? {});
+      } else {
+        setError(err instanceof Error ? err.message : 'ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -44,6 +51,7 @@ export default function NewProductScreen() {
               submitting={submitting}
               submitSuccess={success}
               submitError={error}
+              serverFieldErrors={serverFieldErrors}
               onSubmit={handleSubmit}
             />
           </View>

@@ -20,10 +20,13 @@ export default function EditProductScreen() {
 
   const [store] = useState(() => createProductEditStore(productService));
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   useEffect(() => {
-    void store.open(id);
-  }, [id, store]);
+    if (id) {
+      void store.open(id, session?.access_token);
+    }
+  }, [id, store, session?.access_token]);
 
   useEffect(() => {
     if (!state.submitSuccess) return;
@@ -44,8 +47,9 @@ export default function EditProductScreen() {
     await store.submit(values, session?.access_token);
   }
 
-  async function handleCancel() {
+  async function handleConfirmCancel() {
     await store.cancel(session?.access_token);
+    setConfirmingCancel(false);
   }
 
   return (
@@ -59,7 +63,10 @@ export default function EditProductScreen() {
             {!state.loading && state.loadError && (
               <View style={styles.loadErrorBox}>
                 <Text style={styles.loadErrorText}>โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={() => { void store.retry(); }}>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={() => { void store.retry(session?.access_token); }}
+                >
                   <Text style={styles.retryButtonText}>ลองใหม่อีกครั้ง</Text>
                 </TouchableOpacity>
               </View>
@@ -71,7 +78,8 @@ export default function EditProductScreen() {
                   initialValues={state.product}
                   submitting={state.submitting}
                   submitSuccess={state.submitSuccess}
-                  submitError={state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null}
+                  submitError={state.submitErrorMessage ?? (state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null)}
+                  serverFieldErrors={state.submitFieldErrors}
                   onSubmit={handleSubmit}
                 />
                 {state.product.status !== 'CANCELLED' && (
@@ -79,17 +87,46 @@ export default function EditProductScreen() {
                     {state.cancelError && (
                       <Text style={styles.cancelErrorText}>ยกเลิกสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
                     )}
-                    <TouchableOpacity
-                      style={[styles.cancelButton, state.cancelling && styles.buttonDisabled]}
-                      disabled={state.cancelling || state.submitting}
-                      accessibilityRole="button"
-                      accessibilityLabel="ยกเลิกการขายสินค้านี้"
-                      onPress={handleCancel}
-                    >
-                      <Text style={styles.cancelButtonText}>
-                        {state.cancelling ? 'กำลังยกเลิกสินค้า...' : 'ยกเลิกการขายสินค้านี้'}
-                      </Text>
-                    </TouchableOpacity>
+                    {confirmingCancel ? (
+                      <View style={styles.confirmBox}>
+                        <Text style={styles.confirmTitle}>ยืนยันการยกเลิกสินค้า</Text>
+                        <Text style={styles.confirmDescription}>
+                          คุณแน่ใจหรือไม่ว่าต้องการยกเลิกการขายสินค้านี้? เมื่อยกเลิกแล้วจะไม่สามารถนำกลับมาขายใหม่ได้
+                        </Text>
+                        <View style={styles.confirmButtonRow}>
+                          <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={() => setConfirmingCancel(false)}
+                            disabled={state.cancelling}
+                            accessibilityRole="button"
+                            accessibilityLabel="กลับ"
+                          >
+                            <Text style={styles.backButtonText}>กลับ</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.confirmCancelButton, state.cancelling && styles.buttonDisabled]}
+                            onPress={handleConfirmCancel}
+                            disabled={state.cancelling}
+                            accessibilityRole="button"
+                            accessibilityLabel="ยืนยันยกเลิกสินค้า"
+                          >
+                            <Text style={styles.confirmCancelButtonText}>
+                              {state.cancelling ? 'กำลังยกเลิก...' : 'ยืนยันยกเลิกสินค้า'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.cancelButton, state.cancelling && styles.buttonDisabled]}
+                        disabled={state.cancelling || state.submitting}
+                        accessibilityRole="button"
+                        accessibilityLabel="ยกเลิกการขายสินค้านี้"
+                        onPress={() => setConfirmingCancel(true)}
+                      >
+                        <Text style={styles.cancelButtonText}>ยกเลิกการขายสินค้านี้</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
                 {state.cancelSuccess && (
@@ -135,6 +172,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#f0f3f6',
     alignItems: 'center',
+    width: '100%',
   },
   cancelButton: {
     backgroundColor: '#ff4d4f',
@@ -145,6 +183,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmBox: {
+    width: '100%',
+    backgroundColor: '#fff1f0',
+    borderColor: '#ffa39e',
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  confirmTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#cf1322',
+  },
+  confirmDescription: {
+    fontSize: 13,
+    color: '#4a5568',
+    lineHeight: 18,
+  },
+  confirmButtonRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  backButton: {
+    flex: 1,
+    backgroundColor: '#e2e8f0',
+    borderRadius: Spacing.two,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+  },
+  backButtonText: {
+    color: '#33404f',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  confirmCancelButton: {
+    flex: 1,
+    backgroundColor: '#ff4d4f',
+    borderRadius: Spacing.two,
+    paddingVertical: Spacing.two,
+    alignItems: 'center',
+  },
+  confirmCancelButtonText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
