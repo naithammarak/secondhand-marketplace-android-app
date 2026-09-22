@@ -253,18 +253,21 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 - Pull-to-refresh and infinite-scroll `loadMore` gesture behavior on a real touch device
   (exercised programmatically via the store and component tests)
 
-## 14. Known Limitations / Known Issues
+## 14. Known Limitations / Blocker for Real Backend Integration
 
-- Real backend integration is enabled via `EXPO_PUBLIC_API_BASE_URL` (falls back to mock when unset).
+- **Backend Dependency Blocker (PR #84 / Issue #47):** PR #84 (PRODUCT-05 backend API) was merged into branch `feature/product-04-update-cancel`, not into `main`. The server running from `main` therefore does not yet have `GET /products` and `GET /products/{id}` (`http://localhost:8000/products` returns 404 Not Found).
+- **Environment Safety (`EXPO_PUBLIC_USE_PRODUCT_API`):** Because local `.env` often defines `EXPO_PUBLIC_API_BASE_URL` for auth/orders, `product-catalog-instance.ts` defaults to the mock catalog. Real API calls are only made when `EXPO_PUBLIC_USE_PRODUCT_API=true` is set.
 - Detail screen shows every image at a fixed 140×140 tile with no full-screen/zoom viewer.
 - Search has no cancel/clear (✕) button — clearing is done by manually deleting the text.
 
 ## 15. Handoff Checklist
 
-- [x] Once #47 is live, set `baseUrl` in `product-catalog-instance.ts` (configured via `process.env.EXPO_PUBLIC_API_BASE_URL`, defaults to mock when unset)
+- [ ] รายการ/รายละเอียดใช้ API จริงและข้อมูลตรงกัน รวมลำดับรูป (รอนำ backend PR #84 เข้า `main` และทดสอบจริง)
+- [ ] แนบหลักฐานมือถือจริงและผลทดสอบ navigation/state (รอทดสอบบนเครื่องจริง)
+- [x] Backend integration opt-in via `EXPO_PUBLIC_USE_PRODUCT_API=true` and `EXPO_PUBLIC_API_BASE_URL` in `product-catalog-instance.ts` (defaults safely to mock)
 - [x] Replace/remove or extend the temporary `ProductCatalogEntry` in `login-screen.tsx` to give logged-out and ADMIN users a way to reach `/products`
 - [x] Add component tests for `product-list-screen.tsx` / `product-detail-screen.tsx`
-- [ ] Backend: deploy PRODUCT-05 (#47) — `GET /products`, `GET /products/{id}` in production
+- [ ] Backend: merge PR #84 (PRODUCT-05) into `main` and test Mobile → API → Supabase end-to-end
 - [ ] Manually test on a physical Android/iOS device (pull-to-refresh, infinite scroll,
       keyboard behavior with `keyboardShouldPersistTaps`)
 
@@ -328,9 +331,9 @@ Review findings on PR #80 identified two P2 issues addressed in this revision:
 
 This revision completes all criteria for Issue #49:
 
-### 18.1 Real Backend Configuration via Environment Variable
-- `mobile/src/products/product-catalog-instance.ts` now initializes `createProductCatalogService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL })`.
-- When `EXPO_PUBLIC_API_BASE_URL` is set, calls automatically route to the real backend and decode Contract v1.0 responses and error envelopes. When unset, it gracefully falls back to the in-memory mock catalog.
+### 18.1 Backend Configuration via Opt-in Environment Variable
+- `mobile/src/products/product-catalog-instance.ts` initializes `createProductCatalogService()` with mock by default, avoiding 404 breaking changes in dev environments where `EXPO_PUBLIC_API_BASE_URL` is configured in `.env` but backend on `main` does not have `GET /products` yet (PR #84 is in `feature/product-04-update-cancel`).
+- When backend PR #84 is merged into `main`, setting `EXPO_PUBLIC_USE_PRODUCT_API=true` in `.env` enables direct connection to the real backend without modifying application code.
 
 ### 18.2 Public Discovery for Guests & ADMIN
 - In `mobile/src/components/login-screen.tsx`, guest users can access "ค้นหาสินค้า" without logging in, and `ADMIN` accounts can also browse products.
