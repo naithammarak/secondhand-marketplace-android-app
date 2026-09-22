@@ -166,12 +166,6 @@ def replace_product_images(
     if len(removed_uploads_by_id) != len(removed_upload_ids):
         raise HTTPException(status_code=422, detail={"code": "INVALID_IMAGE_REFERENCE"})
 
-    # Clear old slots first so swapping MAIN/GALLERY cannot violate the partial
-    # unique product/sort-order index while the transaction is in progress.
-    for image in existing:
-        image.sort_order = None
-    db.flush()
-
     detached_paths = []
     for image in removed:
         if image.upload_id is None:
@@ -192,10 +186,28 @@ def replace_product_images(
         detached_paths.append(upload.object_key)
         db.delete(image)
 
+    # Delete kept images before re-inserting with new sort_order/photo_type to avoid
+    # violating partial unique index or the NOT NULL constraint on sort_order.
+    for image in existing:
+        if image.image_id in set(kept_ids):
+            db.delete(image)
+    db.flush()
+
     final_images = []
     for order, (kind, reference_id) in enumerate(references):
         if kind == "image":
-            image = existing_by_id[reference_id]
+            old_image = existing_by_id[reference_id]
+            image = ProductImage(
+                product_id=product.id,
+                image_id=old_image.image_id,
+                upload_id=old_image.upload_id,
+                image_url=old_image.image_url,
+                file_size=old_image.file_size,
+                uploaded_at=old_image.uploaded_at,
+                sort_order=order,
+                photo_type="MAIN" if order == 0 else "GALLERY",
+            )
+            db.add(image)
         else:
             upload = uploads_by_id[reference_id]
             upload.state = "ATTACHED"
@@ -207,10 +219,10 @@ def replace_product_images(
                 image_url=upload.object_key,
                 file_size=upload.file_size,
                 uploaded_at=upload.uploaded_at,
+                sort_order=order,
+                photo_type="MAIN" if order == 0 else "GALLERY",
             )
             db.add(image)
-        image.sort_order = order
-        image.photo_type = "MAIN" if order == 0 else "GALLERY"
         final_images.append(image)
 
     db.flush()

@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -49,6 +49,7 @@ def add_verification(db, seller, state, created_at):
         bank_account_number="1234567890",
         bank_name="Test Bank",
         verification_status=state,
+        reject_reason="Test rejection reason" if state == "REJECTED" else None,
         created_at=created_at,
     )
     db.add(row)
@@ -89,7 +90,9 @@ def test_equal_timestamps_use_highest_id(seller_db):
 def test_missing_or_malformed_approval_is_denied(seller_db):
     db, seller = seller_db
     assert_denied(db, seller, 403, "SELLER_NOT_APPROVED")
+    db.execute(text("PRAGMA ignore_check_constraints=ON"))
     add_verification(db, seller, "UNKNOWN", datetime.now(timezone.utc))
+    db.execute(text("PRAGMA ignore_check_constraints=OFF"))
     assert_denied(db, seller, 503, "APPROVAL_STATE_UNAVAILABLE")
 
 
