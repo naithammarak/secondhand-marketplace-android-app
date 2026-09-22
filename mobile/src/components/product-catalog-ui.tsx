@@ -14,7 +14,14 @@ type ProductImageProps = {
 
 /** แสดง placeholder เมื่อไม่มีรูปหรือรูปโหลดไม่สำเร็จ (onError) แต่ละ instance มี state ความล้มเหลวของตัวเอง */
 export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, accessibilityLabel }: ProductImageProps) {
+  const [prevUri, setPrevUri] = useState(uri);
   const [failed, setFailed] = useState(false);
+
+  if (prevUri !== uri) {
+    setPrevUri(uri);
+    setFailed(false);
+  }
+
   const showPlaceholder = !uri || failed;
 
   return (

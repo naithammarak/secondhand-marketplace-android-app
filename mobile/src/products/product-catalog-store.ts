@@ -126,8 +126,9 @@ export function createProductCatalogStore(deps: ProductCatalogStoreDeps) {
 
     /** ยกเลิก debounce ที่ค้างอยู่แล้วรีเฟรชหน้าปัจจุบันทันที ไม่ดีเลย์ */
     refresh() {
+      const hasPendingQuery = debounceTimer !== undefined;
       clearDebounce();
-      if (state.loading || state.refreshing) return Promise.resolve();
+      if (state.refreshing && !hasPendingQuery) return Promise.resolve();
       return fetchPage('refresh');
     },
 

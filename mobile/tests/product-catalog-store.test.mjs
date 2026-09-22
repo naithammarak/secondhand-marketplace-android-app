@@ -263,3 +263,65 @@ test('subscribers are notified as the state changes', async () => {
   await store.refresh();
   assert.equal(notifications, seen);
 });
+
+test('refresh while loading with a pending debounced query fetches the new query instead of dropping it', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const slowLoad = deferred();
+  const { calls, service } = setup((params, n) => {
+    if (n === 1) return slowLoad.promise; // initial load with ""
+    return page([item(2)], { page: 1, total: 1, hasNext: false }); // refresh with "รองเท้า"
+  });
+  const store = createProductCatalogStore({ service });
+
+  const loadPromise = store.load();
+  assert.equal(store.getSnapshot().loading, true);
+
+  // User types new query while initial load is in flight
+  store.setQuery('รองเท้า');
+
+  // Pull to refresh before debounce fires
+  const refreshPromise = store.refresh();
+
+  // Advance time past debounce to ensure debounce timer doesn't trigger duplicate call
+  t.mock.timers.tick(SEARCH_DEBOUNCE_MS);
+
+  // Old load resolves later with stale data
+  slowLoad.resolve(page([item(1)], { page: 1, total: 1, hasNext: false }));
+  await loadPromise;
+  await refreshPromise;
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].q, '');
+  assert.equal(calls[1].q, 'รองเท้า');
+  assert.deepEqual(store.getSnapshot().items.map(i => i.id), [2], 'stale initial load must be discarded and latest query results shown');
+  assert.equal(store.getSnapshot().query, 'รองเท้า');
+});
+
+test('refresh while already refreshing with a pending debounced query fetches the new query', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const slowRefresh = deferred();
+  const { calls, service } = setup((params, n) => {
+    if (n === 1) return slowRefresh.promise;
+    return page([item(5)], { page: 1, total: 1, hasNext: false });
+  });
+  const store = createProductCatalogStore({ service });
+
+  const firstRefresh = store.refresh();
+  assert.equal(store.getSnapshot().refreshing, true);
+
+  // User types new query while first refresh is in flight
+  store.setQuery('หมวก');
+
+  // User pulls refresh again before debounce fires
+  const secondRefresh = store.refresh();
+  t.mock.timers.tick(SEARCH_DEBOUNCE_MS);
+
+  slowRefresh.resolve(page([item(1)], { page: 1, total: 1, hasNext: false }));
+  await firstRefresh;
+  await secondRefresh;
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].q, 'หมวก');
+  assert.deepEqual(store.getSnapshot().items.map(i => i.id), [5]);
+});
+
