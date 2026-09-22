@@ -308,3 +308,47 @@ PRODUCT-07 does not include:
 - Real backend integration (pending #47)
 - A permanent navigation surface (tab bar, menu) — the current entry point is explicitly
   temporary (Section 12)
+
+## 17. Review Fixes (Post-Merge, PR #80 / Issue #49)
+
+Review findings on PR #80 identified two P2 issues addressed in this revision:
+
+### 17.1 Pending Search Preservation on Refresh During Load
+
+- **Problem:** In `product-catalog-store.ts`, `refresh()` previously cancelled the debounce
+  timer (`clearDebounce()`) and immediately returned if `state.loading || state.refreshing`
+  was true. When a user typed a new search query while a slow load was in progress and pulled
+  to refresh before 300ms, the debounce timer was cleared and the refresh call returned
+  early without requesting the new query. The stale in-flight request subsequently completed
+  and overwrote the items list with old results, permanently dropping the new search query.
+- **Fix:** In `refresh()`, the store tracks whether a debounce query was pending
+  (`const hasPendingQuery = debounceTimer !== undefined;`). It now proceeds to call
+  `fetchPage('refresh')` whenever `!state.refreshing || hasPendingQuery`, incrementing the
+  generation counter to cancel/ignore the stale in-flight load and immediately fetching page 1
+  for the latest `state.query`.
+- **Source:** `mobile/src/products/product-catalog-store.ts` (`refresh`);
+  `mobile/tests/product-catalog-store.test.mjs`.
+
+### 17.2 Image Failure State Reset on URI Change
+
+- **Problem:** In `product-catalog-ui.tsx`, `ProductImage` held a boolean `failed` state that
+  remained `true` indefinitely once an image triggered `onError`. When the `uri` prop changed
+  (such as receiving a fresh signed URL after a refresh to replace an expired link), the
+  component remained stuck displaying the placeholder icon without re-mounting or attempting
+  to load the new image.
+- **Fix:** `ProductImage` compares `prevUri !== uri` and resets `failed` to `false` during
+  render, allowing `<Image>` to render and load immediately with the new URL.
+- **Source:** `mobile/src/components/product-catalog-ui.tsx` (`ProductImage`);
+  `mobile/component-tests/product-catalog-ui.test.tsx`.
+
+### 17.3 Automated Tests & Verification
+
+- `mobile/tests/product-catalog-store.test.mjs` (2 new tests, 19 total):
+  - Refresh while loading with a pending debounced query fetches the new query instead of dropping it.
+  - Refresh while already refreshing with a pending debounced query fetches the new query.
+- `mobile/component-tests/product-catalog-ui.test.tsx` (3 tests):
+  - Renders placeholder when uri is not provided.
+  - Renders image and switches to placeholder when image fails to load (`onError`).
+  - Resets failed state and renders `<Image>` again when uri changes after an image failure.
+- Verification: `npm run test:logic` passes (213 tests), `npm run test:components` passes (56 tests),
+  `tsc --noEmit` passes with 0 errors, and `expo lint` passes with 0 errors.
