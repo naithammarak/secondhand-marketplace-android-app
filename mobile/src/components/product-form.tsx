@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
+import {
+  addProductImage,
+  emptyProductFormValues,
+  uploadProductImage,
+  validateProductForm,
+  type ProductFormValues,
+} from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
 import { createImageUploadService } from '@/services/image-upload-service';
-import {
-  CATEGORY_OPTIONS,
-  CONDITION_LABELS,
-  CONDITION_OPTIONS,
-  type ProductInput,
-} from '@/services/product-service';
+import { CATEGORY_OPTIONS, CONDITION_LABELS, CONDITION_OPTIONS } from '@/services/product-service';
 
-export type ProductFormValues = ProductInput;
+export type { ProductFormValues } from '@/products/product-form';
 
 type Props = {
   mode: 'create' | 'edit';
@@ -23,34 +25,28 @@ type Props = {
 
 const ACCENT = '#96bde9';
 
-const emptyValues: ProductFormValues = {
-  name: '',
-  description: '',
-  size: '',
-  condition: CONDITION_OPTIONS[0],
-  price: 0,
-  category: CATEGORY_OPTIONS[0],
-  brand: '',
-  images: [],
-};
-
-type FieldErrors = { name?: string; price?: string };
-
 const imageUploadService = createImageUploadService();
 
 export function ProductForm({ mode, initialValues, submitting, submitSuccess, submitError, onSubmit }: Props) {
-  const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyValues);
+  const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
   const [priceText, setPriceText] = useState(initialValues ? String(initialValues.price) : '');
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ReturnType<typeof validateProductForm>>({});
 
   const disabled = submitting || submitSuccess;
 
   async function handleAddImage() {
     setUploadingImage(true);
+    setUploadError(null);
     try {
-      const uploaded = await imageUploadService.uploadImage();
-      setValues(current => ({ ...current, images: [...current.images, uploaded.url] }));
+      const result = await uploadProductImage(() => imageUploadService.uploadImage());
+      if (result.url) {
+        const imageUrl = result.url;
+        setValues(current => addProductImage(current, imageUrl));
+      } else {
+        setUploadError(result.error);
+      }
     } finally {
       setUploadingImage(false);
     }
@@ -60,18 +56,8 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
     setValues(current => ({ ...current, images: current.images.filter(image => image !== url) }));
   }
 
-  function validate(): FieldErrors {
-    const errors: FieldErrors = {};
-    if (!values.name.trim()) errors.name = 'กรุณากรอกชื่อสินค้า';
-    const price = Number(priceText);
-    if (!priceText.trim() || !Number.isFinite(price) || price <= 0) {
-      errors.price = 'กรุณากรอกราคาที่มากกว่า 0';
-    }
-    return errors;
-  }
-
   function handleSubmit() {
-    const errors = validate();
+    const errors = validateProductForm(values, priceText);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     void onSubmit({ ...values, price: Number(priceText) });
@@ -214,6 +200,7 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
             )}
           </TouchableOpacity>
         </View>
+        {uploadError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{uploadError}</Text>}
       </View>
 
       {submitError && <Text accessibilityLiveRegion="polite" style={styles.formErrorText}>{submitError}</Text>}

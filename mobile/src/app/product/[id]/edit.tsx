@@ -1,11 +1,12 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
-import { createProductService, type Product } from '@/services/product-service';
+import { createProductEditStore } from '@/products/product-edit-store';
+import { createProductService } from '@/services/product-service';
 
 const productService = createProductService();
 
@@ -13,37 +14,21 @@ export default function EditProductScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [store] = useState(() => createProductEditStore(productService));
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
   useEffect(() => {
-    let active = true;
-    productService.getProductById(id).then(result => {
-      if (!active) return;
-      if (result) setProduct(result);
-      else setNotFound(true);
-      setLoading(false);
-    });
-    return () => { active = false; };
-  }, [id]);
+    void store.open(id);
+  }, [id, store]);
+
+  useEffect(() => {
+    if (!state.submitSuccess) return;
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }, [state.submitSuccess]);
 
   async function handleSubmit(values: ProductFormValues) {
-    setSubmitting(true);
-    setError(null);
-    try {
-      await productService.updateProduct(id, values);
-      setSuccess(true);
-      if (router.canGoBack()) router.back();
-      else router.replace('/');
-    } catch {
-      setError('บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่');
-    } finally {
-      setSubmitting(false);
-    }
+    await store.submit(values);
   }
 
   return (
@@ -52,15 +37,23 @@ export default function EditProductScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.card}>
             <Text style={styles.title}>แก้ไขสินค้า</Text>
-            {loading && <ActivityIndicator accessibilityLabel="กำลังโหลดข้อมูลสินค้า" color="#96bde9" />}
-            {!loading && notFound && <Text style={styles.notFoundText}>ไม่พบสินค้านี้</Text>}
-            {!loading && product && (
+            {state.loading && <ActivityIndicator accessibilityLabel="กำลังโหลดข้อมูลสินค้า" color="#96bde9" />}
+            {!state.loading && state.notFound && <Text style={styles.notFoundText}>ไม่พบสินค้านี้</Text>}
+            {!state.loading && state.loadError && (
+              <View style={styles.loadErrorBox}>
+                <Text style={styles.loadErrorText}>โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={() => { void store.retry(); }}>
+                  <Text style={styles.retryButtonText}>ลองใหม่อีกครั้ง</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {!state.loading && state.product && (
               <ProductForm
                 mode="edit"
-                initialValues={product}
-                submitting={submitting}
-                submitSuccess={success}
-                submitError={error}
+                initialValues={state.product}
+                submitting={state.submitting}
+                submitSuccess={state.submitSuccess}
+                submitError={state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null}
                 onSubmit={handleSubmit}
               />
             )}
@@ -87,4 +80,13 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700', color: '#1a1f27', marginBottom: Spacing.three },
   notFoundText: { fontSize: 16, color: '#4a5568', textAlign: 'center' },
+  loadErrorBox: { alignItems: 'center', gap: Spacing.two },
+  loadErrorText: { fontSize: 14, color: '#d9534f', textAlign: 'center' },
+  retryButton: {
+    backgroundColor: '#96bde9',
+    borderRadius: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+  },
+  retryButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

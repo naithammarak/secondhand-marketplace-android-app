@@ -1,5 +1,10 @@
 # PRODUCT-06 — Product Create & Edit
 
+> **Status:** Merged to `main` via PR #74. Post-merge review findings on the Edit flow
+> (load error handling, stale form state on product id change, image upload error
+> handling) were fixed on branch `product-06-review-fixes` — see
+> [Section 14, Review Fixes (Post-Merge, PR #74)](#14-review-fixes-post-merge-pr-74).
+
 ## 1. Feature Overview
 
 PRODUCT-06 is the Frontend (Expo / React Native / TypeScript, expo-router) implementation for:
@@ -24,9 +29,11 @@ Dev builds later, or manual navigation during development).
 
 | File | Responsibility |
 |---|---|
-| `mobile/src/components/product-form.tsx` | Shared, reusable form UI used by both Create and Edit. Owns local field state, runs client-side validation, calls `image-upload-service.ts` directly when the user adds an image, and calls the `onSubmit` prop with the current field values. It does **not** call `product-service.ts` itself — that is left to the screen that renders it, keeping UI and service layer separate. |
-| `mobile/src/app/product/new.tsx` | Screen for `/product/new`. Instantiates `createProductService()`, renders `ProductForm` in `mode="create"`, calls `productService.createProduct(values)` on submit, sets a local `success` flag, then navigates with `router.canGoBack() ? router.back() : router.replace('/')`. Shows an inline error message on failure. |
-| `mobile/src/app/product/[id]/edit.tsx` | Screen for `/product/[id]/edit`. Reads the `id` route param, loads the product via `productService.getProductById(id)` in a `useEffect`, shows a loading indicator while fetching and "ไม่พบสินค้านี้" if not found. Once loaded, renders `ProductForm` in `mode="edit"` with the product as `initialValues`, calls `productService.updateProduct(id, values)` on submit, with the same success/navigate/error handling as the create screen. |
+| `mobile/src/components/product-form.tsx` | Shared, reusable form UI used by both Create and Edit. Owns local field state, delegates validation and image-add logic to `products/product-form.ts`, calls `image-upload-service.ts` directly when the user adds an image, and calls the `onSubmit` prop with the current field values. It does **not** call `product-service.ts` itself — that is left to the screen that renders it, keeping UI and service layer separate. |
+| `mobile/src/products/product-form.ts` | *(Added in the PRODUCT-06 review fixes.)* Pure domain logic extracted out of `product-form.tsx`: `emptyProductFormValues`, `validateProductForm(values, priceText)`, `uploadProductImage(uploadImage)` (wraps the upload call in try/catch so a failed upload cannot become an unhandled rejection), and `addProductImage(values, imageUrl)` (pure functional helper for image appending). No React/React Native imports — covered directly by `mobile/tests/product-form.test.mjs`. |
+| `mobile/src/app/product/new.tsx` | Screen for `/product/new`. Instantiates `createProductService()`, renders `ProductForm` in `mode="create"`, calls `productService.createProduct(values)` on submit, sets a local `success` flag, then navigates with `router.canGoBack() ? router.back() : router.replace('/')`. Shows an inline error message on failure. **Unchanged by the review fixes** — still uses local `useState`, not the store described below. |
+| `mobile/src/app/product/[id]/edit.tsx` | Screen for `/product/[id]/edit`. Reads the `id` route param and owns a `createProductEditStore(productService)` instance (via `useState(() => ...)`), read with `useSyncExternalStore`. Calls `store.open(id)` on mount/`id` change and `store.submit(values)` on form submit. Renders a loading indicator, "ไม่พบสินค้านี้" if not found, a load-error box with a "ลองใหม่อีกครั้ง" retry button on load failure, and `ProductForm` (`mode="edit"`) once a product is loaded. |
+| `mobile/src/products/product-edit-store.ts` | *(Added in the PRODUCT-06 review fixes.)* External store (subscribe/getSnapshot, driven by `useSyncExternalStore` in `edit.tsx`) that owns all load/submit state for the Edit screen: `open`, `retry`, `submit`. Wraps `service.getProductById`/`service.updateProduct` in try/catch, tracks a `generation` counter so a late response for a previously opened id can never overwrite the currently displayed product, and resets `product` to `null` immediately when `open()` is called with a different id. Covered by `mobile/tests/product-edit-store.test.mjs`. |
 | `mobile/src/services/product-service.ts` | Mock (in-memory) product data service. Exports the `Product`/`ProductInput` types and a `createProductService()` factory (same dependency-injection pattern as the existing `me-service.ts`) exposing `createProduct`, `updateProduct`, `getProductById`. |
 | `mobile/src/services/image-upload-service.ts` | Mock image upload service. Exports `createImageUploadService()` returning `uploadImage()`, used by `product-form.tsx` when the user taps "+ เพิ่มรูป". |
 
@@ -174,7 +181,9 @@ Before that integration work starts, Backend should confirm:
 
 ## 7. Frontend Validation
 
-Verified in `product-form.tsx`'s `validate()` function. Only two fields are validated:
+*(Updated in the PRODUCT-06 review fixes — the validation function moved out of the
+component.)* Verified in `products/product-form.ts`'s `validateProductForm(values, priceText)`,
+called from `product-form.tsx`'s `handleSubmit()`. Only two fields are validated:
 
 - **`name`** — required; error `"กรุณากรอกชื่อสินค้า"` if empty/whitespace-only.
 - **`price`** — required and must parse to a finite number `> 0`; error
@@ -231,31 +240,46 @@ ProductForm (mode="create")
 On failure, `new.tsx` catches the error and shows "ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่" inside
 the form.
 
-**Edit:**
+**Edit** *(updated in the PRODUCT-06 review fixes — now goes through `product-edit-store.ts`
+instead of local `useState` in the screen; see [Section 14](#14-review-fixes-post-merge-pr-74)):*
 
 ```
 route param "id" (/product/[id]/edit)
-→ productService.getProductById(id)      [[id]/edit.tsx, in a useEffect]
-→ loading / not-found / loaded state
-→ ProductForm (mode="edit", initialValues = loaded product)
-→ client-side validation in product-form.tsx
-→ productService.updateProduct(id, values)   [[id]/edit.tsx]
-→ on success: setSuccess(true)
-→ router.canGoBack() ? router.back() : router.replace('/')
+→ store.open(id)                          [product-edit-store.ts, called from a useEffect in edit.tsx]
+→ loading / not-found / loadError (retryable via store.retry()) / loaded state
+→ ProductForm (mode="edit", initialValues = state.product) — only mounted once state.product is set
+→ client-side validation in products/product-form.ts
+→ store.submit(values)                    [product-edit-store.ts]
+→ on success: state.submitSuccess = true
+→ (edit.tsx effect) router.canGoBack() ? router.back() : router.replace('/')
 ```
 
-On failure (including the `id` not existing any more), `[id]/edit.tsx` shows
-"บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่" inside the form.
+On a failed load, `[id]/edit.tsx` shows "โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่" with a
+"ลองใหม่อีกครั้ง" retry button. On a failed submit (including the `id` not existing any
+more), it shows "บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่" inside the form.
 
 ## 10. Testing
 
-**Automated checks (run and confirmed passing):**
+**Automated checks — original PRODUCT-06 (PR #74), for reference:**
 
 - `npx tsc --noEmit` → PASS
 - `npx expo lint` → PASS
 - `npm test` → PASS (37 tests total; all belong to the pre-existing Login/Auth test suite —
-  there are no automated unit/integration tests specific to PRODUCT-06's
-  `product-service.ts`, `image-upload-service.ts`, or `product-form.tsx` yet)
+  there were no automated unit/integration tests specific to PRODUCT-06's
+  `product-service.ts`, `image-upload-service.ts`, or `product-form.tsx` at that point)
+
+**Automated checks — after the PRODUCT-06 review fixes (branch `product-06-review-fixes`,
+commit `82f3df4`, verified 2026-09-20):**
+
+- `npx tsc --noEmit` → PASS
+- `npx expo lint` → 1 pre-existing error, unrelated to this work:
+  `mobile/src/verification/pick-id-card.ts:1:30` —
+  `Unable to resolve path to module 'expo-image-picker'` (`import/no-unresolved`)
+- `npm test` → PASS — 186 logic tests (`tests/*.test.mjs`) + 53 component tests
+  (`component-tests/*.test.tsx`), 0 failing. 20 of the logic tests are new, specific to
+  this work: 10 in `mobile/tests/product-edit-store.test.mjs`, 10 in
+  `mobile/tests/product-form.test.mjs` (see [Section 14.4](#144-automated-tests) for what
+  they cover).
 
 **Manually confirmed during development (via a temporary, `__DEV__`-only test link since
 there is no My Products/Product Detail screen to navigate through normally; the temporary
@@ -296,6 +320,12 @@ all, during the flow above):
   Backend enums.
 - The Edit screen does not distinguish a "not found" update failure from any other
   failure in its error message.
+- `ProductForm` does not itself re-sync its internal `values` state if its `initialValues`
+  prop changes while the same instance stays mounted — the Edit screen avoids hitting this
+  by unmounting/remounting `ProductForm` on a product id change instead (see
+  [Section 14.2](#142-product-id-change--stale-form-state)). A future screen that reuses
+  `ProductForm` and changes `initialValues` without unmounting it would need to add its
+  own reset.
 
 ## 12. Backend Handoff Checklist
 
@@ -329,3 +359,114 @@ PRODUCT-06 does not include:
 - Notification
 - Backend implementation
 - Real Image Storage
+
+## 14. Review Fixes (Post-Merge, PR #74)
+
+PRODUCT-06 merged to `main` via PR #74. A post-merge code review found 3 P2 findings, all
+in the Edit flow. They were fixed on branch `product-06-review-fixes`
+(commit `82f3df4`, "PRODUCT-06: address review findings"), with automated tests added for
+the new logic. This section documents what changed; Sections 2, 7, 9, and 10 above have
+been updated in place to reflect the current code.
+
+Two new files were added, both under the `products/` domain folder (matching the existing
+`orders/`, `admin/`, `verification/` pattern in this repo):
+
+- `mobile/src/products/product-edit-store.ts` — subscribe/getSnapshot store for the Edit
+  screen, read via `useSyncExternalStore` in `edit.tsx`.
+- `mobile/src/products/product-form.ts` — pure validation/image-add logic extracted out of
+  `product-form.tsx`.
+
+### 14.1 Product Edit Load Error + Retry
+
+- **Before:** `edit.tsx` called `productService.getProductById(id)` directly inside a
+  `useEffect`, with only a bare `.then(...)` — a rejected promise was never caught, so a
+  failed load became an unhandled promise rejection with no way to retry.
+- **After:** `createProductEditStore`'s internal `load()` wraps the call in try/catch. On
+  failure it sets `loadError: true` on the store's state instead of throwing.
+  `edit.tsx` renders a dedicated error box
+  ("โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่") with a "ลองใหม่อีกครั้ง" button that calls
+  `store.retry()`, which re-runs `load()` for the same `productId` held in the store.
+- **Source:** `mobile/src/products/product-edit-store.ts` (`load`, `retry`);
+  `mobile/src/app/product/[id]/edit.tsx` (`loadErrorBox` / retry button JSX).
+
+### 14.2 Product ID Change / Stale Form State
+
+- **Before:** `ProductForm`'s local `values` state was seeded once from `initialValues` at
+  mount (`useState(initialValues ?? emptyValues)`). In `edit.tsx`, `loading` was only ever
+  set to `true` once, at initial mount — the `useEffect` that re-fetched on `id` change did
+  not reset it. A slow response for a previously-opened product, or navigating to a
+  different product id while the Edit screen stayed mounted, could leave stale
+  product data displayed by an already-mounted `ProductForm` instance.
+- **After:** `product-edit-store.ts`'s `open(productId)` compares against the currently
+  open id; if it differs, it immediately resets state to
+  `{ ...initialProductEditState, productId, loading: true }` (clearing `product` to
+  `null`) *before* starting the new fetch, and bumps an internal `generation` counter so
+  any in-flight response for the previous id is discarded on arrival
+  (`if (current !== generation) return;`). Because `edit.tsx` only renders
+  `<ProductForm ... />` when `!state.loading && state.product`, this reset unmounts the
+  previous `ProductForm` instance and a fresh instance is only mounted once the new
+  product has actually loaded — so it always initializes from the correct data.
+  **Note for future maintainers:** `ProductForm` itself still does not watch its
+  `initialValues` prop for changes after mount; the fix relies on the parent
+  unmounting/remounting it rather than the component re-syncing internally. This is
+  sufficient for the current Edit screen (its `id` route param is the only thing that
+  changes `initialValues`), but a future reuse of `ProductForm` that changes
+  `initialValues` while keeping the same instance mounted would need the same treatment
+  (or an internal reset) again.
+- **Source:** `mobile/src/products/product-edit-store.ts` (`open`, `generation`);
+  `mobile/src/app/product/[id]/edit.tsx` (conditional render of `ProductForm`).
+
+### 14.3 Image Upload Error + Concurrent Form Edits
+
+- **Before:** `handleAddImage()` in `product-form.tsx` called
+  `imageUploadService.uploadImage()` inside a `try`/`finally` with no `catch` — a failed
+  upload became an unhandled promise rejection, with no user-visible error and no way to
+  retry other than the button re-enabling itself in the `finally`.
+  In the initial review revision (`82f3df4`), `addProductImage(values, uploadImage)` was
+  used and called `setValues(result.values)` upon completion; this caused a P2 issue where
+  form edits made while the upload was in flight were overwritten by the stale pre-upload
+  snapshot, on both upload success and upload failure.
+- **After:** the upload call is encapsulated by `uploadProductImage(uploadImage)` in
+  `product-form.ts`, which wraps the upload in try/catch and returns `{ url, error }`
+  without capturing form state. `product-form.tsx` then applies a **functional update**
+  via `setValues(current => addProductImage(current, result.url))` on success so any
+  concurrent field edits or removed images are preserved. On failure, it updates only
+  `uploadError` state ("อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่") without touching form state.
+  No separate retry control was added — the "+ เพิ่มรูป" tile is only disabled while
+  `uploadingImage` is `true`, so it is immediately tappable again after a failure.
+- **Source:** `mobile/src/products/product-form.ts` (`uploadProductImage`, `addProductImage`);
+  `mobile/src/components/product-form.tsx` (`handleAddImage`, `uploadError` render);
+  `mobile/component-tests/product-form.test.tsx`.
+
+### 14.4 Automated Tests
+
+- `mobile/tests/product-edit-store.test.mjs` (10 tests): initial load; an unknown id
+  reported as `notFound` rather than `loadError`; a failed load reporting a retryable
+  `loadError` and `retry()` recovering; `retry()` being a no-op without a prior `open()`;
+  a slow response for a discarded id not overwriting the product from a newer `open()`;
+  the previous product being cleared immediately (before the new fetch resolves) when
+  `open()` is called with a different id; a successful submit; a second submit while one
+  is in flight not sending a duplicate request; a failed submit leaving the form usable
+  and reporting `submitError`; and subscribers being notified on state changes (and not
+  after unsubscribing).
+- `mobile/tests/product-form.test.mjs` (15 tests): `validateProductForm` — empty name,
+  whitespace-only name, four invalid `priceText` values (`''`, `'0'`, `'-5'`, `'abc'`), a
+  fully valid form, and both fields reported together when both are missing;
+  `addProductImage` pure functional helper; `uploadProductImage` success/failure returns;
+  `addProductImage` backward-compatible overload; functional update appending image to
+  latest state while preserving concurrent edits made during upload; and failed upload
+  preserving concurrent edits without overwriting.
+- `mobile/component-tests/product-form.test.tsx` (2 tests): `ProductForm` component
+  integration tests verifying that editing form fields or removing images while image
+  upload is pending preserves all user edits upon upload success, and updates only error
+  upon upload failure without resetting form state.
+
+Both test files follow the existing test conventions in `mobile/tests/` (Node's built-in
+`node:test` + `node:assert/strict`, `.test.mjs`, explicit `.ts` extension on the imported
+source file) and `mobile/component-tests/` (Jest + `@testing-library/react-native`).
+
+### 14.5 Verification
+
+Run on branch `product-06-review-fixes` (resolving issue #48 / PR #82 review):
+Summary: `tsc --noEmit` passes with 0 errors, `expo lint` passes with 0 errors, and
+`npm test` passes (191 logic tests + 55 component tests, 246 total tests passing).
