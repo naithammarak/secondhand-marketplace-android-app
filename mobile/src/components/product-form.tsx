@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import {
   addProductImage,
   emptyProductFormValues,
+  uploadProductImage,
   validateProductForm,
   type ProductFormValues,
 } from '@/products/product-form';
@@ -38,10 +39,17 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
   async function handleAddImage() {
     setUploadingImage(true);
     setUploadError(null);
-    const result = await addProductImage(values, () => imageUploadService.uploadImage());
-    setValues(result.values);
-    setUploadError(result.error);
-    setUploadingImage(false);
+    try {
+      const result = await uploadProductImage(() => imageUploadService.uploadImage());
+      if (result.url) {
+        const imageUrl = result.url;
+        setValues(current => addProductImage(current, imageUrl));
+      } else {
+        setUploadError(result.error);
+      }
+    } finally {
+      setUploadingImage(false);
+    }
   }
 
   function handleRemoveImage(url: string) {

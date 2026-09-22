@@ -30,7 +30,7 @@ Dev builds later, or manual navigation during development).
 | File | Responsibility |
 |---|---|
 | `mobile/src/components/product-form.tsx` | Shared, reusable form UI used by both Create and Edit. Owns local field state, delegates validation and image-add logic to `products/product-form.ts`, calls `image-upload-service.ts` directly when the user adds an image, and calls the `onSubmit` prop with the current field values. It does **not** call `product-service.ts` itself — that is left to the screen that renders it, keeping UI and service layer separate. |
-| `mobile/src/products/product-form.ts` | *(Added in the PRODUCT-06 review fixes.)* Pure domain logic extracted out of `product-form.tsx`: `emptyProductFormValues`, `validateProductForm(values, priceText)`, and `addProductImage(values, uploadImage)` (wraps the upload call in try/catch so a failed upload can't become an unhandled rejection). No React/React Native imports — covered directly by `mobile/tests/product-form.test.mjs`. |
+| `mobile/src/products/product-form.ts` | *(Added in the PRODUCT-06 review fixes.)* Pure domain logic extracted out of `product-form.tsx`: `emptyProductFormValues`, `validateProductForm(values, priceText)`, `uploadProductImage(uploadImage)` (wraps the upload call in try/catch so a failed upload cannot become an unhandled rejection), and `addProductImage(values, imageUrl)` (pure functional helper for image appending). No React/React Native imports — covered directly by `mobile/tests/product-form.test.mjs`. |
 | `mobile/src/app/product/new.tsx` | Screen for `/product/new`. Instantiates `createProductService()`, renders `ProductForm` in `mode="create"`, calls `productService.createProduct(values)` on submit, sets a local `success` flag, then navigates with `router.canGoBack() ? router.back() : router.replace('/')`. Shows an inline error message on failure. **Unchanged by the review fixes** — still uses local `useState`, not the store described below. |
 | `mobile/src/app/product/[id]/edit.tsx` | Screen for `/product/[id]/edit`. Reads the `id` route param and owns a `createProductEditStore(productService)` instance (via `useState(() => ...)`), read with `useSyncExternalStore`. Calls `store.open(id)` on mount/`id` change and `store.submit(values)` on form submit. Renders a loading indicator, "ไม่พบสินค้านี้" if not found, a load-error box with a "ลองใหม่อีกครั้ง" retry button on load failure, and `ProductForm` (`mode="edit"`) once a product is loaded. |
 | `mobile/src/products/product-edit-store.ts` | *(Added in the PRODUCT-06 review fixes.)* External store (subscribe/getSnapshot, driven by `useSyncExternalStore` in `edit.tsx`) that owns all load/submit state for the Edit screen: `open`, `retry`, `submit`. Wraps `service.getProductById`/`service.updateProduct` in try/catch, tracks a `generation` counter so a late response for a previously opened id can never overwrite the currently displayed product, and resets `product` to `null` immediately when `open()` is called with a different id. Covered by `mobile/tests/product-edit-store.test.mjs`. |
@@ -416,21 +416,27 @@ Two new files were added, both under the `products/` domain folder (matching the
 - **Source:** `mobile/src/products/product-edit-store.ts` (`open`, `generation`);
   `mobile/src/app/product/[id]/edit.tsx` (conditional render of `ProductForm`).
 
-### 14.3 Image Upload Error + Retry
+### 14.3 Image Upload Error + Concurrent Form Edits
 
 - **Before:** `handleAddImage()` in `product-form.tsx` called
   `imageUploadService.uploadImage()` inside a `try`/`finally` with no `catch` — a failed
   upload became an unhandled promise rejection, with no user-visible error and no way to
   retry other than the button re-enabling itself in the `finally`.
-- **After:** the upload call moved into `addProductImage(values, uploadImage)` in
-  `product-form.ts`, which wraps it in try/catch and returns
-  `{ values, error: string | null }` (existing images are left unchanged on failure).
-  `product-form.tsx` stores the returned `error` in local `uploadError` state and renders
-  it under the image list ("อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่"). No separate retry
-  control was added — the "+ เพิ่มรูป" tile is only disabled while `uploadingImage` is
-  `true`, so it is immediately tappable again after a failure.
-- **Source:** `mobile/src/products/product-form.ts` (`addProductImage`);
-  `mobile/src/components/product-form.tsx` (`handleAddImage`, `uploadError` render).
+  In the initial review revision (`82f3df4`), `addProductImage(values, uploadImage)` was
+  used and called `setValues(result.values)` upon completion; this caused a P2 issue where
+  form edits made while the upload was in flight were overwritten by the stale pre-upload
+  snapshot, on both upload success and upload failure.
+- **After:** the upload call is encapsulated by `uploadProductImage(uploadImage)` in
+  `product-form.ts`, which wraps the upload in try/catch and returns `{ url, error }`
+  without capturing form state. `product-form.tsx` then applies a **functional update**
+  via `setValues(current => addProductImage(current, result.url))` on success so any
+  concurrent field edits or removed images are preserved. On failure, it updates only
+  `uploadError` state ("อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่") without touching form state.
+  No separate retry control was added — the "+ เพิ่มรูป" tile is only disabled while
+  `uploadingImage` is `true`, so it is immediately tappable again after a failure.
+- **Source:** `mobile/src/products/product-form.ts` (`uploadProductImage`, `addProductImage`);
+  `mobile/src/components/product-form.tsx` (`handleAddImage`, `uploadError` render);
+  `mobile/component-tests/product-form.test.tsx`.
 
 ### 14.4 Automated Tests
 
@@ -443,22 +449,24 @@ Two new files were added, both under the `products/` domain folder (matching the
   is in flight not sending a duplicate request; a failed submit leaving the form usable
   and reporting `submitError`; and subscribers being notified on state changes (and not
   after unsubscribing).
-- `mobile/tests/product-form.test.mjs` (10 tests): `validateProductForm` — empty name,
+- `mobile/tests/product-form.test.mjs` (15 tests): `validateProductForm` — empty name,
   whitespace-only name, four invalid `priceText` values (`''`, `'0'`, `'-5'`, `'abc'`), a
   fully valid form, and both fields reported together when both are missing;
-  `addProductImage` — a successful upload appends the returned url, and a failed upload
-  keeps the existing images unchanged and returns a non-empty error string.
+  `addProductImage` pure functional helper; `uploadProductImage` success/failure returns;
+  `addProductImage` backward-compatible overload; functional update appending image to
+  latest state while preserving concurrent edits made during upload; and failed upload
+  preserving concurrent edits without overwriting.
+- `mobile/component-tests/product-form.test.tsx` (2 tests): `ProductForm` component
+  integration tests verifying that editing form fields or removing images while image
+  upload is pending preserves all user edits upon upload success, and updates only error
+  upon upload failure without resetting form state.
 
-Both files follow the existing test conventions in `mobile/tests/` (Node's built-in
+Both test files follow the existing test conventions in `mobile/tests/` (Node's built-in
 `node:test` + `node:assert/strict`, `.test.mjs`, explicit `.ts` extension on the imported
-source file).
+source file) and `mobile/component-tests/` (Jest + `@testing-library/react-native`).
 
 ### 14.5 Verification
 
-Run on branch `product-06-review-fixes`, commit `82f3df4`, on 2026-09-20 — see
-[Section 10](#10-testing) for the full current results. Summary: `tsc --noEmit` passes,
-`expo lint` has 1 pre-existing, unrelated error, and `npm test` passes
-(186 logic tests + 53 component tests). This revision was not manually exercised in a
-running app / emulator (no screenshots or manual QA session recorded) — manual
-verification of the retry buttons and the id-change/stale-state fix in a live app is
-still outstanding.
+Run on branch `product-06-review-fixes` (resolving issue #48 / PR #82 review):
+Summary: `tsc --noEmit` passes with 0 errors, `expo lint` passes with 0 errors, and
+`npm test` passes (191 logic tests + 55 component tests, 246 total tests passing).

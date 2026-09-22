@@ -25,17 +25,40 @@ export function validateProductForm(values: ProductFormValues, priceText: string
   return errors;
 }
 
-export type AddProductImageResult = { values: ProductFormValues; error: string | null };
+export type UploadProductImageResult =
+  | { url: string; error: null }
+  | { url: null; error: string };
 
 /** ห่อการอัปโหลดรูปไว้แยกจาก React state เพื่อให้ทดสอบกรณีอัปโหลดล้มเหลวได้โดยไม่ต้อง render component */
-export async function addProductImage(
-  values: ProductFormValues,
+export async function uploadProductImage(
   uploadImage: () => Promise<{ url: string }>,
-): Promise<AddProductImageResult> {
+): Promise<UploadProductImageResult> {
   try {
     const uploaded = await uploadImage();
-    return { values: { ...values, images: [...values.images, uploaded.url] }, error: null };
+    return { url: uploaded.url, error: null };
   } catch {
-    return { values, error: 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
+    return { url: null, error: 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
   }
+}
+
+export type AddProductImageResult = { values: ProductFormValues; error: string | null };
+
+export function addProductImage(values: ProductFormValues, imageUrl: string): ProductFormValues;
+export function addProductImage(
+  values: ProductFormValues,
+  uploadImage: () => Promise<{ url: string }>,
+): Promise<AddProductImageResult>;
+export function addProductImage(
+  values: ProductFormValues,
+  second: string | (() => Promise<{ url: string }>),
+): ProductFormValues | Promise<AddProductImageResult> {
+  if (typeof second === 'string') {
+    return { ...values, images: [...values.images, second] };
+  }
+  return uploadProductImage(second).then(result => {
+    if (result.url) {
+      return { values: { ...values, images: [...values.images, result.url] }, error: null };
+    }
+    return { values, error: result.error };
+  });
 }
