@@ -57,7 +57,11 @@ def bind_pending_uploads(
     now = datetime.now(timezone.utc)
     for upload_id in upload_ids:
         upload = by_id[upload_id]
-        if upload.user_id != seller_id or upload.state != "PENDING" or upload.attached_product_id is not None:
+        if upload.user_id != seller_id:
+            raise HTTPException(status_code=422, detail={"code": "INVALID_IMAGE_REFERENCE"})
+        if upload.state == "ATTACHED" or upload.attached_product_id is not None:
+            raise HTTPException(status_code=409, detail={"code": "IMAGE_ALREADY_ATTACHED"})
+        if upload.state != "PENDING":
             raise HTTPException(status_code=422, detail={"code": "INVALID_IMAGE_REFERENCE"})
         expiry = upload.expires_at
         if expiry is None:
@@ -74,6 +78,7 @@ def bind_pending_uploads(
         upload.attached_product_id = product_id
         image = ProductImage(
             product_id=product_id,
+            image_id=upload.id,
             upload_id=upload.id,
             image_url=upload.object_key,
             file_size=upload.file_size,
