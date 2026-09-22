@@ -458,7 +458,7 @@ def migrated_product_database():
                         (user_id, category_id, brand_id, product_name, description,
                          size, condition, price, sale_type, status)
                     VALUES (1, 1, 1, 'Legacy Product', 'Existing data', 'M',
-                            'ดี', 10.00, 'FIXED_PRICE', 'AVAILABLE')
+                            'ดี', 10.00, 'FIXED_PRICE', 'พร้อมขาย')
                     """
                 )
             )
@@ -505,11 +505,12 @@ def test_product_migration_preserves_data_and_enforces_schema(
         }
         assert {"upload_id", "sort_order", "photo_type"} <= image_columns
 
-        # Verify legacy product condition normalized from 'ดี' to 'GOOD'
-        legacy_product_condition = connection.execute(
-            text("SELECT condition FROM products WHERE id = 1")
-        ).scalar_one()
+        # Verify legacy product condition and status normalized
+        legacy_product_condition, legacy_product_status = connection.execute(
+            text("SELECT condition, status FROM products WHERE id = 1")
+        ).one()
         assert legacy_product_condition == "GOOD"
+        assert legacy_product_status == "AVAILABLE"
 
         # Verify legacy images preserved and photo_type normalized
         legacy_images = connection.execute(
@@ -679,3 +680,43 @@ def test_product_migration_rollback_keeps_legacy_rows(migrated_product_database)
         ).all()
         assert legacy == [(1, "legacy/image.jpg"), (2, "legacy/gallery.jpg")]
     command.upgrade(config, "9446ec1a2c5d")
+
+
+def test_product_migration_aborts_on_unmapped_status(migrated_product_database):
+    config = _alembic_config()
+    command.downgrade(config, "f3862bffea77")
+    try:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO products
+                        (user_id, category_id, brand_id, product_name, description,
+                         size, condition, price, sale_type, status)
+                    VALUES
+                        (1, 1, 1, 'Draft Product', 'Draft item', 'M',
+                         'GOOD', 10.00, 'FIXED_PRICE', 'DRAFT'),
+                        (1, 1, 1, 'Hidden Product', 'Hidden item', 'L',
+                         'GOOD', 20.00, 'FIXED_PRICE', 'HIDDEN')
+                    """
+                )
+            )
+
+        with pytest.raises(Exception, match="unmapped/unknown status"):
+            command.upgrade(config, "daf675afc8fc")
+
+        # Confirm status was NOT converted to AVAILABLE
+        with migrated_product_database.connect() as connection:
+            statuses = dict(
+                connection.execute(
+                    text("SELECT product_name, status FROM products WHERE product_name IN ('Draft Product', 'Hidden Product')")
+                ).all()
+            )
+            assert statuses["Draft Product"] == "DRAFT"
+            assert statuses["Hidden Product"] == "HIDDEN"
+    finally:
+        with migrated_product_database.begin() as connection:
+            connection.execute(
+                text("DELETE FROM products WHERE product_name IN ('Draft Product', 'Hidden Product')")
+            )
+        command.upgrade(config, "9446ec1a2c5d")
