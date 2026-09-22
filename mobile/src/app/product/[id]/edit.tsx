@@ -3,14 +3,18 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/auth/auth-provider';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { createProductEditStore } from '@/products/product-edit-store';
 import { createProductService } from '@/services/product-service';
 
-const productService = createProductService();
+const productService = createProductService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+});
 
 export default function EditProductScreen() {
+  const { session } = useAuth();
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -27,8 +31,21 @@ export default function EditProductScreen() {
     else router.replace('/');
   }, [state.submitSuccess]);
 
+  useEffect(() => {
+    if (!state.cancelSuccess) return;
+    const timer = setTimeout(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [state.cancelSuccess]);
+
   async function handleSubmit(values: ProductFormValues) {
-    await store.submit(values);
+    await store.submit(values, session?.access_token);
+  }
+
+  async function handleCancel() {
+    await store.cancel(session?.access_token);
   }
 
   return (
@@ -48,14 +65,37 @@ export default function EditProductScreen() {
               </View>
             )}
             {!state.loading && state.product && (
-              <ProductForm
-                mode="edit"
-                initialValues={state.product}
-                submitting={state.submitting}
-                submitSuccess={state.submitSuccess}
-                submitError={state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null}
-                onSubmit={handleSubmit}
-              />
+              <>
+                <ProductForm
+                  mode="edit"
+                  initialValues={state.product}
+                  submitting={state.submitting}
+                  submitSuccess={state.submitSuccess}
+                  submitError={state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null}
+                  onSubmit={handleSubmit}
+                />
+                {state.product.status !== 'CANCELLED' && (
+                  <View style={styles.cancelSection}>
+                    {state.cancelError && (
+                      <Text style={styles.cancelErrorText}>ยกเลิกสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.cancelButton, state.cancelling && styles.buttonDisabled]}
+                      disabled={state.cancelling || state.submitting}
+                      accessibilityRole="button"
+                      accessibilityLabel="ยกเลิกการขายสินค้านี้"
+                      onPress={handleCancel}
+                    >
+                      <Text style={styles.cancelButtonText}>
+                        {state.cancelling ? 'กำลังยกเลิกสินค้า...' : 'ยกเลิกการขายสินค้านี้'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {state.cancelSuccess && (
+                  <Text style={styles.cancelSuccessText}>สินค้านี้ถูกยกเลิกการขายแล้ว กำลังกลับ...</Text>
+                )}
+              </>
             )}
           </View>
         </SafeAreaView>
@@ -89,4 +129,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   retryButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  cancelSection: {
+    marginTop: Spacing.four,
+    paddingTop: Spacing.four,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f3f6',
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#ff4d4f',
+    borderRadius: Spacing.two,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    width: '100%',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cancelErrorText: {
+    color: '#d9534f',
+    fontSize: 14,
+    marginBottom: Spacing.two,
+    textAlign: 'center',
+  },
+  cancelSuccessText: {
+    color: '#52c41a',
+    fontSize: 14,
+    marginTop: Spacing.three,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
 });

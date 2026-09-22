@@ -4,11 +4,16 @@ import { LoginScreen } from '@/components/login-screen';
 
 const mockPush = jest.fn();
 let mockAuth: any;
+let mockVerification: any = { state: { record: null } };
 
-jest.mock('expo-router', () => ({ router: { push: mockPush } }));
+jest.mock('expo-router', () => ({
+  router: {
+    push: (...args: any[]) => mockPush(...args),
+  },
+}));
 jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
 jest.mock('@/verification/verification-provider', () => ({
-  useVerification: () => ({ state: { record: null } }),
+  useVerification: () => mockVerification,
 }));
 
 function newUserAuth(overrides: Record<string, unknown> = {}) {
@@ -31,6 +36,7 @@ function newUserAuth(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockAuth = newUserAuth();
+  mockVerification = { state: { record: null } };
 });
 
 test('waits for account verification before showing first-role choices', async () => {
@@ -93,3 +99,27 @@ test('mock account cannot report a successful role save', async () => {
   expect(screen.getByText('กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'ยืนยันบทบาท' }).props.accessibilityState.disabled).toBeTruthy();
 });
+
+test('shows "ลงขายสินค้า" button and navigates to /product/new when seller is APPROVED', async () => {
+  mockVerification = { state: { record: { status: 'APPROVED' } } };
+  mockAuth = newUserAuth({
+    account: { fullName: 'แม่ค้าใจดี', role: 'SELLER', source: 'backend' },
+  });
+  await render(<LoginScreen />);
+
+  const postProductBtn = screen.getByRole('button', { name: 'ลงขายสินค้า' });
+  expect(postProductBtn).toBeTruthy();
+  await fireEvent.press(postProductBtn);
+  expect(mockPush).toHaveBeenCalledWith('/product/new');
+});
+
+test('does not show "ลงขายสินค้า" button when seller is not APPROVED', async () => {
+  mockVerification = { state: { record: { status: 'PENDING' } } };
+  mockAuth = newUserAuth({
+    account: { fullName: 'แม่ค้าใจดี', role: 'SELLER', source: 'backend' },
+  });
+  await render(<LoginScreen />);
+
+  expect(screen.queryByRole('button', { name: 'ลงขายสินค้า' })).toBeNull();
+});
+

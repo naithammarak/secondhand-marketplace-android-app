@@ -3,13 +3,17 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/auth/auth-provider';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { createProductService } from '@/services/product-service';
 
-const productService = createProductService();
+const productService = createProductService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+});
 
 export default function NewProductScreen() {
+  const { session } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,12 +22,12 @@ export default function NewProductScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await productService.createProduct(values);
+      await productService.createProduct(values, session?.access_token);
       setSuccess(true);
       if (router.canGoBack()) router.back();
       else router.replace('/');
-    } catch {
-      setError('ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setSubmitting(false);
     }

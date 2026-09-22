@@ -1,8 +1,9 @@
 import type { Product, ProductInput } from '../services/product-service';
 
 export type ProductEditService = {
-  getProductById(id: string): Promise<Product | null>;
-  updateProduct(id: string, input: ProductInput): Promise<Product>;
+  getProductById(id: string, token?: string): Promise<Product | null>;
+  updateProduct(id: string, input: ProductInput, token?: string): Promise<Product>;
+  cancelProduct?(id: string, token?: string): Promise<Product>;
 };
 
 export type ProductEditState = {
@@ -14,6 +15,9 @@ export type ProductEditState = {
   submitting: boolean;
   submitError: boolean;
   submitSuccess: boolean;
+  cancelling: boolean;
+  cancelError: boolean;
+  cancelSuccess: boolean;
 };
 
 export const initialProductEditState: ProductEditState = {
@@ -25,6 +29,9 @@ export const initialProductEditState: ProductEditState = {
   submitting: false,
   submitError: false,
   submitSuccess: false,
+  cancelling: false,
+  cancelError: false,
+  cancelSuccess: false,
 };
 
 export function createProductEditStore(service: ProductEditService) {
@@ -78,18 +85,33 @@ export function createProductEditStore(service: ProductEditService) {
       return load();
     },
 
-    async submit(input: ProductInput) {
+    async submit(input: ProductInput, token?: string) {
       const productId = state.productId;
       if (!productId || state.submitting) return; // กันกดบันทึกซ้ำระหว่างรอผล
       const current = generation;
       set({ submitting: true, submitError: false });
       try {
-        const product = await service.updateProduct(productId, input);
+        const product = await service.updateProduct(productId, input, token);
         if (current !== generation) return;
         set({ submitting: false, submitSuccess: true, submitError: false, product });
       } catch {
         if (current !== generation) return;
         set({ submitting: false, submitError: true });
+      }
+    },
+
+    async cancel(token?: string) {
+      const productId = state.productId;
+      if (!productId || state.cancelling || !service.cancelProduct) return;
+      const current = generation;
+      set({ cancelling: true, cancelError: false });
+      try {
+        const product = await service.cancelProduct(productId, token);
+        if (current !== generation) return;
+        set({ cancelling: false, cancelSuccess: true, cancelError: false, product });
+      } catch {
+        if (current !== generation) return;
+        set({ cancelling: false, cancelError: true });
       }
     },
   };

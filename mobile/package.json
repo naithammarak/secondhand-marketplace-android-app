@@ -60,6 +60,7 @@
   },
   "jest": {
     "preset": "jest-expo",
+    "setupFiles": ["<rootDir>/component-tests/jest-setup.js"],
     "testMatch": ["<rootDir>/component-tests/**/*.test.tsx"],
     "moduleNameMapper": {
       "\\.css$": "<rootDir>/component-tests/style-mock.js",

@@ -9,8 +9,9 @@ import {
   type ProductFormValues,
 } from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
+import { pickProductImage } from '@/products/pick-product-image';
 import { createImageUploadService } from '@/services/image-upload-service';
-import { CATEGORY_OPTIONS, CONDITION_LABELS, CONDITION_OPTIONS } from '@/services/product-service';
+import { BRAND_OPTIONS, CATEGORY_OPTIONS, CONDITION_LABELS, CONDITION_OPTIONS } from '@/services/product-service';
 
 export type { ProductFormValues } from '@/products/product-form';
 
@@ -25,7 +26,9 @@ type Props = {
 
 const ACCENT = '#96bde9';
 
-const imageUploadService = createImageUploadService();
+const imageUploadService = createImageUploadService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+});
 
 export function ProductForm({ mode, initialValues, submitting, submitSuccess, submitError, onSubmit }: Props) {
   const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
@@ -40,7 +43,13 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
     setUploadingImage(true);
     setUploadError(null);
     try {
-      const result = await uploadProductImage(() => imageUploadService.uploadImage());
+      const picked = await pickProductImage();
+      if (picked.status === 'cancelled') return;
+      if (picked.status === 'permission-denied') {
+        setUploadError('ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ');
+        return;
+      }
+      const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file));
       if (result.url) {
         const imageUrl = result.url;
         setValues(current => addProductImage(current, imageUrl));
@@ -102,6 +111,20 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
             placeholderTextColor="#9aa3af"
             editable={!disabled}
           />
+          <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
+            {BRAND_OPTIONS.map(option => (
+              <TouchableOpacity
+                key={option}
+                style={[styles.chip, values.brand === option && styles.chipSelected]}
+                onPress={() => setValues(current => ({ ...current, brand: option }))}
+                disabled={disabled}
+              >
+                <Text style={[styles.chipText, values.brand === option && styles.chipTextSelected]}>
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
         <View style={[styles.field, styles.rowItem]}>
           <Text style={styles.label}>ไซซ์</Text>
