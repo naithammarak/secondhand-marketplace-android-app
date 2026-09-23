@@ -35,19 +35,25 @@ function deferred() {
 }
 
 function setup(overrides = {}) {
-  const calls = { getProductById: [], updateProduct: [] };
+  const calls = { getProductById: [], updateProduct: [], cancelProduct: [] };
   const service = {
-    getProductById: async id => {
-      calls.getProductById.push(id);
+    getProductById: async (id, token) => {
+      calls.getProductById.push(token !== undefined ? { id, token } : id);
       return overrides.getProductById
-        ? overrides.getProductById(calls.getProductById.length, id)
+        ? overrides.getProductById(calls.getProductById.length, id, token)
         : product(id);
     },
-    updateProduct: async (id, values) => {
-      calls.updateProduct.push({ id, values });
+    updateProduct: async (id, values, token) => {
+      calls.updateProduct.push(token !== undefined ? { id, values, token } : { id, values });
       return overrides.updateProduct
-        ? overrides.updateProduct(calls.updateProduct.length, id, values)
+        ? overrides.updateProduct(calls.updateProduct.length, id, values, token)
         : product(id, values);
+    },
+    cancelProduct: async (id, token) => {
+      calls.cancelProduct.push(token !== undefined ? { id, token } : id);
+      return overrides.cancelProduct
+        ? overrides.cancelProduct(calls.cancelProduct.length, id, token)
+        : product(id, { status: 'CANCELLED' });
     },
   };
   const store = createProductEditStore(service);
@@ -176,4 +182,64 @@ test('subscribers are notified as the state changes', async () => {
   const seen = notifications;
   await store.submit(input);
   assert.equal(notifications, seen);
+});
+
+test('passes access token to getProductById on open and retry', async () => {
+  const { store, calls } = setup();
+  await store.open('p1', 'mock-token-123');
+  assert.deepEqual(calls.getProductById[0], { id: 'p1', token: 'mock-token-123' });
+
+  await store.retry('mock-token-456');
+  // retry without error doesn't call service, let's test retry after failure
+  const failSetup = setup({
+    getProductById: attempt => {
+      if (attempt === 1) throw new Error('fetch error');
+      return product('p2');
+    },
+  });
+  await failSetup.store.open('p2', 'tok-init');
+  assert.equal(failSetup.store.getSnapshot().loadError, true);
+
+  await failSetup.store.retry('tok-retry');
+  assert.deepEqual(failSetup.calls.getProductById[1], { id: 'p2', token: 'tok-retry' });
+  assert.equal(failSetup.store.getSnapshot().product.id, 'p2');
+});
+
+test('captures submitErrorMessage and submitFieldErrors on validation error', async () => {
+  const errorWithFields = new Error('ข้อมูลสินค้าไม่ถูกต้อง');
+  errorWithFields.fields = { name: 'ชื่อสั้นเกินไป', price: 'ราคาต้องมากกว่า 0' };
+
+  const { store } = setup({
+    updateProduct: () => { throw errorWithFields; },
+  });
+
+  await store.open('p1');
+  await store.submit(input);
+
+  const state = store.getSnapshot();
+  assert.equal(state.submitting, false);
+  assert.equal(state.submitError, true);
+  assert.equal(state.submitErrorMessage, 'ข้อมูลสินค้าไม่ถูกต้อง');
+  assert.deepEqual(state.submitFieldErrors, { name: 'ชื่อสั้นเกินไป', price: 'ราคาต้องมากกว่า 0' });
+});
+
+test('cancels product with access token and reports success or error', async () => {
+  const { store, calls } = setup();
+  await store.open('p1');
+
+  // Successful cancellation
+  await store.cancel('seller-token-xyz');
+  assert.deepEqual(calls.cancelProduct[0], { id: 'p1', token: 'seller-token-xyz' });
+  assert.equal(store.getSnapshot().cancelSuccess, true);
+  assert.equal(store.getSnapshot().cancelError, false);
+  assert.equal(store.getSnapshot().product.status, 'CANCELLED');
+
+  // Failed cancellation
+  const errorSetup = setup({
+    cancelProduct: () => { throw new Error('cancel failed'); },
+  });
+  await errorSetup.store.open('p2');
+  await errorSetup.store.cancel('token-abc');
+  assert.equal(errorSetup.store.getSnapshot().cancelSuccess, false);
+  assert.equal(errorSetup.store.getSnapshot().cancelError, true);
 });

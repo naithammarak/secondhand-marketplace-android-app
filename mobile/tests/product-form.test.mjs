@@ -4,10 +4,12 @@ import {
   addProductImage,
   emptyProductFormValues,
   uploadProductImage,
+  validateProductImageFile,
   validateProductForm,
 } from '../src/products/product-form.ts';
+import { ProductServiceError } from '../src/services/product-service.ts';
 
-const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด' };
+const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด', images: ['mock://product-images/one'] };
 
 test('an empty name is rejected', () => {
   const errors = validateProductForm(emptyProductFormValues, '100');
@@ -30,17 +32,52 @@ test('a valid name and price pass validation', () => {
   assert.deepEqual(validateProductForm(validValues, '150'), {});
 });
 
+test('category is required when categories options are provided', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const errors = validateProductForm({ ...validValues, categoryId: undefined }, '150', { categories });
+  assert.equal(errors.category, 'กรุณาเลือกหมวดหมู่สินค้า');
+});
+
+test('invalid categoryId not in categories is rejected', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const errors = validateProductForm({ ...validValues, categoryId: 999 }, '150', { categories });
+  assert.equal(errors.category, 'กรุณาเลือกหมวดหมู่สินค้า');
+});
+
+test('brand is required when brands options are provided and brandId is missing or invalid', () => {
+  const brands = [{ id: 1, name: 'ไม่ระบุแบรนด์' }, { id: 2, name: 'Nike' }];
+  const errorsMissing = validateProductForm({ ...validValues, brandId: undefined }, '150', { brands });
+  assert.equal(errorsMissing.brand, 'กรุณาเลือกแบรนด์สินค้า');
+  const errorsInvalid = validateProductForm({ ...validValues, brandId: 999 }, '150', { brands });
+  assert.equal(errorsInvalid.brand, 'กรุณาเลือกแบรนด์สินค้า');
+});
+
+test('valid categoryId and brandId matching options pass validation', () => {
+  const categories = [{ id: 42, name: 'เสื้อผ้า' }, { id: 43, name: 'รองเท้า' }];
+  const brands = [{ id: 1, name: 'ไม่ระบุแบรนด์' }, { id: 2, name: 'Nike' }];
+  const errors = validateProductForm({ ...validValues, categoryId: 42, brandId: 1 }, '150', { categories, brands });
+  assert.deepEqual(errors, {});
+});
+
 test('a valid form reports both fields missing together', () => {
   const errors = validateProductForm(emptyProductFormValues, '');
   assert.equal(typeof errors.name, 'string');
   assert.equal(typeof errors.price, 'string');
 });
 
+test('requires 1 to 10 images and rejects unsupported or oversized files before upload', () => {
+  assert.equal(typeof validateProductForm(emptyProductFormValues, '100').images, 'string');
+  assert.equal(typeof validateProductForm({ ...validValues, images: Array(11).fill('image') }, '100').images, 'string');
+  assert.equal(validateProductImageFile({ type: 'image/heic', size: 1024 }), 'รองรับเฉพาะรูป JPEG หรือ PNG');
+  assert.equal(validateProductImageFile({ type: 'image/png', size: 5 * 1024 * 1024 + 1 }), 'รูปภาพต้องมีขนาดไม่เกิน 5 MiB');
+  assert.equal(validateProductImageFile({ type: 'image/jpeg', size: 5 * 1024 * 1024 }), null);
+});
+
 test('addProductImage pure helper appends the new image url to form values', () => {
   const result = addProductImage(validValues, 'mock://product-images/abc');
-  assert.deepEqual(result.images, ['mock://product-images/abc']);
+  assert.deepEqual(result.images, ['mock://product-images/one', 'mock://product-images/abc']);
   // original object should not be mutated
-  assert.deepEqual(validValues.images, []);
+  assert.deepEqual(validValues.images, ['mock://product-images/one']);
 });
 
 test('uploadProductImage returns url without error on success', async () => {
@@ -55,10 +92,15 @@ test('uploadProductImage returns error without throwing on failure', async () =>
   assert.equal(result.error, 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
 });
 
+test('uploadProductImage shows an actionable session error', async () => {
+  const result = await uploadProductImage(async () => { throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่'); });
+  assert.equal(result.error, 'กรุณาเข้าสู่ระบบใหม่');
+});
+
 test('a successful upload appends the new image url', async () => {
   const result = await addProductImage(validValues, async () => ({ url: 'mock://product-images/abc' }));
   assert.equal(result.error, null);
-  assert.deepEqual(result.values.images, ['mock://product-images/abc']);
+  assert.deepEqual(result.values.images, ['mock://product-images/one', 'mock://product-images/abc']);
 });
 
 test('a failed upload keeps the existing images and reports an error', async () => {

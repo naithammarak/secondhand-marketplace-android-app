@@ -18,7 +18,8 @@ from app import database
 from app.database import get_db
 from app.models.product import Product
 from app.models.product_image import ProductImage
-from app.models.user import User, UserRole, UserStatus
+from app.models.user import User
+from app.services.seller_access import ensure_active_seller
 from app.services.product_seller_access import require_approved_seller
 
 
@@ -192,8 +193,7 @@ def create_product_image(
     storage_attempted = False
     commit_attempted = False
     try:
-        if current_user.role != UserRole.SELLER or current_user.status != UserStatus.ACTIVE:
-            raise HTTPException(status_code=403, detail="Only active sellers can upload product images")
+        ensure_active_seller(current_user, detail="Only active sellers can upload product images")
 
         product = db.get(Product, product_id)
         if product is None or product.deleted_at is not None:

@@ -27,6 +27,9 @@ export default function TabLayout() {
                 <Stack.Screen name="buy-by-product-id" />
                 <Stack.Screen name="products/index" />
                 <Stack.Screen name="products/[id]" />
+                <Stack.Screen name="product/new" />
+                <Stack.Screen name="product/mine" />
+                <Stack.Screen name="product/[id]/edit" />
                 <Stack.Screen name="checkout/[productId]" />
                 <Stack.Screen name="orders/index" />
                 <Stack.Screen name="orders/[orderId]" />

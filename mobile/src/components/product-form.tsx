@@ -1,16 +1,27 @@
-import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
   addProductImage,
   emptyProductFormValues,
+  MAX_PRODUCT_IMAGES,
   uploadProductImage,
+  validateProductImageFile,
   validateProductForm,
+  type ProductFieldErrors,
   type ProductFormValues,
 } from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
+import { pickProductImage } from '@/products/pick-product-image';
+import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createImageUploadService } from '@/services/image-upload-service';
-import { CATEGORY_OPTIONS, CONDITION_LABELS, CONDITION_OPTIONS } from '@/services/product-service';
+import {
+  CONDITION_LABELS,
+  CONDITION_OPTIONS,
+  createProductService,
+  type BrandOption,
+  type CategoryOption,
+} from '@/services/product-service';
 
 export type { ProductFormValues } from '@/products/product-form';
 
@@ -20,30 +31,164 @@ type Props = {
   submitting?: boolean;
   submitSuccess?: boolean;
   submitError?: string | null;
+  serverFieldErrors?: Record<string, string>;
   onSubmit: (values: ProductFormValues) => void | Promise<void>;
 };
 
 const ACCENT = '#96bde9';
 
-const imageUploadService = createImageUploadService();
+const imageUploadService = createImageUploadService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
+});
 
-export function ProductForm({ mode, initialValues, submitting, submitSuccess, submitError, onSubmit }: Props) {
+const productService = createProductService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
+});
+
+export function syncValuesWithOptions(
+  current: ProductFormValues,
+  catList: CategoryOption[],
+  brandList: BrandOption[],
+): ProductFormValues {
+  const updated = { ...current };
+
+  // Category sync:
+  // Match by name first to ensure the real ID from API is used (e.g. "เสื้อผ้า" -> ID 42 instead of stale 1)
+  const matchedCatByName = current.category
+    ? catList.find(c => c.name.trim().toLowerCase() === current.category.trim().toLowerCase())
+    : undefined;
+  const matchedCatById = current.categoryId
+    ? catList.find(c => c.id === current.categoryId)
+    : undefined;
+  const matchedCat = matchedCatByName ?? matchedCatById;
+
+  if (matchedCat) {
+    updated.category = matchedCat.name;
+    updated.categoryId = matchedCat.id;
+  } else if (catList.length > 0 && !current.category) {
+    updated.category = catList[0].name;
+    updated.categoryId = catList[0].id;
+  } else {
+    updated.categoryId = undefined;
+  }
+
+  // Brand sync:
+  const matchedBrandByName = current.brand
+    ? brandList.find(b => b.name.trim().toLowerCase() === current.brand.trim().toLowerCase())
+    : undefined;
+  const matchedBrandById = current.brandId
+    ? brandList.find(b => b.id === current.brandId)
+    : undefined;
+  const matchedBrand = matchedBrandByName ?? matchedBrandById;
+
+  if (matchedBrand) {
+    updated.brand = matchedBrand.name;
+    updated.brandId = matchedBrand.id;
+  } else {
+    // If brand is custom/unlisted or empty, assign the real ID of "ไม่ระบุแบรนด์" from database
+    const unbranded = brandList.find(b => b.name === 'ไม่ระบุแบรนด์') ?? brandList[0];
+    if (unbranded) {
+      updated.brandId = unbranded.id;
+      updated.brand = unbranded.name;
+    }
+  }
+
+  return updated;
+}
+
+export function ProductForm({
+  mode,
+  initialValues,
+  submitting,
+  submitSuccess,
+  submitError,
+  serverFieldErrors,
+  onSubmit,
+}: Props) {
   const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
   const [priceText, setPriceText] = useState(initialValues ? String(initialValues.price) : '');
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [brands, setBrands] = useState<BrandOption[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<ReturnType<typeof validateProductForm>>({});
+  const [fieldErrors, setFieldErrors] = useState<ProductFieldErrors>({});
+
+  const applyLoadedOptions = useCallback((catList: CategoryOption[], brandList: BrandOption[]) => {
+    if (catList.length === 0 || brandList.length === 0) {
+      setCategories([]);
+      setBrands([]);
+      setOptionsError(catList.length === 0 ? 'ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ' : 'ไม่พบข้อมูลแบรนด์ในระบบ');
+      return;
+    }
+    setCategories(catList);
+    setBrands(brandList);
+    setValues(current => syncValuesWithOptions(current, catList, brandList));
+  }, []);
+
+  const handleRetryOptions = useCallback(async () => {
+    setLoadingOptions(true);
+    setOptionsError(null);
+    try {
+      const [catList, brandList] = await Promise.all([
+        productService.getCategories(),
+        productService.getBrands(),
+      ]);
+      applyLoadedOptions(catList, brandList);
+    } catch (err) {
+      setCategories([]);
+      setBrands([]);
+      setOptionsError(err instanceof Error ? err.message : 'โหลดหมวดหมู่และแบรนด์ไม่สำเร็จ');
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, [applyLoadedOptions]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      productService.getCategories(),
+      productService.getBrands(),
+    ]).then(([catList, brandList]) => {
+      if (!active) return;
+      applyLoadedOptions(catList, brandList);
+      setLoadingOptions(false);
+    }).catch(err => {
+      if (!active) return;
+      setCategories([]);
+      setBrands([]);
+      setOptionsError(err instanceof Error ? err.message : 'โหลดหมวดหมู่และแบรนด์ไม่สำเร็จ');
+      setLoadingOptions(false);
+    });
+    return () => { active = false; };
+  }, [applyLoadedOptions]);
 
   const disabled = submitting || submitSuccess;
+  const cannotSubmit = disabled || uploadingImage || loadingOptions || !!optionsError || categories.length === 0 || brands.length === 0;
 
   async function handleAddImage() {
+    if (values.images.length >= MAX_PRODUCT_IMAGES || uploadingImage) return;
     setUploadingImage(true);
     setUploadError(null);
     try {
-      const result = await uploadProductImage(() => imageUploadService.uploadImage());
+      const picked = await pickProductImage();
+      if (picked.status === 'cancelled') return;
+      if (picked.status === 'permission-denied') {
+        setUploadError('ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ');
+        return;
+      }
+      const fileError = validateProductImageFile(picked.file);
+      if (fileError) {
+        setUploadError(fileError);
+        return;
+      }
+      const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file));
       if (result.url) {
         const imageUrl = result.url;
-        setValues(current => addProductImage(current, imageUrl));
+        setValues(current => current.images.length < MAX_PRODUCT_IMAGES ? addProductImage(current, imageUrl) : current);
       } else {
         setUploadError(result.error);
       }
@@ -56,32 +201,73 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
     setValues(current => ({ ...current, images: current.images.filter(image => image !== url) }));
   }
 
+  function setAsMainImage(url: string) {
+    setValues(current => {
+      const remaining = current.images.filter(img => img !== url);
+      return { ...current, images: [url, ...remaining] };
+    });
+  }
+
+  function moveImage(fromIndex: number, toIndex: number) {
+    setValues(current => {
+      if (toIndex < 0 || toIndex >= current.images.length) return current;
+      const list = [...current.images];
+      const [moved] = list.splice(fromIndex, 1);
+      list.splice(toIndex, 0, moved);
+      return { ...current, images: list };
+    });
+  }
+
   function handleSubmit() {
-    const errors = validateProductForm(values, priceText);
+    if (cannotSubmit) return;
+    const errors = validateProductForm(values, priceText, { categories, brands });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     void onSubmit({ ...values, price: Number(priceText) });
   }
 
+  const nameError = fieldErrors.name || serverFieldErrors?.name || serverFieldErrors?.product_name;
+  const descError = serverFieldErrors?.description;
+  const brandError = fieldErrors.brand || serverFieldErrors?.brand || serverFieldErrors?.brand_id;
+  const sizeError = serverFieldErrors?.size;
+  const priceError = fieldErrors.price || serverFieldErrors?.price;
+  const categoryError = fieldErrors.category || serverFieldErrors?.category || serverFieldErrors?.category_id;
+  const conditionError = serverFieldErrors?.condition;
+  const imagesError = fieldErrors.images || serverFieldErrors?.images || serverFieldErrors?.photos || serverFieldErrors?.product_images;
+
   return (
     <View style={styles.form}>
+      {optionsError && (
+        <View style={styles.optionsErrorBox}>
+          <Text style={styles.optionsErrorText}>{optionsError}</Text>
+          <TouchableOpacity
+            style={styles.retryOptionsBtn}
+            onPress={() => { void handleRetryOptions(); }}
+            accessibilityRole="button"
+            accessibilityLabel="ลองโหลดตัวเลือกใหม่"
+          >
+            <Text style={styles.retryOptionsBtnText}>ลองใหม่อีกครั้ง</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <View style={styles.field}>
         <Text style={styles.label}>ชื่อสินค้า *</Text>
         <TextInput
-          style={[styles.input, fieldErrors.name && styles.inputError]}
+          style={[styles.input, nameError && styles.inputError]}
           value={values.name}
           onChangeText={name => setValues(current => ({ ...current, name }))}
           placeholder="เช่น เสื้อยืดสีขาว"
           placeholderTextColor="#9aa3af"
           editable={!disabled}
         />
-        {fieldErrors.name && <Text style={styles.fieldErrorText}>{fieldErrors.name}</Text>}
+        {nameError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{nameError}</Text>}
       </View>
 
       <View style={styles.field}>
         <Text style={styles.label}>รายละเอียด</Text>
         <TextInput
-          style={[styles.input, styles.multiline]}
+          style={[styles.input, styles.multiline, descError && styles.inputError]}
           value={values.description}
           onChangeText={description => setValues(current => ({ ...current, description }))}
           placeholder="อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ"
@@ -89,36 +275,70 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
           multiline
           editable={!disabled}
         />
+        {descError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{descError}</Text>}
       </View>
 
       <View style={styles.row}>
         <View style={[styles.field, styles.rowItem]}>
           <Text style={styles.label}>แบรนด์</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, brandError && styles.inputError]}
             value={values.brand}
-            onChangeText={brand => setValues(current => ({ ...current, brand }))}
+            onChangeText={brand => {
+              const matched = brands.find(b => b.name.trim().toLowerCase() === brand.trim().toLowerCase());
+              setValues(current => ({
+                ...current,
+                brand,
+                brandId: matched ? matched.id : undefined,
+              }));
+            }}
             placeholder="เช่น Uniqlo"
             placeholderTextColor="#9aa3af"
-            editable={!disabled}
+            editable={!disabled && !loadingOptions}
           />
+          {loadingOptions ? (
+            <View style={styles.optionsInlineLoading}>
+              <ActivityIndicator size="small" color={ACCENT} />
+              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
+            </View>
+          ) : brands.length === 0 ? null : (
+            <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
+              {brands.map(option => {
+                const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {option.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
         </View>
         <View style={[styles.field, styles.rowItem]}>
           <Text style={styles.label}>ไซซ์</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, sizeError && styles.inputError]}
             value={values.size}
             onChangeText={size => setValues(current => ({ ...current, size }))}
             placeholder="เช่น M, 42"
             placeholderTextColor="#9aa3af"
             editable={!disabled}
           />
+          {sizeError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{sizeError}</Text>}
         </View>
       </View>
 
       <View style={styles.field}>
         <Text style={styles.label}>ราคา *</Text>
-        <View style={[styles.priceInputWrapper, fieldErrors.price && styles.inputError]}>
+        <View style={[styles.priceInputWrapper, priceError && styles.inputError]}>
           <Text style={styles.pricePrefix}>฿</Text>
           <TextInput
             style={styles.priceInput}
@@ -130,25 +350,36 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
             editable={!disabled}
           />
         </View>
-        {fieldErrors.price && <Text style={styles.fieldErrorText}>{fieldErrors.price}</Text>}
+        {priceError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{priceError}</Text>}
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>หมวดหมู่</Text>
-        <View style={styles.chipRow}>
-          {CATEGORY_OPTIONS.map(option => (
-            <TouchableOpacity
-              key={option}
-              style={[styles.chip, values.category === option && styles.chipSelected]}
-              onPress={() => setValues(current => ({ ...current, category: option }))}
-              disabled={disabled}
-            >
-              <Text style={[styles.chipText, values.category === option && styles.chipTextSelected]}>
-                {option}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Text style={styles.label}>หมวดหมู่ *</Text>
+        {loadingOptions ? (
+          <View style={styles.optionsInlineLoading}>
+            <ActivityIndicator size="small" color={ACCENT} />
+            <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
+          </View>
+        ) : categories.length === 0 ? null : (
+          <View style={styles.chipRow}>
+            {categories.map(option => {
+              const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.chip, isSelected && styles.chipSelected]}
+                  onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                    {option.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+        {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
       </View>
 
       <View style={styles.field}>
@@ -167,28 +398,81 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
             </TouchableOpacity>
           ))}
         </View>
+        {conditionError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{conditionError}</Text>}
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>รูปภาพ</Text>
-        <View style={styles.chipRow}>
-          {values.images.map(url => (
-            <TouchableOpacity
-              key={url}
-              style={styles.imageTile}
-              onPress={() => handleRemoveImage(url)}
-              disabled={disabled}
-            >
-              <Text style={styles.imageTileIcon}>🖼</Text>
-              <View style={styles.imageRemoveBadge}>
+        <Text style={styles.label}>รูปภาพ * ({values.images.length}/{MAX_PRODUCT_IMAGES})</Text>
+        <Text style={styles.optionsInlineLoadingText}>JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป</Text>
+        <View style={styles.imageGrid}>
+          {values.images.map((url, index) => (
+            <View key={url} style={styles.imageTile}>
+              <Image source={{ uri: url }} style={styles.imageThumbnail} />
+
+              {index === 0 ? (
+                <View style={styles.mainBadge}>
+                  <Text style={styles.mainBadgeText}>★ รูปหลัก</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.setMainButton}
+                  onPress={() => setAsMainImage(url)}
+                  disabled={disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel="ตั้งเป็นรูปหลัก"
+                >
+                  <Text style={styles.setMainButtonText}>รูปหลัก</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={styles.imageRemoveBadge}
+                onPress={() => handleRemoveImage(url)}
+                disabled={disabled}
+                accessibilityRole="button"
+                accessibilityLabel="ลบรูปภาพ"
+              >
                 <Text style={styles.imageRemoveBadgeText}>✕</Text>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+
+              {values.images.length > 1 && (
+                <View style={styles.reorderBar}>
+                  {index > 0 ? (
+                    <TouchableOpacity
+                      style={styles.reorderBtn}
+                      onPress={() => moveImage(index, index - 1)}
+                      disabled={disabled}
+                      accessibilityRole="button"
+                      accessibilityLabel="เลื่อนรูปไปซ้าย"
+                    >
+                      <Text style={styles.reorderBtnText}>◀</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.reorderBtnPlaceholder} />
+                  )}
+                  {index < values.images.length - 1 ? (
+                    <TouchableOpacity
+                      style={styles.reorderBtn}
+                      onPress={() => moveImage(index, index + 1)}
+                      disabled={disabled}
+                      accessibilityRole="button"
+                      accessibilityLabel="เลื่อนรูปไปขวา"
+                    >
+                      <Text style={styles.reorderBtnText}>▶</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.reorderBtnPlaceholder} />
+                  )}
+                </View>
+              )}
+            </View>
           ))}
           <TouchableOpacity
             style={styles.addImageTile}
             onPress={() => { void handleAddImage(); }}
-            disabled={uploadingImage || disabled}
+            disabled={uploadingImage || disabled || values.images.length >= MAX_PRODUCT_IMAGES}
+            accessibilityRole="button"
+            accessibilityLabel="เพิ่มรูป"
           >
             {uploadingImage ? (
               <ActivityIndicator color={ACCENT} />
@@ -201,14 +485,15 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
           </TouchableOpacity>
         </View>
         {uploadError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{uploadError}</Text>}
+        {imagesError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{imagesError}</Text>}
       </View>
 
       {submitError && <Text accessibilityLiveRegion="polite" style={styles.formErrorText}>{submitError}</Text>}
 
       <TouchableOpacity
-        style={[styles.submitButton, disabled && !submitSuccess && styles.submitButtonDisabled,
+        style={[styles.submitButton, cannotSubmit && !submitSuccess && styles.submitButtonDisabled,
           submitSuccess && styles.submitButtonSuccess]}
-        disabled={disabled}
+        disabled={cannotSubmit}
         onPress={handleSubmit}
       >
         {submitting ? (
@@ -224,6 +509,41 @@ export function ProductForm({ mode, initialValues, submitting, submitSuccess, su
 }
 
 const styles = StyleSheet.create({
+  optionsInlineLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.one,
+  },
+  optionsInlineLoadingText: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  optionsErrorBox: {
+    backgroundColor: '#fff1f0',
+    borderWidth: 1,
+    borderColor: '#ffa39e',
+    borderRadius: Spacing.two,
+    padding: Spacing.three,
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  optionsErrorText: {
+    fontSize: 13,
+    color: '#cf1322',
+    textAlign: 'center',
+  },
+  retryOptionsBtn: {
+    backgroundColor: ACCENT,
+    borderRadius: Spacing.one + 2,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.three,
+  },
+  retryOptionsBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   form: { gap: Spacing.three },
   field: { gap: Spacing.one },
   row: { flexDirection: 'row', gap: Spacing.three },
@@ -263,30 +583,87 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: ACCENT },
   chipText: { fontSize: 14, fontWeight: '500', color: '#4a5568' },
   chipTextSelected: { color: '#ffffff', fontWeight: '700' },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   imageTile: {
-    width: 72,
-    height: 72,
+    width: 90,
+    height: 104,
     borderRadius: Spacing.two,
     backgroundColor: '#eef3f9',
-    alignItems: 'center',
-    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#dce4ee',
+    justifyContent: 'space-between',
   },
-  imageTileIcon: { fontSize: 28 },
+  imageThumbnail: {
+    width: '100%',
+    height: 74,
+    backgroundColor: '#e2e8f0',
+  },
+  mainBadge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    zIndex: 2,
+  },
+  mainBadgeText: { color: '#ffd166', fontSize: 10, fontWeight: '700' },
+  setMainButton: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    zIndex: 2,
+    borderWidth: 0.5,
+    borderColor: '#cbd5e1',
+  },
+  setMainButtonText: { color: '#33404f', fontSize: 10, fontWeight: '600' },
   imageRemoveBadge: {
     position: 'absolute',
-    top: -6,
-    right: -6,
+    top: 4,
+    right: 4,
     width: 20,
     height: 20,
     borderRadius: 10,
     backgroundColor: '#d9534f',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
-  imageRemoveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  imageRemoveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  reorderBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 28,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+  },
+  reorderBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: '#edf2f7',
+  },
+  reorderBtnText: {
+    fontSize: 11,
+    color: '#33404f',
+    fontWeight: '700',
+  },
+  reorderBtnPlaceholder: {
+    width: 20,
+  },
   addImageTile: {
-    width: 72,
-    height: 72,
+    width: 90,
+    height: 104,
     borderRadius: Spacing.two,
     borderWidth: 1.5,
     borderStyle: 'dashed',

@@ -1,4 +1,10 @@
-import { CATEGORY_OPTIONS, CONDITION_OPTIONS, type ProductInput } from '../services/product-service.ts';
+import {
+  CONDITION_OPTIONS,
+  ProductServiceError,
+  type BrandOption,
+  type CategoryOption,
+  type ProductInput,
+} from '../services/product-service.ts';
 
 export type ProductFormValues = ProductInput;
 
@@ -8,19 +14,57 @@ export const emptyProductFormValues: ProductFormValues = {
   size: '',
   condition: CONDITION_OPTIONS[0],
   price: 0,
-  category: CATEGORY_OPTIONS[0],
+  category: '',
+  categoryId: undefined,
   brand: '',
+  brandId: undefined,
   images: [],
 };
 
-export type ProductFieldErrors = { name?: string; price?: string };
+export type ProductFieldErrors = {
+  name?: string;
+  price?: string;
+  category?: string;
+  brand?: string;
+  images?: string;
+};
 
-export function validateProductForm(values: ProductFormValues, priceText: string): ProductFieldErrors {
+export const MAX_PRODUCT_IMAGES = 10;
+export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+export function validateProductImageFile(file: { type: string; size?: number }): string | null {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
+    return 'รองรับเฉพาะรูป JPEG หรือ PNG';
+  }
+  if (typeof file.size === 'number' && (file.size <= 0 || file.size > MAX_PRODUCT_IMAGE_BYTES)) {
+    return 'รูปภาพต้องมีขนาดไม่เกิน 5 MiB';
+  }
+  return null;
+}
+
+export function validateProductForm(
+  values: ProductFormValues,
+  priceText: string,
+  options?: { categories?: CategoryOption[]; brands?: BrandOption[] },
+): ProductFieldErrors {
   const errors: ProductFieldErrors = {};
   if (!values.name.trim()) errors.name = 'กรุณากรอกชื่อสินค้า';
   const price = Number(priceText);
   if (!priceText.trim() || !Number.isFinite(price) || price <= 0) {
     errors.price = 'กรุณากรอกราคาที่มากกว่า 0';
+  }
+  if (options?.categories && options.categories.length > 0) {
+    if (!values.categoryId || !options.categories.some(c => c.id === values.categoryId)) {
+      errors.category = 'กรุณาเลือกหมวดหมู่สินค้า';
+    }
+  }
+  if (options?.brands && options.brands.length > 0) {
+    if (!values.brandId || !options.brands.some(b => b.id === values.brandId)) {
+      errors.brand = 'กรุณาเลือกแบรนด์สินค้า';
+    }
+  }
+  if (values.images.length < 1 || values.images.length > MAX_PRODUCT_IMAGES) {
+    errors.images = `กรุณาแนบรูปภาพ 1–${MAX_PRODUCT_IMAGES} รูป`;
   }
   return errors;
 }
@@ -36,8 +80,8 @@ export async function uploadProductImage(
   try {
     const uploaded = await uploadImage();
     return { url: uploaded.url, error: null };
-  } catch {
-    return { url: null, error: 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
+  } catch (error) {
+    return { url: null, error: error instanceof ProductServiceError ? error.message : 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
   }
 }
 

@@ -105,16 +105,38 @@ function SellerVerificationEntry() {
   const { state } = useVerification();
   const status = state.record?.status;
   return (
-    <TouchableOpacity
-      style={styles.button}
-      accessibilityRole="button"
-      accessibilityLabel="ไปหน้ายืนยันตัวตนผู้ขาย"
-      onPress={() => router.push('/seller-verification')}
-    >
-      <Text style={styles.buttonText}>
-        ยืนยันตัวตนผู้ขาย{status ? ` (${verificationEntryLabels[status]})` : ''}
-      </Text>
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity
+        style={styles.button}
+        accessibilityRole="button"
+        accessibilityLabel="ไปหน้ายืนยันตัวตนผู้ขาย"
+        onPress={() => router.push('/seller-verification')}
+      >
+        <Text style={styles.buttonText}>
+          ยืนยันตัวตนผู้ขาย{status ? ` (${verificationEntryLabels[status]})` : ''}
+        </Text>
+      </TouchableOpacity>
+      {status === 'APPROVED' && (
+        <>
+          <TouchableOpacity
+            style={styles.button}
+            accessibilityRole="button"
+            accessibilityLabel="ไปหน้าลงขายสินค้า"
+            onPress={() => router.push('/product/new')}
+          >
+            <Text style={styles.buttonText}>ลงขายสินค้า</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.button}
+            accessibilityRole="button"
+            accessibilityLabel="สินค้าของฉัน"
+            onPress={() => router.push('/product/mine')}
+          >
+            <Text style={styles.buttonText}>สินค้าของฉัน</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </>
   );
 }
 
