@@ -14,6 +14,10 @@ from pydantic import BaseModel, ConfigDict
 class OrderStatus(str, Enum):
     WAITING_PAYMENT = "WAITING_PAYMENT"
     WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
+    SHIPPING_TO_CENTER = "SHIPPING_TO_CENTER"
+    RECEIVED_AT_CENTER = "RECEIVED_AT_CENTER"
+    INSPECTING = "INSPECTING"
+    RESULT_NOTIFIED = "RESULT_NOTIFIED"
 
 
 class PaymentStatus(str, Enum):

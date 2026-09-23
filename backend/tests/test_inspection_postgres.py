@@ -2,6 +2,7 @@
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -221,6 +222,35 @@ def test_order_status_and_final_result_are_guarded(pg_engine, seeded):
             inspection.result = "FAKE"
             session.flush()
         savepoint.rollback()
+
+
+def test_final_result_freezes_evidence_links_and_selected_metadata(pg_engine, seeded):
+    with Session(pg_engine) as session:
+        inspection = session.scalar(select(Inspection).where(Inspection.order_id == seeded[4][1]))
+        selected = session.scalar(select(InspectionEvidence).where(InspectionEvidence.inspection_id == inspection.id))
+        pending = session.scalar(select(Inspection).where(Inspection.order_id == seeded[3][1]))
+        unselected = InspectionEvidence(
+            inspection_id=pending.id, object_key=f"fixtures/inspect01/extra-{pending.id}.jpg",
+            mime_type="image/jpeg", size_bytes=1, sha256="d" * 64,
+            uploaded_by=pending.inspector_id,
+        )
+        session.add(unselected)
+        session.flush()
+        pending.result = "PASS"
+        pending.summary = "Synthetic final result for evidence immutability test."
+        pending.inspected_at = datetime.now(timezone.utc)
+        session.flush()
+
+        def rejects(statement):
+            with session.begin_nested():
+                with pytest.raises(DBAPIError):
+                    session.execute(statement)
+
+        rejects(text("INSERT INTO inspection_result_evidence (inspection_id, evidence_id) VALUES (:i, :e)").bindparams(i=pending.id, e=unselected.id))
+        rejects(text("UPDATE inspection_evidence SET sha256 = :hash WHERE id = :e").bindparams(hash="b" * 64, e=selected.id))
+        rejects(text("DELETE FROM inspection_evidence WHERE id = :e").bindparams(e=selected.id))
+        rejects(text("INSERT INTO inspection_evidence (inspection_id, object_key, mime_type, size_bytes, sha256, uploaded_by) VALUES (:i, :key, 'image/jpeg', 1, :hash, :u)").bindparams(i=inspection.id, key=f"fixtures/inspect01/rejected-{selected.id}.jpg", hash="c" * 64, u=selected.uploaded_by))
+        session.rollback()
 
 
 def test_racing_final_result_has_one_winner(pg_engine, seeded):

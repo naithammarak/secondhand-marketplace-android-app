@@ -121,7 +121,8 @@ def upgrade():
         op.execute(f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY")
 
     # A final result is one-shot even if two writers bypass the API row lock.
-    # Association rows become immutable once the parent result is final.
+    # Lock the inspection row when attaching evidence so finalization and
+    # attachments serialize even when submitted by different transactions.
     op.execute("""
         CREATE FUNCTION public.inspection_guard_final_result() RETURNS trigger
         LANGUAGE plpgsql AS $$
@@ -152,17 +153,54 @@ def upgrade():
     op.execute("""
         CREATE FUNCTION public.inspection_guard_result_evidence() RETURNS trigger
         LANGUAGE plpgsql AS $$
+        DECLARE final_result text;
         BEGIN
             IF TG_OP IN ('UPDATE', 'DELETE') THEN
                 RAISE EXCEPTION 'inspection result evidence is immutable';
+            END IF;
+            SELECT result INTO final_result FROM public.inspections
+            WHERE id = NEW.inspection_id FOR UPDATE;
+            IF final_result IS NOT NULL THEN
+                RAISE EXCEPTION 'final inspection result evidence is immutable';
             END IF;
             RETURN NEW;
         END $$
     """)
     op.execute("""
         CREATE TRIGGER trg_inspection_result_evidence_guard
-        BEFORE UPDATE OR DELETE ON public.inspection_result_evidence
+        BEFORE INSERT OR UPDATE OR DELETE ON public.inspection_result_evidence
         FOR EACH ROW EXECUTE FUNCTION public.inspection_guard_result_evidence()
+    """)
+    op.execute("""
+        CREATE FUNCTION public.inspection_guard_evidence() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        DECLARE final_result text;
+        BEGIN
+            IF TG_OP = 'INSERT' THEN
+                SELECT result INTO final_result FROM public.inspections
+                WHERE id = NEW.inspection_id FOR UPDATE;
+            ELSE
+                SELECT result INTO final_result FROM public.inspections
+                WHERE id = OLD.inspection_id FOR UPDATE;
+            END IF;
+            IF final_result IS NOT NULL THEN
+                IF TG_OP = 'INSERT' THEN
+                    RAISE EXCEPTION 'final inspection evidence is immutable';
+                ELSIF EXISTS (
+                    SELECT 1 FROM public.inspection_result_evidence
+                    WHERE inspection_id = OLD.inspection_id AND evidence_id = OLD.id
+                ) THEN
+                    RAISE EXCEPTION 'final inspection evidence is immutable';
+                END IF;
+            END IF;
+            IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER trg_inspection_evidence_guard
+        BEFORE INSERT OR UPDATE OR DELETE ON public.inspection_evidence
+        FOR EACH ROW EXECUTE FUNCTION public.inspection_guard_evidence()
     """)
 
 
@@ -181,6 +219,7 @@ def downgrade():
     op.drop_index("ix_inspections_inspector_created", table_name="inspections")
     op.drop_table("inspections")
     op.drop_table("shipments")
+    op.execute("DROP FUNCTION public.inspection_guard_evidence()")
     op.execute("DROP FUNCTION public.inspection_guard_result_evidence()")
     op.execute("DROP FUNCTION public.inspection_guard_final_result()")
     op.drop_index("ix_orders_inspection_queue", table_name="orders")

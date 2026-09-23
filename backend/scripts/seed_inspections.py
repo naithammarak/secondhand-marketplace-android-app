@@ -176,9 +176,6 @@ def seed(session, namespace):
             inspection = Inspection(
                 order_id=order.id, inspector_id=inspector.id if started else None,
                 started_at=BASE_TIME + timedelta(hours=2) if started else None,
-                result=result,
-                summary=f"Synthetic inspection result for {key}; item matches fixture snapshot." if result else None,
-                inspected_at=BASE_TIME + timedelta(hours=3) if result else None,
             )
             session.add_all([shipment, inspection])
             session.flush()
@@ -192,6 +189,10 @@ def seed(session, namespace):
                 session.add(evidence)
                 session.flush()
                 session.add(InspectionResultEvidence(inspection_id=inspection.id, evidence_id=evidence.id))
+                session.flush()
+                inspection.result = result
+                inspection.summary = f"Synthetic inspection result for {key}; item matches fixture snapshot."
+                inspection.inspected_at = BASE_TIME + timedelta(hours=3)
         report.append((key, order.id, "created"))
     session.flush()
     return report
