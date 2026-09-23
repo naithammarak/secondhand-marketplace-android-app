@@ -4,12 +4,14 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
+import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { createProductService, ProductServiceError } from '@/services/product-service';
 
 const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
 });
 
 export default function NewProductScreen() {

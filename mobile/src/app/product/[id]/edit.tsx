@@ -7,10 +7,12 @@ import { useAuth } from '@/auth/auth-provider';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { createProductEditStore } from '@/products/product-edit-store';
+import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createProductService } from '@/services/product-service';
 
 const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
 });
 
 export default function EditProductScreen() {

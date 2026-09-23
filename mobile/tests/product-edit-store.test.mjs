@@ -243,4 +243,3 @@ test('cancels product with access token and reports success or error', async () 
   assert.equal(errorSetup.store.getSnapshot().cancelSuccess, false);
   assert.equal(errorSetup.store.getSnapshot().cancelError, true);
 });
-

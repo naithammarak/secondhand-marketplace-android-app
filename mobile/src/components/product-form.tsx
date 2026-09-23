@@ -13,6 +13,7 @@ import {
 } from '@/products/product-form';
 import { Spacing } from '@/constants/theme';
 import { pickProductImage } from '@/products/pick-product-image';
+import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createImageUploadService } from '@/services/image-upload-service';
 import {
   CONDITION_LABELS,
@@ -38,10 +39,12 @@ const ACCENT = '#96bde9';
 
 const imageUploadService = createImageUploadService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
 });
 
 const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
 });
 
 export function syncValuesWithOptions(

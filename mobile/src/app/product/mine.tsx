@@ -5,9 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createProductService, type MyProductSummary } from '@/services/product-service';
 
-const productService = createProductService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL });
+const productService = createProductService({
+  baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
+  mockMode: isProductMockModeEnabled(),
+});
 const statusLabels: Record<string, string> = {
   AVAILABLE: 'พร้อมขาย', RESERVED: 'จองแล้ว', SOLD: 'ขายแล้ว', CANCELLED: 'ยกเลิกแล้ว',
 };
@@ -17,6 +21,7 @@ export default function MyProductsScreen() {
   const accessToken = session?.access_token;
   const [items, setItems] = useState<MyProductSummary[]>([]);
   const [page, setPage] = useState(1);
+  const [retryPage, setRetryPage] = useState(1);
   const [hasNext, setHasNext] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -25,6 +30,7 @@ export default function MyProductsScreen() {
 
   const load = useCallback(async (nextPage: number) => {
     const current = ++generation.current;
+    setRetryPage(nextPage);
     if (nextPage === 1) setLoading(true);
     else setLoadingMore(true);
     setError(null);
@@ -79,7 +85,7 @@ export default function MyProductsScreen() {
           ))}
           {error && <View style={styles.errorBox}>
             <Text accessibilityLiveRegion="polite">{error}</Text>
-            <TouchableOpacity style={styles.button} onPress={() => { void load(items.length ? page + 1 : 1); }} accessibilityRole="button">
+            <TouchableOpacity style={styles.button} onPress={() => { void load(retryPage); }} accessibilityRole="button">
               <Text style={styles.buttonText}>ลองใหม่อีกครั้ง</Text>
             </TouchableOpacity>
           </View>}

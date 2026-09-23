@@ -1,4 +1,4 @@
-// PRODUCT-06: Product image upload service supporting real multipart backend upload and fallback mock.
+// PRODUCT-06: Product image upload service using multipart API; in-memory uploads are opt-in for development.
 import { ProductServiceError, registerProductImage } from './product-service.ts';
 
 export interface UploadedImage {
@@ -18,6 +18,7 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export type ImageUploadServiceOptions = {
   baseUrl?: string;
+  mockMode?: boolean;
   fetch?: FetchLike;
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
 };
@@ -56,6 +57,9 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
   return {
     async uploadImage(fileInput?: UploadFileInput, explicitToken?: string): Promise<UploadedImage> {
       if (!baseUrl) {
+        if (options.mockMode !== true) {
+          throw new ProductServiceError('unavailable', 'ยังไม่ได้ตั้งค่า API สำหรับอัปโหลดรูป');
+        }
         await new Promise(resolve => setTimeout(resolve, 400));
         mockUploadCounter += 1;
         const id = Math.random().toString(36).slice(2, 10);

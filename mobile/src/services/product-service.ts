@@ -1,4 +1,4 @@
-// PRODUCT-06: Product listing (create/edit/cancel) with real Backend API & fallback Mock.
+// PRODUCT-06: Product listing (create/edit/cancel) with real API; in-memory data is opt-in for development.
 
 export type SaleType = 'FIXED_PRICE';
 
@@ -98,6 +98,7 @@ export type ProductServiceErrorKind =
   | 'conflict'
   | 'validation-error'
   | 'network-error'
+  | 'unavailable'
   | 'server-error';
 
 export class ProductServiceError extends Error {
@@ -135,6 +136,7 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export type ProductServiceOptions = {
   baseUrl?: string;
+  mockMode?: boolean;
   fetch?: FetchLike;
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
 };
@@ -204,6 +206,8 @@ export function createProductService(options: ProductServiceOptions = {}) {
   }
 
   const fetcher = options.fetch ?? fetch;
+  const mockMode = options.mockMode === true;
+  const unavailable = () => new ProductServiceError('unavailable', 'ยังไม่ได้ตั้งค่า API สำหรับสินค้า');
 
   async function resolveAccessToken(explicitToken?: string): Promise<string | null> {
     if (explicitToken) return explicitToken;
@@ -230,7 +234,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
     accessToken?: string,
     signal?: AbortSignal,
   ): Promise<Response> => {
-    if (!baseUrl) throw new ProductServiceError('network-error', 'API baseUrl not configured');
+    if (!baseUrl) throw unavailable();
     const token = await resolveAccessToken(accessToken);
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -281,6 +285,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
   return {
     async getMyProducts(page = 1, explicitToken?: string): Promise<MyProductPage> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         const start = (page - 1) * 20;
         return {
           items: mockProducts.slice(start, start + 20).map(product => ({
@@ -302,6 +307,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
     },
     async createProduct(input: ProductInput, explicitToken?: string): Promise<Product> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         mockIdCounter += 1;
         const product: Product = {
           ...input,
@@ -351,6 +357,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
     async updateProduct(id: string, input: ProductInput, explicitToken?: string): Promise<Product> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         const index = mockProducts.findIndex(product => product.id === id);
         if (index === -1) throw new ProductServiceError('not-found');
         const updated: Product = { ...input, images: [...input.images], id, saleType: SALE_TYPE, status: 'AVAILABLE' };
@@ -396,6 +403,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
     async getProductById(id: string, explicitToken?: string): Promise<Product | null> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         const found = mockProducts.find(product => product.id === id);
         return found ? cloneProduct(found) : null;
       }
@@ -416,6 +424,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
     async getCategories(): Promise<CategoryOption[]> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         return [
           { id: 1, name: 'เสื้อผ้า' },
           { id: 2, name: 'รองเท้า' },
@@ -433,6 +442,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
     async getBrands(): Promise<BrandOption[]> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         return [
           { id: 1, name: 'ไม่ระบุแบรนด์' },
           { id: 2, name: 'Nike' },
@@ -450,6 +460,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
     async cancelProduct(id: string, explicitToken?: string): Promise<Product> {
       if (!baseUrl) {
+        if (!mockMode) throw unavailable();
         const index = mockProducts.findIndex(product => product.id === id);
         if (index === -1) throw new ProductServiceError('not-found');
         const cancelled: Product = { ...mockProducts[index], status: 'CANCELLED' };
