@@ -1006,3 +1006,65 @@ def test_reserved_statuses_are_documented_and_fit_the_column():
 
     assert set(ORDER_STATUSES_RESERVED).isdisjoint(ORDER_STATUSES)
     assert max(len(value) for value in ORDER_STATUSES_RESERVED) <= 32
+
+
+def test_replaying_a_failed_attempt_after_the_deadline_applies_the_expiry(world, db):
+    """ส่งซ้ำด้วย key เดิมหลังหมดเวลา ต้องไม่ตอบว่ายังรอชำระเงินและต้องปล่อยสินค้าคืน
+
+    เดิม replay ตอบกลับก่อนที่จะตรวจเส้นตาย ผู้ซื้อจึงเห็น WAITING_PAYMENT ต่อไป
+    และสินค้าค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด (พบจากการรีวิว PR #92)
+    """
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    key = new_key()
+    first = pay(order["id"], world["a"], outcome="FAILED", key=key)
+    assert first.status_code == 200
+    assert first.json()["order"]["status"] == "WAITING_PAYMENT"
+
+    age_order(db, order["id"])
+    replay = pay(order["id"], world["a"], outcome="FAILED", key=key)
+
+    assert replay.status_code == 200
+    assert replay.headers.get("Idempotent-Replayed") == "true"
+    # attempt เดิมต้องเป็นตัวเดิมจริง ๆ และต้องไม่มี attempt ใหม่เกิดขึ้น
+    assert replay.json()["attempt"]["id"] == first.json()["attempt"]["id"]
+    assert count(db, PaymentAttempt, order_id=order["id"]) == 1
+    # แต่สถานะ Order ที่แนบกลับต้องเป็นของจริงหลังหมดเวลา
+    assert replay.json()["order"]["status"] == "CANCELLED"
+    assert replay.json()["order"]["cancel_reason"] == "EXPIRED"
+    assert replay.json()["order"]["can_pay"] is False
+
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancel_reason) == ("CANCELLED", "EXPIRED")
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+    assert count(db, Payment, order_id=order["id"]) == 0
+
+
+def test_replaying_a_paid_attempt_is_untouched_by_a_deadline_in_the_past(world, db):
+    """Order ที่จ่ายแล้วต้องไม่ถูกกวาด แม้เส้นตายจะอยู่ในอดีต"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    key = new_key()
+    paid = pay(order["id"], world["a"], key=key)
+    assert paid.json()["order"]["status"] == "WAITING_SELLER_SHIP"
+
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    row.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()
+
+    replay = pay(order["id"], world["a"], key=key)
+    assert replay.status_code == 200
+    assert replay.json()["order"]["status"] == "WAITING_SELLER_SHIP"
+    assert replay.json()["order"]["payment_status"] == "PAID"
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_a_new_key_after_the_deadline_still_reports_order_expired(world, db):
+    """code เดิมต้องไม่เปลี่ยนไปเป็น order_cancelled หลังจัดลำดับการตรวจใหม่"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_expired"
+    assert count(db, PaymentAttempt, order_id=order["id"]) == 0

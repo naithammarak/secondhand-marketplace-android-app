@@ -743,10 +743,20 @@ def simulate_payment(
         if role != ViewerRole.BUYER:
             raise not_order_buyer()
 
+        # เส้นตายต้องมีผลก่อนทุกอย่าง รวมถึงการส่งซ้ำด้วย key เดิม
+        # ถ้าปล่อยให้ replay ตอบก่อน ผู้ซื้อจะได้ยินว่า "ยังรอชำระเงิน" ทั้งที่เลยเวลาแล้ว
+        # และสินค้าจะยังค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด
+        expired = payment_window_passed(order, utcnow())
+        if expired:
+            # กวาดแล้ว transaction ปิดและล็อกถูกปล่อย เส้นทางนี้จึงมีแต่การอ่านกับการปฏิเสธเท่านั้น
+            sweep_expired_orders(db, Order.id == order.id)
+            order, role = load_order_for(db, order_id, current_user)
+
         previous = find_attempt_by_key(db, order.id, idempotency_key)
         if previous is not None:
             if previous.request_hash != fingerprint:
                 raise key_reused()
+            # key เดิม payload เดิม ต้องได้ attempt เดิมเสมอ แต่สถานะ Order ที่แนบไปต้องเป็นของจริง
             response.headers[REPLAY_HEADER] = "true"
             return SimulatePaymentResponse(
                 attempt=attempt_view(previous), order=to_detail(db, order, role, current_user)
@@ -756,12 +766,11 @@ def simulate_payment(
         if is_paid(order):
             # key ใหม่หลังจ่ายแล้ว ไม่บันทึก attempt และไม่สร้างเงินซ้ำ
             raise already_paid()
+        if expired:
+            # จุดบังคับใช้จริงของ Timer: ยกเลิกไปแล้วด้านบน เหลือแค่บอกผู้เรียกด้วย code ที่ตรงเหตุ
+            raise payment_expired_error()
         if is_cancelled(order):
             raise already_cancelled()
-        if payment_window_passed(order, utcnow()):
-            # จุดบังคับใช้จริงของ Timer: ยกเลิกให้เสร็จก่อนแล้วจึงปฏิเสธคำขอ ไม่บันทึก attempt
-            sweep_expired_orders(db, Order.id == order.id)
-            raise payment_expired_error()
         if not is_payable(order):
             # สถานะอื่นที่ยังไม่มีในรอบนี้ (เช่น ระหว่างจัดส่ง) ต้องถูกปฏิเสธ ไม่ใช่ตกมาสร้าง attempt
             raise not_payable()
