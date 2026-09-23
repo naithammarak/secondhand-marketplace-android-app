@@ -24,9 +24,10 @@ Business scope:
   (2026-09-18)" — the single frozen source for field names, envelope shape, status/condition
   enums, pagination/search rules, and the error code table. All type/decode/mock behavior in
   this ticket is derived from that comment, not guessed.
-- **Issue #47** (PRODUCT-05 — Backend API รายการ ค้นหาชื่อ และรายละเอียดสินค้า) is the backend
-  ticket this Frontend work depends on to go live. **As of this handoff, #47 is still open**
-  (no endpoint implemented), so this entire feature runs on mock data — see Section 5.
+- PRODUCT-07 depends on the public list/detail endpoints from PRODUCT-05. The checked-out
+  `main` does not currently register `GET /products` or `GET /products/{id}`, so API-backed
+  acceptance remains pending. The mock is available only through explicit configuration — see
+  Sections 5 and 6.
 - Branch: `PRODUCT-07`, created from `origin/main` (i.e. after PRODUCT-06 / PR #74 was merged).
 
 ## 3. Architecture & Frontend Files
@@ -50,10 +51,11 @@ product-catalog-service.ts  (mock + real fetch, contract decode)
 
 | File | Responsibility |
 |---|---|
-| `mobile/src/services/product-catalog-service.ts` | `createProductCatalogService({ baseUrl? })`. Exposes `listProducts(params, signal)` and `getProduct(id, signal)`. With no `baseUrl` (the default), every call is served from an in-memory mock. With a `baseUrl`, it fetches the real API and decodes the Contract v1.0 envelope. Exports `ProductCondition`, `ProductStatus`, `conditionLabels`, `ProductListItem`, `ProductDetail`, `ProductPage`, `ProductPageMeta`, `ProductCatalogError`, `ProductCatalogErrorKind`. |
+| `mobile/src/services/product-catalog-service.ts` | `createProductCatalogService({ mode?, baseUrl? })`. Exposes `listProducts(params, signal)` and `getProduct(id, signal)`. API is the default; without a valid `baseUrl`, calls fail with `unavailable`. Mock data is returned only with `mode: 'mock'`. |
+| `mobile/src/products/product-catalog-config.ts` | Resolves mode and URL settings; invalid/missing API configuration returns an API service option that fails with a configuration code instead of selecting mock. Production explicitly rejects mock mode. |
 | `mobile/src/products/product-catalog-store.ts` | `createProductCatalogStore({ service, pageSize?, debounceMs? })`. Pub-sub state machine for the list screen: `query`, `page`, `items`, `meta`, `loading`/`refreshing`/`loadingMore`, `error`. Methods: `load()`, `setQuery(text)` (debounced 300ms), `refresh()`, `loadMore()`, `retry()`, `hasMore()`. |
 | `mobile/src/products/product-detail-store.ts` | `createProductDetailStore(service)`. Pub-sub state machine for one product: `productId`, `product`, `loading`, `notAvailable` (404), `error` (network/5xx, distinct from `notAvailable`). Methods: `open(id)`, `retry()`. Does **not** import `product-catalog-store.ts` — the two are independent by design. |
-| `mobile/src/products/product-catalog-instance.ts` | The single shared instance: `export const productCatalogService = createProductCatalogService();` and `export const productCatalogStore = createProductCatalogStore({ service: productCatalogService });`. Both the list screen and the detail screen's "กลับรายการ" button import from **this file only**, so they always operate on the same store (search text and scroll position survive navigating to a detail screen and back). |
+| `mobile/src/products/product-catalog-instance.ts` | Resolves `EXPO_PUBLIC_PRODUCT_CATALOG_MODE` and `EXPO_PUBLIC_API_BASE_URL`, then creates the single shared service/store instance. Both list and detail screens import this instance so query and list state survive navigation. |
 | `mobile/src/components/product-catalog-ui.tsx` | `ProductImage` — a small shared component that renders a placeholder (🖼 icon) when `uri` is missing **or** the image fails to load (`onError`). Each instance tracks its own failure state, so a broken image in one card/thumbnail never affects any other. |
 | `mobile/src/components/product-list-screen.tsx` | The `/products` screen: search `TextInput` wired to `store.setQuery`, `FlatList` with pull-to-refresh, infinite scroll (`onEndReached` → `loadMore`), header error+retry (first-load failure), footer loading/error+retry (load-more failure), two distinct empty states. |
 | `mobile/src/components/product-detail-screen.tsx` | The `/products/[id]` screen: creates its **own** `product-detail-store` instance per mount (`useState(() => createProductDetailStore(...))`), calls `store.open(id)` on mount/`id` change, renders images (sorted by `sort_order`, each with its own placeholder), category/brand/description/size/condition/price, and the `notAvailable` / network-error states. |
@@ -85,9 +87,9 @@ same "no floating point" rule already used for money in `orders/order-format.ts`
 
 ## 5. Mock Implementation
 
-`createProductCatalogService()` called with **no `baseUrl`** (the default used everywhere in
-this app today) always serves an in-memory mock defined at the top of
-`product-catalog-service.ts`, marked with `// MOCK: replace when backend API is ready`.
+Mock data is served only when `EXPO_PUBLIC_PRODUCT_CATALOG_MODE=mock` (or when a caller
+explicitly constructs `createProductCatalogService({ mode: 'mock' })`). No base URL or missing
+mode does not select mock data; the service reports `unavailable` instead.
 
 **Seed data — 8 products (`MOCK_SEED`):**
 
@@ -114,21 +116,19 @@ The mock also reproduces real-API behavior that the store/screens depend on:
   real backend.
 - Both calls simulate ~200ms of network latency (`setTimeout`).
 
-**Every place that must change when #47 ships** is tagged `// MOCK: replace when backend API
-is ready` — grep for that exact string in `product-catalog-service.ts` to find the 3 call
-sites (the seed table itself, `listProducts`, `getProduct`). Two more `// MOCK:` comments (not
-the exact phrase above) annotate the two special seed rows specifically — the broken image on
-id 104 and the cancelled status on id 107 — so a `grep "// MOCK"` (5 total) finds all of it.
+The mock seed remains available as an explicit fixture after API mode is enabled, so tests can
+continue to cover unavailable products and broken image URLs without depending on backend data.
 
 ## 6. Backend / API Integration
 
-**How to switch to the real backend once #47 is done:** call
-`createProductCatalogService({ baseUrl: '<api origin>' })` instead of
-`createProductCatalogService()` in `product-catalog-instance.ts` (the only place the service is
-constructed). No other file needs to change — `product-catalog-store.ts`,
-`product-detail-store.ts`, and both screens only ever call `service.listProducts(...)` /
-`service.getProduct(...)`, which have the exact same signature and return shape in both the
-mock and real branch.
+Set `EXPO_PUBLIC_PRODUCT_CATALOG_MODE=api` and a valid `EXPO_PUBLIC_API_BASE_URL` to use the
+backend. If a URL is configured and mode is omitted, API mode is selected. Missing or invalid
+API configuration fails with `ProductCatalogError('unavailable')`; it never falls back to mock.
+Set mode to `mock` explicitly only for development/test screens. EAS development builds select
+mock, while preview and production builds select API mode. Production also carries an explicit
+`EXPO_PUBLIC_PRODUCT_CATALOG_ENV=production` marker; the resolver refuses mock mode in that
+environment even if the mode variable is misconfigured. Set `EXPO_PUBLIC_API_BASE_URL` in the
+matching EAS preview/production environment; without it, the screens show the unavailable state.
 
 Endpoints consumed (per Contract v1.0, §7):
 
@@ -154,7 +154,7 @@ HTTP status → `ProductCatalogErrorKind` mapping implemented in `product-catalo
 | any other non-2xx | `server-error` |
 | request timeout (`timeoutMs`, default 15000ms) | `timeout` |
 | fetch/network failure | `network-error` |
-| no `baseUrl` configured | `unavailable` |
+| missing or invalid API base URL | `unavailable` with a `PRODUCT_CATALOG_API_BASE_URL_*` code |
 
 ## 8. Authentication / Authorization
 
@@ -228,7 +228,7 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 
 **Automated (run and confirmed passing on this branch):**
 
-- `npm run test:logic` → **213/213 PASS** (service, catalog store, and detail store logic tests)
+- `npm run test:logic` → **244/244 PASS** (service/config, catalog store, and detail store logic tests)
 - `npm run test:components` (jest) → **81/81 PASS**, all suites including:
   - `component-tests/product-catalog-ui.test.tsx` (3 tests)
   - `component-tests/product-list-screen.test.tsx` (14 tests)
@@ -255,19 +255,19 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 
 ## 14. Known Limitations / Blocker for Real Backend Integration
 
-- **Backend Dependency Blocker (PR #84 / Issue #47):** PR #84 (PRODUCT-05 backend API) was merged into branch `feature/product-04-update-cancel`, not into `main`. The server running from `main` therefore does not yet have `GET /products` and `GET /products/{id}` (`http://localhost:8000/products` returns 404 Not Found).
-- **Environment Safety (`EXPO_PUBLIC_USE_PRODUCT_API`):** Because local `.env` often defines `EXPO_PUBLIC_API_BASE_URL` for auth/orders, `product-catalog-instance.ts` defaults to the mock catalog. Real API calls are only made when `EXPO_PUBLIC_USE_PRODUCT_API=true` is set.
+- **Backend Dependency:** `main` in the reviewed checkout has no public `GET /products` or `GET /products/{id}` route yet. API-backed list/detail acceptance and matching image-order evidence remain pending.
+- **Environment Safety:** `.env.example` selects explicit mock mode for local UI work. EAS development builds use mock; preview and production use API mode. Production also rejects mock mode, and missing or invalid API configuration shows the unavailable state.
 - Detail screen shows every image at a fixed 140×140 tile with no full-screen/zoom viewer.
 - Search has no cancel/clear (✕) button — clearing is done by manually deleting the text.
 
 ## 15. Handoff Checklist
 
-- [ ] รายการ/รายละเอียดใช้ API จริงและข้อมูลตรงกัน รวมลำดับรูป (รอนำ backend PR #84 เข้า `main` และทดสอบจริง)
+- [ ] รายการ/รายละเอียดใช้ API จริงและข้อมูลตรงกัน รวมลำดับรูป (รอ public endpoints และทดสอบจริง)
 - [ ] แนบหลักฐานมือถือจริงและผลทดสอบ navigation/state (รอทดสอบบนเครื่องจริง)
-- [x] Backend integration opt-in via `EXPO_PUBLIC_USE_PRODUCT_API=true` and `EXPO_PUBLIC_API_BASE_URL` in `product-catalog-instance.ts` (defaults safely to mock)
+- [x] Explicit mock/API configuration in `.env.example` and EAS profiles; API mode fails closed when URL is missing/invalid
 - [x] Replace/remove or extend the temporary `ProductCatalogEntry` in `login-screen.tsx` to give logged-out and ADMIN users a way to reach `/products`
 - [x] Add component tests for `product-list-screen.tsx` / `product-detail-screen.tsx`
-- [ ] Backend: merge PR #84 (PRODUCT-05) into `main` and test Mobile → API → Supabase end-to-end
+- [ ] Backend: provide public PRODUCT-05 list/detail endpoints on `main` and test Mobile → API → Supabase end-to-end
 - [ ] Manually test on a physical Android/iOS device (pull-to-refresh, infinite scroll,
       keyboard behavior with `keyboardShouldPersistTaps`)
 
@@ -327,13 +327,19 @@ Review findings on PR #80 identified two P2 issues addressed in this revision:
 - Verification: `npm run test:logic` passes (213 tests), `npm run test:components` passes (56 tests),
   `tsc --noEmit` passes with 0 errors, and `expo lint` passes with 0 errors.
 
-## 18. Complete Acceptance & Full Handoff (Issue #49 Final)
+## 18. Implementation Handoff (Issue #49 Remains Open)
 
-This revision completes all criteria for Issue #49:
+The frontend routes and screens are implemented, but Issue #49 acceptance is not complete until
+real API behavior and on-device navigation/state checks are evidenced. Do not close the issue
+based on this frontend-only handoff.
 
-### 18.1 Backend Configuration via Opt-in Environment Variable
-- `mobile/src/products/product-catalog-instance.ts` initializes `createProductCatalogService()` with mock by default, avoiding 404 breaking changes in dev environments where `EXPO_PUBLIC_API_BASE_URL` is configured in `.env` but backend on `main` does not have `GET /products` yet (PR #84 is in `feature/product-04-update-cancel`).
-- When backend PR #84 is merged into `main`, setting `EXPO_PUBLIC_USE_PRODUCT_API=true` in `.env` enables direct connection to the real backend without modifying application code.
+### 18.1 Backend Configuration and Fail-Closed Behavior
+- `EXPO_PUBLIC_PRODUCT_CATALOG_MODE=mock` explicitly selects seeded data for development/test.
+- A configured API URL selects API mode by default; `api` mode without a valid URL reports an
+  unavailable configuration error.
+- EAS development profile selects mock; preview and production profiles select API mode. The
+  production environment marker and React Native release mode reject mock mode, so a release
+  cannot silently replace missing backend data with mock products.
 
 ### 18.2 Public Discovery for Guests & ADMIN
 - In `mobile/src/components/login-screen.tsx`, guest users can access "ค้นหาสินค้า" without logging in, and `ADMIN` accounts can also browse products.
@@ -344,5 +350,4 @@ This revision completes all criteria for Issue #49:
 ### 18.4 Complete Component Test Coverage
 - `component-tests/product-list-screen.test.tsx` (14 tests) covers initial loading, list rendering, search debouncing, empty states, error/retry, load-more, and navigation.
 - `component-tests/product-detail-screen.test.tsx` (9 tests) covers loading, full detail rendering, out-of-scope assertion (no buy/seller info), unavailable state (404/CANCELLED), invalid id handling, refresh on back, and retry.
-- Total test coverage: **213 logic tests** + **81 component tests**, 0 typecheck errors, 0 linter errors.
-
+- Current checks: **244 logic tests** + **81 component tests**, typecheck and lint pass. These do not replace API-backed or physical-device acceptance evidence.

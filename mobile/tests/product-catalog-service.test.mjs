@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   conditionLabels,
   createProductCatalogService,
   ProductCatalogError,
 } from '../src/services/product-catalog-service.ts';
+import { resolveProductCatalogServiceOptions } from '../src/products/product-catalog-config.ts';
 
 function json(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -47,16 +49,16 @@ const detail = (extra = {}) => ({
   ...extra,
 });
 
-// ===== Mock branch (ใช้ default โดยไม่ส่ง baseUrl) =====
+// ===== Explicit mock branch =====
 
-test('with no baseUrl the service uses the mock branch by default', async () => {
-  const service = createProductCatalogService();
+test('mock products are available only when mock mode is selected explicitly', async () => {
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts();
   assert.ok(page.items.length > 0);
 });
 
 test('the mock seed has 6-8 products', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts({ pageSize: 50 });
   // สินค้าที่ไม่ใช่ AVAILABLE ถูกกรองออกจาก public list ตาม contract จึงนับจาก total ของ list ไม่ได้ตรง ๆ
   // ตรวจว่าจำนวนที่แสดงต่อสาธารณะอยู่ในช่วงที่สมเหตุสมผลสำหรับ seed ~6-8 รายการ (1 รายการถูกยกเลิก)
@@ -64,7 +66,7 @@ test('the mock seed has 6-8 products', async () => {
 });
 
 test('the mock seed includes at least one non-AVAILABLE product excluded from the public list', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts({ pageSize: 50 });
   assert.ok(page.items.every(item => item.status === 'AVAILABLE'));
   // id 107 (หมวกแก๊ป) ถูกยกเลิกไว้ในข้อมูลจำลอง ต้องไม่ปรากฏใน public list
@@ -72,12 +74,12 @@ test('the mock seed includes at least one non-AVAILABLE product excluded from th
 });
 
 test('fetching the cancelled mock product by id reports not-found, like a real 404', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   await assert.rejects(service.getProduct(107), error => error instanceof ProductCatalogError && error.kind === 'not-found');
 });
 
 test('the mock seed includes a product whose image url is unreachable, for placeholder testing', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts({ pageSize: 50 });
   const broken = page.items.find(item => item.id === 104);
   assert.ok(broken, 'expected mock product 104 in the list');
@@ -85,14 +87,14 @@ test('the mock seed includes a product whose image url is unreachable, for place
 });
 
 test('mock search filters by product name, case-insensitively, among available products only', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts({ q: 'เสื้อ' });
   assert.ok(page.items.length >= 2);
   assert.ok(page.items.every(item => item.productName.includes('เสื้อ')));
 });
 
 test('mock search with no match returns an empty page, not an error', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page = await service.listProducts({ q: 'ไม่มีสินค้านี้แน่นอน' });
   assert.deepEqual(page.items, []);
   assert.equal(page.meta.total, 0);
@@ -101,7 +103,7 @@ test('mock search with no match returns an empty page, not an error', async () =
 });
 
 test('mock pagination meta is consistent with page size and has_next', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const page1 = await service.listProducts({ page: 1, pageSize: 2 });
   assert.equal(page1.items.length, 2);
   assert.equal(page1.meta.page, 1);
@@ -114,13 +116,13 @@ test('mock pagination meta is consistent with page size and has_next', async () 
 });
 
 test('mock rejects an out-of-range page or page_size like the real API would', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   await assert.rejects(service.listProducts({ page: 0 }), error => error.kind === 'validation-error');
   await assert.rejects(service.listProducts({ pageSize: 51 }), error => error.kind === 'validation-error');
 });
 
 test('getProduct returns a full detail for a visible mock product', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   const product = await service.getProduct(101);
   assert.equal(product.productName, 'เสื้อเชิ้ตสีฟ้า');
   assert.equal(product.category.categoryName, 'เสื้อผ้า');
@@ -130,8 +132,80 @@ test('getProduct returns a full detail for a visible mock product', async () => 
 });
 
 test('an unknown mock id reports not-found', async () => {
-  const service = createProductCatalogService();
+  const service = createProductCatalogService({ mode: 'mock' });
   await assert.rejects(service.getProduct(999999), error => error.kind === 'not-found');
+});
+
+// ===== Build-time configuration =====
+
+test('the EAS production profile selects the real service when its API URL is configured', async () => {
+  const eas = JSON.parse(await readFile(new URL('../eas.json', import.meta.url), 'utf8'));
+  assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'development');
+  assert.equal(eas.build.preview.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'preview');
+  assert.equal(eas.build.production.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'production');
+  assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'mock');
+  assert.equal(eas.build.preview.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'api');
+  assert.equal(eas.build.production.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'api');
+
+  const { calls, fetch } = recorder(() => json(200, {
+    data: [], meta: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false },
+  }));
+  const options = resolveProductCatalogServiceOptions({
+    ...eas.build.production.env,
+    baseUrl: 'https://api.test',
+  });
+  const service = createProductCatalogService({ ...options, fetch });
+
+  await service.listProducts();
+  assert.equal(options.mode, 'api');
+  assert.equal(calls[0].url, 'https://api.test/products?page=1&page_size=20');
+});
+
+test('an API mode without a URL reports a configuration error instead of using mock data', async () => {
+  const options = resolveProductCatalogServiceOptions({ mode: 'api' });
+  const service = createProductCatalogService(options);
+
+  await assert.rejects(service.listProducts(), error =>
+    error instanceof ProductCatalogError && error.kind === 'unavailable'
+      && error.code === 'PRODUCT_CATALOG_API_BASE_URL_MISSING');
+});
+
+test('an invalid API URL reports a configuration error instead of using mock data', async () => {
+  const options = resolveProductCatalogServiceOptions({ mode: 'api', baseUrl: 'ftp://api.test' });
+  const service = createProductCatalogService(options);
+
+  await assert.rejects(service.getProduct(101), error =>
+    error instanceof ProductCatalogError && error.kind === 'unavailable'
+      && error.code === 'PRODUCT_CATALOG_API_BASE_URL_INVALID');
+});
+
+test('mock mode must be selected explicitly and remains mock even when an API URL exists', async () => {
+  const options = resolveProductCatalogServiceOptions({
+    mode: 'mock', baseUrl: 'https://api.test', buildEnvironment: 'development',
+  });
+  const service = createProductCatalogService(options);
+  const page = await service.listProducts();
+
+  assert.equal(options.mode, 'mock');
+  assert.ok(page.items.length > 0);
+});
+
+test('production refuses explicitly requested mock mode and reports unavailable', async () => {
+  const options = resolveProductCatalogServiceOptions({
+    mode: 'mock', buildEnvironment: 'production',
+  });
+  const service = createProductCatalogService(options);
+
+  await assert.rejects(service.listProducts(), error =>
+    error instanceof ProductCatalogError && error.kind === 'unavailable'
+      && error.code === 'PRODUCT_CATALOG_MOCK_DISABLED_IN_PRODUCTION');
+});
+
+test('the service default fails closed when both mode and API URL are absent', async () => {
+  const service = createProductCatalogService();
+
+  await assert.rejects(service.listProducts(), error =>
+    error instanceof ProductCatalogError && error.kind === 'unavailable');
 });
 
 // ===== Condition label mapping =====
