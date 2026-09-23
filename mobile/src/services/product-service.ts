@@ -1,4 +1,6 @@
 // PRODUCT-06: Product listing (create/edit/cancel) with real API; in-memory data is opt-in for development.
+import { validateProductWriteFields } from '../products/product-write-validation.ts';
+import { ProductRequestCancelledError, ProductRequestTimeoutError, withProductRequestDeadline } from '../products/product-request-deadline.ts';
 
 export type SaleType = 'FIXED_PRICE';
 
@@ -18,7 +20,7 @@ export interface Product {
   description: string;
   size: string;
   condition: string;
-  price: number;
+  price: string;
   category: string;
   categoryId?: number;
   brand: string;
@@ -33,7 +35,7 @@ export interface Product {
 export type MyProductSummary = {
   id: string;
   name: string;
-  price: number;
+  price: string;
   status: string;
   mainImageUrl: string | null;
 };
@@ -41,6 +43,16 @@ export type MyProductSummary = {
 export type MyProductPage = { items: MyProductSummary[]; hasNext: boolean };
 
 export type ProductInput = Omit<Product, 'id' | 'saleType'>;
+
+function validateWriteInput(input: ProductInput): void {
+  const fields: Record<string, string> = { ...validateProductWriteFields(input) };
+  if (!input.categoryId) fields.category_id = 'กรุณาเลือกหมวดหมู่สินค้า';
+  if (!input.brandId) fields.brand_id = 'กรุณาเลือกแบรนด์สินค้า';
+  if (input.images.length < 1 || input.images.length > 10) fields.images = 'กรุณาแนบรูปภาพ 1–10 รูป';
+  if (Object.keys(fields).length > 0) {
+    throw new ProductServiceError('validation-error', 'ข้อมูลสินค้าไม่ถูกต้อง', fields);
+  }
+}
 
 export const SALE_TYPE: SaleType = 'FIXED_PRICE';
 
@@ -98,6 +110,7 @@ export type ProductServiceErrorKind =
   | 'conflict'
   | 'validation-error'
   | 'network-error'
+  | 'timeout'
   | 'unavailable'
   | 'server-error';
 
@@ -139,6 +152,7 @@ export type ProductServiceOptions = {
   mockMode?: boolean;
   fetch?: FetchLike;
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
+  timeoutMs?: number;
 };
 
 let mockProducts: Product[] = [];
@@ -146,10 +160,6 @@ let mockIdCounter = 0;
 
 function cloneProduct(product: Product): Product {
   return { ...product, images: [...product.images] };
-}
-
-function formatBackendPrice(price: number): string {
-  return Number.isFinite(price) && price > 0 ? price.toFixed(2) : '0.00';
 }
 
 function transformBackendProduct(data: any): Product {
@@ -184,7 +194,7 @@ function transformBackendProduct(data: any): Product {
     description: data.description ?? '',
     size: data.size ?? '',
     condition: data.condition ?? 'GOOD',
-    price: typeof data.price === 'string' ? parseFloat(data.price) : Number(data.price || 0),
+    price: typeof data.price === 'string' ? data.price : '',
     category: categoryName,
     categoryId,
     brand: brandName,
@@ -232,54 +242,47 @@ export function createProductService(options: ProductServiceOptions = {}) {
     path: string,
     init: RequestInit,
     accessToken?: string,
-    signal?: AbortSignal,
-  ): Promise<Response> => {
+    callerSignal?: AbortSignal,
+  ): Promise<any> => {
     if (!baseUrl) throw unavailable();
-    const token = await resolveAccessToken(accessToken);
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      ...((init.headers as Record<string, string>) || {}),
-    };
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-
-    let response: Response;
     try {
-      response = await fetcher(`${baseUrl}${path}`, { ...init, headers, signal });
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      throw new ProductServiceError('network-error', 'เครือข่ายขัดข้อง กรุณาลองใหม่');
-    }
-
-    if (response.ok) return response;
-    if (response.status === 401) {
-      throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
-    }
-    if (response.status === 403) {
-      throw new ProductServiceError('forbidden', 'บัญชีผู้ขายยังไม่ได้รับอนุมัติหรือไม่มีสิทธิ์ทำรายการ');
-    }
-    if (response.status === 404) {
-      throw new ProductServiceError('not-found', 'ไม่พบข้อมูลสินค้านี้');
-    }
-    if (response.status === 409) {
-      throw new ProductServiceError('conflict', 'สถานะปัจจุบันไม่อนุญาตให้ทำรายการนี้');
-    }
-    if (response.status === 422) {
-      let fields: Record<string, string> = {};
-      try {
-        const errJson = await response.json();
-        if (errJson?.error?.fields && typeof errJson.error.fields === 'object') {
-          for (const [k, v] of Object.entries(errJson.error.fields)) {
-            fields[k] = Array.isArray(v) ? v.join(', ') : String(v);
+      return await withProductRequestDeadline(async signal => {
+        const token = await resolveAccessToken(accessToken);
+        const headers: Record<string, string> = {
+          Accept: 'application/json',
+          ...((init.headers as Record<string, string>) || {}),
+        };
+        if (token) headers.Authorization = 'Bearer ' + token;
+        const response = await fetcher(baseUrl + path, { ...init, headers, signal });
+        if (response.ok) return response.json();
+        if (response.status === 401) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
+        if (response.status === 403) throw new ProductServiceError('forbidden', 'บัญชีผู้ขายยังไม่ได้รับอนุมัติหรือไม่มีสิทธิ์ทำรายการ');
+        if (response.status === 404) throw new ProductServiceError('not-found', 'ไม่พบข้อมูลสินค้านี้');
+        if (response.status === 409) throw new ProductServiceError('conflict', 'สถานะปัจจุบันไม่อนุญาตให้ทำรายการนี้');
+        if (response.status === 422) {
+          const errJson = await response.json();
+          const fields: Record<string, string> = {};
+          if (errJson?.error?.fields && typeof errJson.error.fields === 'object') {
+            for (const [key, value] of Object.entries(errJson.error.fields)) {
+              fields[key] = Array.isArray(value) ? value.join(', ') : String(value);
+            }
           }
+          throw new ProductServiceError('validation-error', 'ข้อมูลสินค้าไม่ถูกต้อง', fields);
         }
-      } catch {
-        // ignore parse error
+        throw new ProductServiceError('server-error', 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ กรุณาลองใหม่');
+      }, options.timeoutMs, callerSignal);
+    } catch (error) {
+      if (error instanceof ProductRequestCancelledError) throw error;
+      if (error instanceof ProductRequestTimeoutError) {
+        throw new ProductServiceError('timeout', error.message);
       }
-      throw new ProductServiceError('validation-error', 'ข้อมูลสินค้าไม่ถูกต้อง', fields);
+      if (error instanceof ProductServiceError) throw error;
+      if (callerSignal?.aborted) throw new ProductRequestCancelledError();
+      if (error instanceof SyntaxError) {
+        throw new ProductServiceError('server-error', 'ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง');
+      }
+      throw new ProductServiceError('network-error', 'เครือข่ายขัดข้อง กรุณาตรวจสอบผลรายการก่อนลองใหม่');
     }
-    throw new ProductServiceError('server-error', 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ กรุณาลองใหม่');
   };
 
   return {
@@ -295,17 +298,17 @@ export function createProductService(options: ProductServiceOptions = {}) {
           hasNext: start + 20 < mockProducts.length,
         };
       }
-      const res = await request(`/products/me?page=${page}&page_size=20`, { method: 'GET' }, explicitToken);
-      const json = await res.json();
+      const json = await request(`/products/me?page=${page}&page_size=20`, { method: 'GET' }, explicitToken);
       return {
         items: json.data.map((item: any) => ({
-          id: String(item.id), name: item.product_name, price: Number(item.price),
+          id: String(item.id), name: item.product_name, price: item.price,
           status: item.status, mainImageUrl: item.main_image?.image_url ?? null,
         })),
         hasNext: json.meta.has_next === true,
       };
     },
-    async createProduct(input: ProductInput, explicitToken?: string): Promise<Product> {
+    async createProduct(input: ProductInput, explicitToken?: string, signal?: AbortSignal): Promise<Product> {
+      validateWriteInput(input);
       if (!baseUrl) {
         if (!mockMode) throw unavailable();
         mockIdCounter += 1;
@@ -320,9 +323,6 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return cloneProduct(product);
       }
 
-      if (!input.categoryId || !input.brandId || input.images.length < 1 || input.images.length > 10) {
-        throw new ProductServiceError('validation-error', 'กรุณาตรวจสอบหมวดหมู่ แบรนด์ และรูปภาพ');
-      }
       const imageRefs = input.images.map(url => {
         const meta = getProductImageMeta(url);
         if (!meta?.uploadId) throw new ProductServiceError('validation-error', 'กรุณาอัปโหลดรูปภาพใหม่');
@@ -331,17 +331,17 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
       const body = {
         product_name: input.name.trim(),
-        description: input.description.trim() || input.name.trim(),
-        price: formatBackendPrice(input.price),
+        description: input.description.trim(),
+        price: input.price,
         category_id: input.categoryId,
         brand_id: input.brandId,
-        size: input.size.trim() || 'M',
+        size: input.size.trim(),
         condition: input.condition,
         sale_type: SALE_TYPE,
         images: imageRefs,
       };
 
-      const res = await request(
+      const json = await request(
         '/products',
         {
           method: 'POST',
@@ -349,13 +349,14 @@ export function createProductService(options: ProductServiceOptions = {}) {
           body: JSON.stringify(body),
         },
         explicitToken,
+        signal,
       );
 
-      const json = await res.json();
       return transformBackendProduct(json.data ?? json);
     },
 
-    async updateProduct(id: string, input: ProductInput, explicitToken?: string): Promise<Product> {
+    async updateProduct(id: string, input: ProductInput, explicitToken?: string, signal?: AbortSignal): Promise<Product> {
+      validateWriteInput(input);
       if (!baseUrl) {
         if (!mockMode) throw unavailable();
         const index = mockProducts.findIndex(product => product.id === id);
@@ -365,9 +366,6 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return cloneProduct(updated);
       }
 
-      if (!input.categoryId || !input.brandId || input.images.length < 1 || input.images.length > 10) {
-        throw new ProductServiceError('validation-error', 'กรุณาตรวจสอบหมวดหมู่ แบรนด์ และรูปภาพ');
-      }
       const imageRefs = input.images.map(url => {
         const meta = getProductImageMeta(url);
         if (meta?.imageId) return { image_id: meta.imageId };
@@ -377,17 +375,17 @@ export function createProductService(options: ProductServiceOptions = {}) {
 
       const body: Record<string, any> = {
         product_name: input.name.trim(),
-        description: input.description.trim() || input.name.trim(),
-        price: formatBackendPrice(input.price),
+        description: input.description.trim(),
+        price: input.price,
         category_id: input.categoryId,
         brand_id: input.brandId,
-        size: input.size.trim() || 'M',
+        size: input.size.trim(),
         condition: input.condition,
         sale_type: SALE_TYPE,
         images: imageRefs,
       };
 
-      const res = await request(
+      const json = await request(
         `/products/${id}`,
         {
           method: 'PATCH',
@@ -395,13 +393,13 @@ export function createProductService(options: ProductServiceOptions = {}) {
           body: JSON.stringify(body),
         },
         explicitToken,
+        signal,
       );
 
-      const json = await res.json();
       return transformBackendProduct(json.data ?? json);
     },
 
-    async getProductById(id: string, explicitToken?: string): Promise<Product | null> {
+    async getProductById(id: string, explicitToken?: string, signal?: AbortSignal): Promise<Product | null> {
       if (!baseUrl) {
         if (!mockMode) throw unavailable();
         const found = mockProducts.find(product => product.id === id);
@@ -411,8 +409,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
       const token = await resolveAccessToken(explicitToken);
       if (!token) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
       try {
-        const res = await request(`/products/me/${id}`, { method: 'GET' }, token);
-        const json = await res.json();
+        const json = await request(`/products/me/${id}`, { method: 'GET' }, token, signal);
         return transformBackendProduct(json.data ?? json);
       } catch (error) {
         if (error instanceof ProductServiceError && error.kind === 'not-found') {
@@ -434,8 +431,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
         ];
       }
 
-      const res = await request('/categories', { method: 'GET' });
-      const json = await res.json();
+      const json = await request('/categories', { method: 'GET' });
       const list = json.data ?? [];
       return list.map((c: any) => ({ id: c.id, name: c.category_name }));
     },
@@ -452,13 +448,12 @@ export function createProductService(options: ProductServiceOptions = {}) {
         ];
       }
 
-      const res = await request('/brands', { method: 'GET' });
-      const json = await res.json();
+      const json = await request('/brands', { method: 'GET' });
       const list = json.data ?? [];
       return list.map((b: any) => ({ id: b.id, name: b.brand_name }));
     },
 
-    async cancelProduct(id: string, explicitToken?: string): Promise<Product> {
+    async cancelProduct(id: string, explicitToken?: string, signal?: AbortSignal): Promise<Product> {
       if (!baseUrl) {
         if (!mockMode) throw unavailable();
         const index = mockProducts.findIndex(product => product.id === id);
@@ -468,7 +463,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
         return cloneProduct(cancelled);
       }
 
-      const res = await request(
+      const json = await request(
         `/products/${id}/cancel`,
         {
           method: 'POST',
@@ -476,9 +471,9 @@ export function createProductService(options: ProductServiceOptions = {}) {
           body: '{}',
         },
         explicitToken,
+        signal,
       );
 
-      const json = await res.json();
       return transformBackendProduct(json.data ?? json);
     },
   };

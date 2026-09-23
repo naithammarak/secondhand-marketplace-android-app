@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
-import { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
@@ -20,28 +20,46 @@ export default function NewProductScreen() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
+  const [uncertain, setUncertain] = useState(false);
+  const [uploadAbortVersion, setUploadAbortVersion] = useState(0);
   const submittingRef = useRef(false);
+  const requestController = useRef<AbortController | null>(null);
+  useFocusEffect(useCallback(() => () => {
+    requestController.current?.abort();
+    setUploadAbortVersion(version => version + 1);
+  }, []));
+
+  const accessToken = session?.access_token;
+  useEffect(() => () => requestController.current?.abort(), [accessToken]);
 
   async function handleSubmit(values: ProductFormValues) {
-    if (submittingRef.current || success) return;
+    if (submittingRef.current || success || uncertain) return;
     submittingRef.current = true;
+    const controller = new AbortController();
+    requestController.current = controller;
     let created = false;
     setSubmitting(true);
     setError(null);
     setServerFieldErrors({});
     try {
-      await productService.createProduct(values, session?.access_token);
+      await productService.createProduct(values, accessToken, controller.signal);
+      if (controller.signal.aborted) return;
       created = true;
       setSuccess(true);
       router.replace('/product/mine');
     } catch (err) {
+      if (controller.signal.aborted) return;
       if (err instanceof ProductServiceError) {
-        setError(err.message);
+        if (err.kind === 'timeout' || err.kind === 'network-error') {
+          setUncertain(true);
+          setError('ยังยืนยันไม่ได้ว่าสินค้าถูกลงขายหรือไม่ กรุณาตรวจ “สินค้าของฉัน” ก่อนลงซ้ำ');
+        } else setError(err.message);
         setServerFieldErrors(err.fields ?? {});
       } else {
         setError(err instanceof Error ? err.message : 'ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
       }
     } finally {
+      if (requestController.current === controller) requestController.current = null;
       if (!created) submittingRef.current = false;
       setSubmitting(false);
     }
@@ -53,11 +71,19 @@ export default function NewProductScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.card}>
             <Text style={styles.title}>ลงขายสินค้า</Text>
+            {uncertain && (
+              <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/product/mine')} style={styles.checkButton}>
+                <Text style={styles.checkButtonText}>ตรวจสินค้าของฉันก่อนลงซ้ำ</Text>
+              </TouchableOpacity>
+            )}
             <ProductForm
               mode="create"
               submitting={submitting}
               submitSuccess={success}
+              submitDisabled={uncertain}
               submitError={error}
+              accessToken={accessToken}
+              uploadAbortVersion={uploadAbortVersion}
               serverFieldErrors={serverFieldErrors}
               onSubmit={handleSubmit}
             />
@@ -83,4 +109,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   title: { fontSize: 22, fontWeight: '700', color: '#1a1f27', marginBottom: Spacing.three },
+  checkButton: { backgroundColor: '#96bde9', padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },
+  checkButtonText: { color: '#fff', textAlign: 'center', fontWeight: '700' },
 });

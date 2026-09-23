@@ -9,16 +9,16 @@ import {
 } from '../src/products/product-form.ts';
 import { ProductServiceError } from '../src/services/product-service.ts';
 
-const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด', images: ['mock://product-images/one'] };
+const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด', description: 'สภาพดี', size: 'M', images: ['mock://product-images/one'] };
 
 test('an empty name is rejected', () => {
   const errors = validateProductForm(emptyProductFormValues, '100');
-  assert.equal(errors.name, 'กรุณากรอกชื่อสินค้า');
+  assert.equal(errors.name, 'ชื่อต้องมีความยาว 1–255 ตัวอักษร');
 });
 
 test('a whitespace-only name is rejected', () => {
   const errors = validateProductForm({ ...validValues, name: '   ' }, '100');
-  assert.equal(errors.name, 'กรุณากรอกชื่อสินค้า');
+  assert.equal(errors.name, 'ชื่อต้องมีความยาว 1–255 ตัวอักษร');
 });
 
 for (const price of ['', '0', '-5', 'abc']) {
@@ -30,6 +30,24 @@ for (const price of ['', '0', '-5', 'abc']) {
 
 test('a valid name and price pass validation', () => {
   assert.deepEqual(validateProductForm(validValues, '150'), {});
+});
+
+test('price follows the backend decimal text contract', () => {
+  for (const price of ['0.01', '1', '1.2', '9999999999.99']) {
+    assert.equal(validateProductForm(validValues, price).price, undefined, price);
+  }
+  for (const price of ['0', '0.00', '1.001', '1e2', '1,000', '10000000000', ' 1 ']) {
+    assert.equal(typeof validateProductForm(validValues, price).price, 'string', price);
+  }
+});
+
+test('description and size are required and enforce backend lengths', () => {
+  for (const field of ['description', 'size']) {
+    assert.equal(typeof validateProductForm({ ...validValues, [field]: '  ' }, '1')[field], 'string');
+  }
+  assert.equal(typeof validateProductForm({ ...validValues, name: 'x'.repeat(256) }, '1').name, 'string');
+  assert.equal(typeof validateProductForm({ ...validValues, description: 'x'.repeat(1001) }, '1').description, 'string');
+  assert.equal(typeof validateProductForm({ ...validValues, size: 'x'.repeat(101) }, '1').size, 'string');
 });
 
 test('category is required when categories options are provided', () => {

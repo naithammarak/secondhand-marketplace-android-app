@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { ProductServiceError } from '../src/services/product-service.ts';
 import { createProductEditStore } from '../src/products/product-edit-store.ts';
 
 const product = (id, extra = {}) => ({
@@ -8,11 +9,12 @@ const product = (id, extra = {}) => ({
   description: '',
   size: 'M',
   condition: 'ใหม่',
-  price: 100,
+  price: '100',
   category: 'เสื้อผ้า',
   brand: '',
   images: [],
   saleType: 'FIXED_PRICE',
+  status: 'AVAILABLE',
   ...extra,
 });
 
@@ -21,7 +23,7 @@ const input = {
   description: '',
   size: 'M',
   condition: 'ใหม่',
-  price: 200,
+  price: '200',
   category: 'เสื้อผ้า',
   brand: '',
   images: [],
@@ -242,4 +244,36 @@ test('cancels product with access token and reports success or error', async () 
   await errorSetup.store.cancel('token-abc');
   assert.equal(errorSetup.store.getSnapshot().cancelSuccess, false);
   assert.equal(errorSetup.store.getSnapshot().cancelError, true);
+});
+
+test('update timeout refetches owner detail before allowing another submit', async () => {
+  let reads = 0;
+  const service = {
+    getProductById: async () => { reads++; return product('p1', { description: reads > 1 ? 'ล่าสุด' : 'เดิม' }); },
+    updateProduct: async () => { throw new ProductServiceError('timeout', 'หมดเวลา'); },
+  };
+  const store = createProductEditStore(service);
+  await store.open('p1');
+  await store.submit(product('p1'));
+  assert.equal(reads, 2);
+  assert.equal(store.getSnapshot().product.description, 'ล่าสุด');
+  assert.equal(store.getSnapshot().verifying, false);
+  assert.equal(store.getSnapshot().submitError, true);
+});
+
+test('cancel timeout refetches changed status and blocks another cancel', async () => {
+  let reads = 0;
+  let writes = 0;
+  const service = {
+    getProductById: async () => product('p1', { status: ++reads > 1 ? 'CANCELLED' : 'AVAILABLE' }),
+    updateProduct: async () => product('p1'),
+    cancelProduct: async () => { writes++; throw new ProductServiceError('timeout', 'หมดเวลา'); },
+  };
+  const store = createProductEditStore(service);
+  await store.open('p1');
+  await store.cancel();
+  assert.equal(reads, 2);
+  assert.equal(store.getSnapshot().product.status, 'CANCELLED');
+  await store.cancel();
+  assert.equal(writes, 1);
 });

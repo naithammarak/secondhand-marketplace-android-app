@@ -68,7 +68,7 @@ describe('ProductForm', () => {
       description: 'รายละเอียดเดิม',
       size: 'M',
       condition: 'ใหม่',
-      price: 100,
+      price: '100',
       category: 'เสื้อผ้า',
       brand: 'แบรนด์เดิม',
       images: ['mock://product-images/existing-1.jpg'],
@@ -146,7 +146,7 @@ describe('ProductForm', () => {
       description: 'เดิม',
       size: 'L',
       condition: 'ใหม่',
-      price: 250,
+      price: '250',
       category: 'เสื้อผ้า',
       brand: 'แบรนด์',
       images: [],
@@ -234,7 +234,7 @@ describe('ProductForm', () => {
       description: 'รายละเอียด',
       size: 'M',
       condition: 'NEW',
-      price: 200,
+      price: '200',
       category: 'เสื้อผ้า',
       brand: 'Nike',
       images: ['mock://img-1.jpg', 'mock://img-2.jpg', 'mock://img-3.jpg'],
@@ -275,7 +275,7 @@ describe('ProductForm', () => {
       description: 'รายละเอียด',
       size: 'L',
       condition: 'GOOD',
-      price: 300,
+      price: '300',
       category: 'เสื้อผ้า',
       brand: 'Adidas',
       images: ['mock://img-A.jpg', 'mock://img-B.jpg'],
@@ -312,7 +312,7 @@ describe('ProductForm', () => {
     render(
       <ProductForm
         mode="create"
-        initialValues={{ ...emptyProductFormValues, images: ['mock://img.jpg'] }}
+        initialValues={{ ...emptyProductFormValues, description: 'รายละเอียดสินค้า', size: 'M', images: ['mock://img.jpg'] }}
         onSubmit={onSubmit}
       />,
     );
@@ -341,7 +341,7 @@ describe('ProductForm', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'สินค้าใหม่เอี่ยม',
-        price: 550,
+        price: '550',
         category: 'หมวดหมู่พิเศษ',
         categoryId: 10,
         brand: 'แบรนด์พิเศษ',
@@ -366,7 +366,7 @@ describe('ProductForm', () => {
       description: 'คำอธิบาย',
       size: 'M',
       condition: 'NEW',
-      price: 290,
+      price: '290',
       category: 'เสื้อผ้า',
       brand: 'ไม่ระบุแบรนด์',
       images: ['mock://img.jpg'],
@@ -391,7 +391,7 @@ describe('ProductForm', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'เสื้อยืดตัวอย่าง',
-        price: 290,
+        price: '290',
         category: 'เสื้อผ้า',
         categoryId: 42,
         brand: 'ไม่ระบุแบรนด์',
@@ -407,7 +407,7 @@ describe('ProductForm', () => {
     render(
       <ProductForm
         mode="create"
-        initialValues={{ ...emptyProductFormValues, images: ['mock://img.jpg'] }}
+        initialValues={{ ...emptyProductFormValues, description: 'รายละเอียดสินค้า', size: 'M', images: ['mock://img.jpg'] }}
         onSubmit={onSubmit}
       />,
     );
@@ -456,7 +456,7 @@ describe('ProductForm', () => {
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'กางเกงยีนส์',
-        price: 790,
+        price: '790',
         category: 'เสื้อผ้า',
         categoryId: 42,
         brandId: 101,

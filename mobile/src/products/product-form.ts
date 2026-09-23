@@ -5,6 +5,7 @@ import {
   type CategoryOption,
   type ProductInput,
 } from '../services/product-service.ts';
+import { validateProductWriteFields } from './product-write-validation.ts';
 
 export type ProductFormValues = ProductInput;
 
@@ -13,7 +14,7 @@ export const emptyProductFormValues: ProductFormValues = {
   description: '',
   size: '',
   condition: CONDITION_OPTIONS[0],
-  price: 0,
+  price: '',
   category: '',
   categoryId: undefined,
   brand: '',
@@ -23,6 +24,8 @@ export const emptyProductFormValues: ProductFormValues = {
 
 export type ProductFieldErrors = {
   name?: string;
+  description?: string;
+  size?: string;
   price?: string;
   category?: string;
   brand?: string;
@@ -48,11 +51,7 @@ export function validateProductForm(
   options?: { categories?: CategoryOption[]; brands?: BrandOption[] },
 ): ProductFieldErrors {
   const errors: ProductFieldErrors = {};
-  if (!values.name.trim()) errors.name = 'กรุณากรอกชื่อสินค้า';
-  const price = Number(priceText);
-  if (!priceText.trim() || !Number.isFinite(price) || price <= 0) {
-    errors.price = 'กรุณากรอกราคาที่มากกว่า 0';
-  }
+  Object.assign(errors, validateProductWriteFields({ ...values, price: priceText }));
   if (options?.categories && options.categories.length > 0) {
     if (!values.categoryId || !options.categories.some(c => c.id === values.categoryId)) {
       errors.category = 'กรุณาเลือกหมวดหมู่สินค้า';

@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,11 +24,10 @@ export default function EditProductScreen() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      void store.open(id, session?.access_token);
-    }
-  }, [id, store, session?.access_token]);
+  useFocusEffect(useCallback(() => {
+    if (id) void store.open(id, session?.access_token);
+    return () => store.dispose();
+  }, [id, store, session?.access_token]));
 
   useEffect(() => {
     if (!state.submitSuccess) return;
@@ -76,7 +75,7 @@ export default function EditProductScreen() {
             {!state.loading && state.product?.status !== 'AVAILABLE' && state.product && (
               <Text style={styles.notFoundText}>สินค้านี้อยู่ในสถานะที่แก้ไขหรือยกเลิกไม่ได้</Text>
             )}
-            {!state.loading && state.product?.status === 'AVAILABLE' && (
+            {!state.loading && !state.loadError && !state.verifying && state.product?.status === 'AVAILABLE' && (
               <>
                 <ProductForm
                   mode="edit"
@@ -84,6 +83,7 @@ export default function EditProductScreen() {
                   submitting={state.submitting}
                   submitSuccess={state.submitSuccess}
                   submitError={state.submitErrorMessage ?? (state.submitError ? 'บันทึกการแก้ไขไม่สำเร็จ กรุณาลองใหม่' : null)}
+                  accessToken={session?.access_token}
                   serverFieldErrors={state.submitFieldErrors}
                   onSubmit={handleSubmit}
                 />

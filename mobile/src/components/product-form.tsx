@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
@@ -30,8 +30,11 @@ type Props = {
   initialValues?: ProductFormValues;
   submitting?: boolean;
   submitSuccess?: boolean;
+  submitDisabled?: boolean;
   submitError?: string | null;
   serverFieldErrors?: Record<string, string>;
+  accessToken?: string;
+  uploadAbortVersion?: number;
   onSubmit: (values: ProductFormValues) => void | Promise<void>;
 };
 
@@ -103,12 +106,15 @@ export function ProductForm({
   initialValues,
   submitting,
   submitSuccess,
+  submitDisabled,
   submitError,
   serverFieldErrors,
+  accessToken,
+  uploadAbortVersion,
   onSubmit,
 }: Props) {
   const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
-  const [priceText, setPriceText] = useState(initialValues ? String(initialValues.price) : '');
+  const [priceText, setPriceText] = useState(initialValues?.price ?? '');
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [brands, setBrands] = useState<BrandOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -116,6 +122,8 @@ export function ProductForm({
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ProductFieldErrors>({});
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), [accessToken, uploadAbortVersion]);
 
   const applyLoadedOptions = useCallback((catList: CategoryOption[], brandList: BrandOption[]) => {
     if (catList.length === 0 || brandList.length === 0) {
@@ -166,7 +174,7 @@ export function ProductForm({
     return () => { active = false; };
   }, [applyLoadedOptions]);
 
-  const disabled = submitting || submitSuccess;
+  const disabled = submitting || submitSuccess || submitDisabled;
   const cannotSubmit = disabled || uploadingImage || loadingOptions || !!optionsError || categories.length === 0 || brands.length === 0;
 
   async function handleAddImage() {
@@ -185,7 +193,10 @@ export function ProductForm({
         setUploadError(fileError);
         return;
       }
-      const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file));
+      const controller = new AbortController();
+      uploadController.current = controller;
+      const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file, accessToken, controller.signal));
+      if (controller.signal.aborted) return;
       if (result.url) {
         const imageUrl = result.url;
         setValues(current => current.images.length < MAX_PRODUCT_IMAGES ? addProductImage(current, imageUrl) : current);
@@ -193,6 +204,7 @@ export function ProductForm({
         setUploadError(result.error);
       }
     } finally {
+      uploadController.current = null;
       setUploadingImage(false);
     }
   }
@@ -223,13 +235,13 @@ export function ProductForm({
     const errors = validateProductForm(values, priceText, { categories, brands });
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
-    void onSubmit({ ...values, price: Number(priceText) });
+    void onSubmit({ ...values, price: priceText });
   }
 
   const nameError = fieldErrors.name || serverFieldErrors?.name || serverFieldErrors?.product_name;
-  const descError = serverFieldErrors?.description;
+  const descError = fieldErrors.description || serverFieldErrors?.description;
   const brandError = fieldErrors.brand || serverFieldErrors?.brand || serverFieldErrors?.brand_id;
-  const sizeError = serverFieldErrors?.size;
+  const sizeError = fieldErrors.size || serverFieldErrors?.size;
   const priceError = fieldErrors.price || serverFieldErrors?.price;
   const categoryError = fieldErrors.category || serverFieldErrors?.category || serverFieldErrors?.category_id;
   const conditionError = serverFieldErrors?.condition;
