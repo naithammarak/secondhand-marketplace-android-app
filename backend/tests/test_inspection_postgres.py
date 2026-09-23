@@ -33,7 +33,11 @@ pytestmark = pytest.mark.skipif(not PG_URL, reason="INSPECT_TEST_DATABASE_URL is
 
 
 def _config():
-    return Config(str(BACKEND / "alembic.ini"))
+    # Use the real migrations with in-memory Alembic config. Loading the INI
+    # invokes fileConfig in env.py and replaces pytest's caplog handlers.
+    config = Config()
+    config.set_main_option("script_location", str(BACKEND / "migrations"))
+    return config
 
 
 def _migrate(action, target):
@@ -172,13 +176,20 @@ def test_constraints_and_cross_inspection_evidence(pg_engine, seeded):
             savepoint.rollback()
 
         inspection_a = session.scalar(select(Inspection).where(Inspection.order_id == order_a))
-        inspection_b = session.scalar(select(Inspection).where(Inspection.order_id == order_b))
-        evidence_b = session.scalar(select(InspectionEvidence).where(InspectionEvidence.inspection_id == inspection_b.id))
-        rejects(InspectionResultEvidence(inspection_id=inspection_a.id, evidence_id=evidence_b.id))
+        pending_a = session.scalar(select(Inspection).where(Inspection.order_id == seeded[2][1]))
+        pending_b = session.scalar(select(Inspection).where(Inspection.order_id == seeded[3][1]))
+        evidence_b = InspectionEvidence(
+            inspection_id=pending_b.id, object_key=f"fixtures/inspect01/cross-{pending_b.id}.jpg",
+            mime_type="image/jpeg", size_bytes=1, sha256="b" * 64,
+            uploaded_by=pending_b.inspector_id,
+        )
+        session.add(evidence_b)
+        session.flush()
+        rejects(InspectionResultEvidence(inspection_id=pending_a.id, evidence_id=evidence_b.id))
         rejects(Inspection(order_id=order_a))
         rejects(Inspection(order_id=seeded[1][1], result="INVALID"))
         rejects(Shipment(order_id=order_a, leg="TO_CENTER", status="IN_TRANSIT", carrier="X", tracking_number="X"))
-        rejects(InspectionEvidence(inspection_id=inspection_a.id, object_key="invalid", mime_type="image/gif", size_bytes=0, sha256="x", uploaded_by=inspection_a.inspector_id))
+        rejects(InspectionEvidence(inspection_id=pending_b.id, object_key="invalid", mime_type="image/gif", size_bytes=0, sha256="x", uploaded_by=pending_b.inspector_id))
         rejects(InspectionIdempotency(order_id=order_a, actor_id=inspection_a.inspector_id, operation="result", idempotency_key="bad key", request_hash="x", response_status=200, response_body={}))
 
         first = InspectionIdempotency(
@@ -243,9 +254,10 @@ def test_final_result_freezes_evidence_links_and_selected_metadata(pg_engine, se
         session.flush()
 
         def rejects(statement):
-            with session.begin_nested():
-                with pytest.raises(DBAPIError):
-                    session.execute(statement)
+            savepoint = session.begin_nested()
+            with pytest.raises(DBAPIError):
+                session.execute(statement)
+            savepoint.rollback()
 
         rejects(text("INSERT INTO inspection_result_evidence (inspection_id, evidence_id) VALUES (:i, :e)").bindparams(i=pending.id, e=unselected.id))
         rejects(text("UPDATE inspection_evidence SET sha256 = :hash WHERE id = :e").bindparams(hash="b" * 64, e=selected.id))
@@ -267,12 +279,13 @@ def test_evidence_move_into_final_inspection_is_rejected(pg_engine, seeded):
         session.add(evidence)
         session.flush()
         evidence_id = evidence.id
-        with session.begin_nested():
-            with pytest.raises(DBAPIError, match="final inspection evidence is immutable"):
-                session.execute(
-                    update(InspectionEvidence).where(InspectionEvidence.id == evidence_id)
-                    .values(inspection_id=destination.id)
-                )
+        savepoint = session.begin_nested()
+        with pytest.raises(DBAPIError, match="final inspection evidence is immutable"):
+            session.execute(
+                update(InspectionEvidence).where(InspectionEvidence.id == evidence_id)
+                .values(inspection_id=destination.id)
+            )
+        savepoint.rollback()
         assert session.get(InspectionEvidence, evidence_id).inspection_id == source.id
         session.rollback()
 
