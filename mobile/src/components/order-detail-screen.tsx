@@ -11,7 +11,7 @@ import {
   formatBaht,
   formatDateTime,
   formatRemaining,
-  orderStatusLabels,
+  orderStatusLabel,
   paymentStatusLabels,
 } from '@/orders/order-format';
 import { useOrderDetail, useOrdersList } from '@/orders/orders-provider';
@@ -110,7 +110,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
               ) : null}
 
               <Card>
-                <StatusBadge status={order.status} label={orderStatusLabels[order.status]} />
+                <StatusBadge status={order.status} label={orderStatusLabel(order.status)} />
                 <Row label="การชำระเงิน" value={paymentStatusLabels[order.paymentStatus]} />
                 {remaining ? <Row label="เหลือเวลาชำระเงิน" value={remaining} /> : null}
                 {deadlinePassed ? (

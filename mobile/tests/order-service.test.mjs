@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOrderService, OrderServiceError } from '../src/services/order-service.ts';
-import { formatBaht, formatRemaining } from '../src/orders/order-format.ts';
+import { formatBaht, formatRemaining, orderStatusLabel, orderStatusLabels } from '../src/orders/order-format.ts';
 import { validateAddress, normalizeAddress } from '../src/orders/checkout-form.ts';
 import { parseRouteId } from '../src/orders/route-params.ts';
 
@@ -269,4 +269,53 @@ test('remaining time counts down and never goes negative', () => {
   assert.equal(formatRemaining(deadline, at('2026-09-18T11:00:00Z')), null);
   assert.equal(formatRemaining(null, at('2026-09-18T10:00:00Z')), null);
   assert.equal(formatRemaining('not-a-date', at('2026-09-18T10:00:00Z')), null);
+});
+
+
+// ---------------------------------------------------------------- สถานะที่แอปยังไม่รู้จัก
+
+test('สถานะใหม่จาก backend ไม่ทำให้หน้าคำสั่งซื้อพัง แต่กลายเป็น UNKNOWN', async () => {
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, detail({ status: 'SHIPPING_TO_INSPECTION', payment_status: 'PAID', paid_at: '2026-09-18T10:20:00Z' })),
+  });
+
+  const order = await service.getOrder('tok', 41);
+  assert.equal(order.status, 'UNKNOWN');
+  // ส่วนอื่นของคำสั่งซื้อต้องยังอ่านได้ตามปกติ
+  assert.equal(order.paymentStatus, 'PAID');
+  assert.equal(order.amounts.totalAmount, '1350.00');
+});
+
+test('สถานะใหม่ในรายการคำสั่งซื้อก็กลายเป็น UNKNOWN เหมือนกัน', async () => {
+  const item = {
+    id: 41, status: 'RECEIVED_AT_CENTER', payment_status: 'PAID', viewer_role: 'buyer',
+    product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
+    total_amount: '1350.00', seller_payout: null, currency: 'THB',
+    expires_at: null, cancel_reason: null, created_at: '2026-09-18T10:00:00Z', paid_at: '2026-09-18T10:20:00Z',
+  };
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, { items: [item], total: 1, limit: 20, offset: 0 }),
+  });
+
+  const page = await service.listOrders('tok', {});
+  assert.equal(page.items[0].status, 'UNKNOWN');
+});
+
+test('สถานะที่ไม่ใช่ข้อความยังถือว่า backend ตอบผิดรูปแบบ', async () => {
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, detail({ status: 42 })),
+  });
+  await assert.rejects(service.getOrder('tok', 41), error => error instanceof OrderServiceError && error.kind === 'server-error');
+});
+
+test('ข้อความสถานะกลางถูกใช้แทนค่าว่างเสมอ', () => {
+  assert.equal(orderStatusLabel('WAITING_PAYMENT'), 'รอชำระเงิน');
+  assert.equal(orderStatusLabel('UNKNOWN'), orderStatusLabels.UNKNOWN);
+  for (const value of ['SHIPPING_TO_BUYER', '', null, undefined]) {
+    assert.equal(orderStatusLabel(value), orderStatusLabels.UNKNOWN, `value=${value}`);
+  }
+  assert.notEqual(orderStatusLabels.UNKNOWN.trim(), '');
 });

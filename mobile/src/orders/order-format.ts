@@ -5,7 +5,15 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
   WAITING_PAYMENT: 'รอชำระเงิน',
   WAITING_SELLER_SHIP: 'ชำระแล้ว รอผู้ขายจัดส่ง',
   CANCELLED: 'ยกเลิกแล้ว',
+  // สถานะที่แอปรุ่นนี้ยังไม่รู้จัก (backend เพิ่มสถานะหลังการจัดส่งในรอบถัดไป)
+  UNKNOWN: 'สถานะอื่น ๆ กรุณาอัปเดตแอปเพื่อดูรายละเอียด',
 };
+
+/** ใช้ตัวนี้เสมอแทนการอ่าน orderStatusLabels ตรง ๆ เพื่อไม่ให้หน้าจอว่างเมื่อเจอสถานะใหม่ */
+export function orderStatusLabel(status: OrderStatus | string | null | undefined): string {
+  if (!status) return orderStatusLabels.UNKNOWN;
+  return orderStatusLabels[status as OrderStatus] ?? orderStatusLabels.UNKNOWN;
+}
 
 /** ใช้ได้ทั้งมุมมองผู้ซื้อและผู้ขาย จึงไม่เขียนว่า "คุณ" */
 export const cancelReasonLabels: Record<CancelReason, string> = {

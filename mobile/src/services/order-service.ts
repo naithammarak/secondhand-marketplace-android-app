@@ -3,7 +3,14 @@
  * เงินทุกช่องเป็น string จาก backend และห้ามแปลงเป็น number เพื่อคำนวณในแอป
  */
 
-export type OrderStatus = 'WAITING_PAYMENT' | 'WAITING_SELLER_SHIP' | 'CANCELLED';
+/**
+ * สถานะที่แอปรุ่นนี้รู้จัก Backend จะเพิ่มสถานะหลังการจัดส่งในรอบถัดไป
+ * (ส่งเข้าศูนย์ตรวจ, กำลังตรวจ, ส่งถึงผู้ซื้อ ฯลฯ ดู doc/orders/contract.md หัวข้อ 2)
+ * แอปรุ่นเก่าต้องไม่พังเมื่อเจอค่าที่ยังไม่รู้จัก จึงแปลงเป็น 'UNKNOWN' แล้วแสดงข้อความกลางแทน
+ */
+export const KNOWN_ORDER_STATUSES = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED'] as const;
+export type KnownOrderStatus = (typeof KNOWN_ORDER_STATUSES)[number];
+export type OrderStatus = KnownOrderStatus | 'UNKNOWN';
 export type CancelReason = 'BUYER' | 'EXPIRED';
 export type PaymentStatus = 'UNPAID' | 'PAID';
 export type ViewerRole = 'buyer' | 'seller';
@@ -126,7 +133,6 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MONEY = /^-?\d+\.\d{2}$/;
-const ORDER_STATUSES: OrderStatus[] = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED'];
 const CANCEL_REASONS: CancelReason[] = ['BUYER', 'EXPIRED'];
 
 const ADDRESS_API_FIELDS: Record<string, keyof ShippingAddress> = {
@@ -179,7 +185,9 @@ function toProduct(value: unknown): ProductSnapshot {
 }
 
 function toStatus(value: unknown): OrderStatus {
-  return ORDER_STATUSES.find(status => status === value) ?? bad();
+  // ค่าที่ไม่ใช่ข้อความยังถือว่า backend ตอบผิดรูปแบบ แต่ข้อความที่ยังไม่รู้จักถือว่าเป็นสถานะใหม่
+  const text = str(value);
+  return KNOWN_ORDER_STATUSES.find(status => status === text) ?? 'UNKNOWN';
 }
 
 function toCancelReason(value: unknown): CancelReason | null {

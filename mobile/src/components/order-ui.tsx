@@ -10,7 +10,10 @@ export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: '#B7791F',
   WAITING_SELLER_SHIP: '#2F855A',
   CANCELLED: '#718096',
+  UNKNOWN: '#718096',
 };
+
+export const unknownStatusColor = '#718096';
 
 export const orderErrorMessages: Record<OrderErrorKind, string> = {
   unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
@@ -105,7 +108,7 @@ export function Button({
 export function StatusBadge({ status, label }: { status: OrderStatus; label: string }) {
   return (
     <View style={styles.statusRow}>
-      <View style={[styles.statusDot, { backgroundColor: orderStatusColors[status] }]} />
+      <View style={[styles.statusDot, { backgroundColor: orderStatusColors[status] ?? unknownStatusColor }]} />
       <ThemedText type="smallBold" accessibilityLiveRegion="polite">{label}</ThemedText>
     </View>
   );
