@@ -51,3 +51,29 @@ test('uncertain create keeps the draft, requires inventory check, then allows ex
   expect(mockCreate).toHaveBeenCalledTimes(2);
   expect(mockCreate.mock.calls[1][0]).toBe(mockDraft);
 });
+
+test('a second timeout requires a new inventory check before the draft can be submitted again', async () => {
+  mockPush.mockClear();
+  mockCreate.mockReset();
+  mockDraft = { name: 'เสื้อเดิม', price: '12.34' };
+  mockCreate.mockRejectedValueOnce(new ProductServiceError('timeout', 'หมดเวลาครั้งแรก'));
+  mockCreate.mockRejectedValueOnce(new ProductServiceError('timeout', 'หมดเวลาครั้งที่สอง'));
+  render(<NewProductScreen />);
+
+  await act(async () => { fireEvent.press(screen.getByText('submit-draft')); });
+  expect(screen.queryByText('ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ')).toBeNull();
+  fireEvent.press(screen.getByText('ตรวจสินค้าของฉันก่อนลงซ้ำ'));
+  fireEvent.press(screen.getByText('ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ'));
+
+  await act(async () => { fireEvent.press(screen.getByText('submit-draft')); });
+  expect(mockCreate).toHaveBeenCalledTimes(2);
+  expect(screen.getByText('draft-disabled')).toBeTruthy();
+  expect(screen.queryByText('ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ')).toBeNull();
+  await act(async () => { fireEvent.press(screen.getByText('submit-draft')); });
+  expect(mockCreate).toHaveBeenCalledTimes(2);
+
+  fireEvent.press(screen.getByText('ตรวจสินค้าของฉันก่อนลงซ้ำ'));
+  expect(mockPush).toHaveBeenCalledTimes(2);
+  fireEvent.press(screen.getByText('ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ'));
+  expect(screen.getByText('draft-ready')).toBeTruthy();
+});

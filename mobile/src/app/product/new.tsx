@@ -40,6 +40,7 @@ export default function NewProductScreen() {
     requestController.current = controller;
     let created = false;
     setSubmitting(true);
+    setCheckedInventory(false);
     setError(null);
     setServerFieldErrors({});
     try {
