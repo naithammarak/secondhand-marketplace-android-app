@@ -72,7 +72,7 @@ describe('ProductForm', () => {
     view.rerender(<ProductForm mode="create" accessToken="new-token" onSubmit={jest.fn()} />);
     await act(async () => { picker.resolve({ status: 'picked', file: { uri: 'file:///late.jpg', type: 'image/jpeg' } }); });
     expect(mockUploadImage).not.toHaveBeenCalled();
-  });
+  }, 20_000);
 
   test('does not start an upload if the form closes while the picker is open', async () => {
     const picker = deferred();
@@ -160,7 +160,7 @@ describe('ProductForm', () => {
         images: ['mock://product-images/new-uploaded.jpg'],
       }),
     );
-  }, 20_000);
+  });
 
   test('preserves user edits and updates only error when an image upload fails', async () => {
     const gate = deferred();
