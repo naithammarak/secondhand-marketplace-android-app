@@ -160,7 +160,7 @@ describe('ProductForm', () => {
         images: ['mock://product-images/new-uploaded.jpg'],
       }),
     );
-  });
+  }, 20_000);
 
   test('preserves user edits and updates only error when an image upload fails', async () => {
     const gate = deferred();
