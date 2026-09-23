@@ -10,6 +10,7 @@ from app.api.product_reads import router as product_reads_router
 from app.api.products import router as products_router
 from app.api.orders import router as orders_router
 from app.api.inspections import router as inspections_router
+from app.api.inspect_demo import router as inspect_demo_router
 from app.api.verifications import router as verifications_router
 
 
@@ -37,6 +38,7 @@ app.include_router(verifications_router)
 app.include_router(admin_verifications_router)
 app.include_router(orders_router)
 app.include_router(inspections_router)
+app.include_router(inspect_demo_router)
 
 
 @app.get("/health")

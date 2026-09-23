@@ -4,6 +4,7 @@ import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, 
 
 import { useAuth } from '@/auth/auth-provider';
 import { getSupabaseClient } from '@/auth/supabase-client';
+import { getInspectDemoToken } from '@/auth/inspect-demo-session';
 import { createOrderService } from '@/services/order-service';
 import { createCheckoutStore, type CheckoutStore } from './checkout-store';
 import { createOrderDetailStore, type OrderDetailStore } from './order-detail-store';
@@ -36,11 +37,13 @@ export function OrdersProvider({ children }: PropsWithChildren) {
     // อ่าน token ล่าสุดจาก Supabase ทุกครั้ง จึงไม่ค้าง token ของบัญชีก่อนหน้า
     const tokens: TokenSource = {
       getAccessToken: async () => {
+        if (process.env.EXPO_PUBLIC_INSPECT_DEMO === 'true') return getInspectDemoToken();
         if (!supabase) return null;
         const { data } = await supabase.auth.getSession();
         return data.session?.access_token ?? null;
       },
       refreshAccessToken: async () => {
+        if (process.env.EXPO_PUBLIC_INSPECT_DEMO === 'true') return getInspectDemoToken();
         if (!supabase) return null;
         const { data, error } = await supabase.auth.refreshSession();
         return error || !data.session ? null : data.session.access_token;

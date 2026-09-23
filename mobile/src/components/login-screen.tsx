@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, Image, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createLoginController, type LoginAdapter, type LoginState } from '@/auth/login-controller';
 import { ThemedText } from '@/components/themed-text';
@@ -198,6 +198,7 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   const [controller] = useState(() => createLoginController(adapter));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [roleChoice, setRoleChoice] = useState<{ userId: string; role: SelectableRole } | null>(null);
+  const [demoCode, setDemoCode] = useState('');
   const hadSession = useRef(false);
   useEffect(() => () => controller.cancel(), [controller]);
   useEffect(() => {
@@ -213,6 +214,25 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
     ? roleChoice.role
     : null;
   const busy = state === 'waiting' || state === 'processing';
+
+  if (auth.demoMode && !auth.session) return (
+    <SafeAreaView style={styles.container}>
+      <ThemedView style={styles.card}>
+        <ThemedText type="subtitle" style={styles.title}>ลองตรวจสินค้า</ThemedText>
+        <ThemedText style={styles.message}>ข้อมูลทดลองอยู่ในฐานแยก ไม่ใช้บัญชีจริง</ThemedText>
+        <TextInput style={[styles.button, { paddingHorizontal: 12 }]} placeholder="รหัสทดลอง" value={demoCode}
+          onChangeText={setDemoCode} autoCapitalize="none" accessibilityLabel="รหัสทดลอง" />
+        {auth.accountError && <ThemedText style={styles.message}>เชื่อมต่อ API ทดลองไม่สำเร็จ</ThemedText>}
+        {(['SELLER', 'INSPECTOR', 'BUYER'] as const).map(role => (
+          <TouchableOpacity key={role} style={[styles.button, auth.accountChecking && styles.buttonDisabled]}
+            accessibilityRole="button" disabled={auth.accountChecking || demoCode.trim().length < 12}
+            onPress={() => { void auth.loginDemo?.(role, demoCode); }}>
+            <Text style={styles.buttonText}>เข้าโหมด {role}</Text>
+          </TouchableOpacity>
+        ))}
+      </ThemedView>
+    </SafeAreaView>
+  );
 
   if (auth.initializing) return (
     <ThemedView style={styles.container}><ActivityIndicator accessibilityLabel="กำลังกู้คืนเซสชัน" /></ThemedView>
@@ -253,6 +273,12 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && (
           <OrderEntries role={auth.account.role} />
         )}
+        {auth.demoMode && auth.account?.role === 'BUYER' ? auth.demoProducts?.map(product => (
+          <TouchableOpacity key={product.id} style={styles.button} accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/checkout/[productId]', params: { productId: String(product.id) } })}>
+            <Text style={styles.buttonText}>{product.name} #{product.id}</Text>
+          </TouchableOpacity>
+        )) : null}
         {auth.account?.role === 'INSPECTOR' && (
           <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={() => router.push('/inspections')}>
             <Text style={styles.buttonText}>เปิดคิวตรวจสินค้า</Text>

@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 let client: SupabaseClient | undefined;
 
 export function getSupabaseClient(): SupabaseClient | null {
+  if (process.env.EXPO_PUBLIC_INSPECT_DEMO === 'true') return null;
   const isWeb = process.env.EXPO_OS === 'web';
   const isWebServer = isWeb && typeof window === 'undefined';
   if (isWebServer) return null;

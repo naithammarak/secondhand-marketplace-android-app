@@ -11,6 +11,7 @@ import { parseAuthCallback } from './auth-callback';
 import { createGoogleLoginAdapter } from './google-login-adapter';
 import type { LoginAdapter, LoginResult } from './login-controller';
 import { getSupabaseClient } from './supabase-client';
+import { setInspectDemoToken } from './inspect-demo-session';
 import { verifyAccountWithRefresh, withTokenRefresh } from './session-account';
 import { createMeService, MeServiceError, type MeErrorKind, type MeResult,
   type SelectableRole } from '@/services/me-service';
@@ -35,6 +36,9 @@ type AuthContextValue = {
   selectRole(role: SelectableRole): Promise<void>;
   retryAccount(): Promise<void>;
   logout(): Promise<void>;
+  demoMode?: boolean;
+  loginDemo?(role: 'BUYER' | 'SELLER' | 'INSPECTOR', code: string): Promise<void>;
+  demoProducts?: { id: number; name: string }[];
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -65,7 +69,7 @@ function mapMeError(error: unknown): LoginResult {
   return 'backend-error';
 }
 
-export function AuthProvider({ children }: PropsWithChildren) {
+function ProductionAuthProvider({ children }: PropsWithChildren) {
   const supabase = useMemo(() => getSupabaseClient(), []);
   const redirectTo = useMemo(() => getAuthRedirectUri(), []);
   const meService = useMemo(() => createMeService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL }), []);
@@ -351,6 +355,56 @@ export function AuthProvider({ children }: PropsWithChildren) {
     accountError, roleSaving, roleError, loginAdapter, selectRole, retryAccount, logout }}>
     {children}
   </AuthContext.Provider>;
+}
+
+function DemoAuthProvider({ children }: PropsWithChildren) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [account, setAccount] = useState<MeResult | null>(null);
+  const [accountChecking, setAccountChecking] = useState(false);
+  const [accountError, setAccountError] = useState<LoginResult | null>(null);
+  const [demoProducts, setDemoProducts] = useState<{ id: number; name: string }[]>([]);
+  const loginDemo = async (role: 'BUYER' | 'SELLER' | 'INSPECTOR', code: string) => {
+    setAccountChecking(true);
+    setAccountError(null);
+    try {
+      const baseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+      if (!baseUrl) throw new Error('Missing demo API');
+      const response = await fetch(`${new URL(baseUrl).origin}/__inspect_demo/session/${role}`, {
+        method: 'POST', headers: { 'X-Demo-Code': code.trim() },
+      });
+      if (!response.ok) throw new Error('Demo session unavailable');
+      const data = await response.json() as {
+        access_token: string; expires_at: number; products: { id: number; name: string }[];
+        user: { id: string; role: 'BUYER' | 'SELLER' | 'INSPECTOR'; name: string };
+      };
+      if (data.user.role !== role) throw new Error('Wrong demo role');
+      setInspectDemoToken(data.access_token);
+      setSession({ access_token: data.access_token, expires_at: data.expires_at,
+        user: { id: data.user.id } } as unknown as Session);
+      setAccount({ fullName: data.user.name, role, source: 'backend' });
+      setDemoProducts(data.products);
+    } catch {
+      setAccountError('backend-error');
+    } finally { setAccountChecking(false); }
+  };
+  const logout = async () => {
+    setInspectDemoToken(null);
+    setSession(null);
+    setAccount(null);
+    setDemoProducts([]);
+    setAccountError(null);
+  };
+  return <AuthContext.Provider value={{ initializing: false, session, account, accountChecking,
+    accountError, roleSaving: false, roleError: null, selectRole: async () => {},
+    retryAccount: async () => {}, logout, demoMode: true, loginDemo, demoProducts }}>
+    {children}
+  </AuthContext.Provider>;
+}
+
+export function AuthProvider({ children }: PropsWithChildren) {
+  return process.env.EXPO_PUBLIC_INSPECT_DEMO === 'true'
+    ? <DemoAuthProvider>{children}</DemoAuthProvider>
+    : <ProductionAuthProvider>{children}</ProductionAuthProvider>;
 }
 
 export function useAuth() {
