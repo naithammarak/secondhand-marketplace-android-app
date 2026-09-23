@@ -30,6 +30,16 @@ export interface Product {
   updatedAt?: string;
 }
 
+export type MyProductSummary = {
+  id: string;
+  name: string;
+  price: number;
+  status: string;
+  mainImageUrl: string | null;
+};
+
+export type MyProductPage = { items: MyProductSummary[]; hasNext: boolean };
+
 export type ProductInput = Omit<Product, 'id' | 'saleType'>;
 
 export const SALE_TYPE: SaleType = 'FIXED_PRICE';
@@ -134,19 +144,6 @@ let mockIdCounter = 0;
 
 function cloneProduct(product: Product): Product {
   return { ...product, images: [...product.images] };
-}
-
-function parseNumericSuffix(val: string): number | null {
-  const match = val.match(/\d+$/);
-  return match ? parseInt(match[0], 10) : null;
-}
-
-function toBackendCategoryId(categoryName: string): number {
-  return CATEGORY_NAME_TO_ID[categoryName] ?? 5;
-}
-
-function toBackendBrandId(brandName: string): number {
-  return BRAND_NAME_TO_ID[brandName] ?? 1;
 }
 
 function formatBackendPrice(price: number): string {
@@ -282,6 +279,27 @@ export function createProductService(options: ProductServiceOptions = {}) {
   };
 
   return {
+    async getMyProducts(page = 1, explicitToken?: string): Promise<MyProductPage> {
+      if (!baseUrl) {
+        const start = (page - 1) * 20;
+        return {
+          items: mockProducts.slice(start, start + 20).map(product => ({
+            id: product.id, name: product.name, price: product.price,
+            status: product.status ?? 'AVAILABLE', mainImageUrl: product.images[0] ?? null,
+          })),
+          hasNext: start + 20 < mockProducts.length,
+        };
+      }
+      const res = await request(`/products/me?page=${page}&page_size=20`, { method: 'GET' }, explicitToken);
+      const json = await res.json();
+      return {
+        items: json.data.map((item: any) => ({
+          id: String(item.id), name: item.product_name, price: Number(item.price),
+          status: item.status, mainImageUrl: item.main_image?.image_url ?? null,
+        })),
+        hasNext: json.meta.has_next === true,
+      };
+    },
     async createProduct(input: ProductInput, explicitToken?: string): Promise<Product> {
       if (!baseUrl) {
         mockIdCounter += 1;
@@ -290,26 +308,27 @@ export function createProductService(options: ProductServiceOptions = {}) {
           images: [...input.images],
           id: `mock-${mockIdCounter}`,
           saleType: SALE_TYPE,
+          status: 'AVAILABLE',
         };
         mockProducts = [...mockProducts, product];
         return cloneProduct(product);
       }
 
+      if (!input.categoryId || !input.brandId || input.images.length < 1 || input.images.length > 10) {
+        throw new ProductServiceError('validation-error', 'กรุณาตรวจสอบหมวดหมู่ แบรนด์ และรูปภาพ');
+      }
       const imageRefs = input.images.map(url => {
         const meta = getProductImageMeta(url);
-        const uploadId = meta?.uploadId ?? parseNumericSuffix(url) ?? 1;
-        return { upload_id: uploadId };
+        if (!meta?.uploadId) throw new ProductServiceError('validation-error', 'กรุณาอัปโหลดรูปภาพใหม่');
+        return { upload_id: meta.uploadId };
       });
-
-      const categoryId = input.categoryId ?? toBackendCategoryId(input.category);
-      const brandId = input.brandId ?? toBackendBrandId(input.brand);
 
       const body = {
         product_name: input.name.trim(),
         description: input.description.trim() || input.name.trim(),
         price: formatBackendPrice(input.price),
-        category_id: categoryId,
-        brand_id: brandId,
+        category_id: input.categoryId,
+        brand_id: input.brandId,
         size: input.size.trim() || 'M',
         condition: input.condition,
         sale_type: SALE_TYPE,
@@ -334,28 +353,27 @@ export function createProductService(options: ProductServiceOptions = {}) {
       if (!baseUrl) {
         const index = mockProducts.findIndex(product => product.id === id);
         if (index === -1) throw new ProductServiceError('not-found');
-        const updated: Product = { ...input, images: [...input.images], id, saleType: SALE_TYPE };
+        const updated: Product = { ...input, images: [...input.images], id, saleType: SALE_TYPE, status: 'AVAILABLE' };
         mockProducts = [...mockProducts.slice(0, index), updated, ...mockProducts.slice(index + 1)];
         return cloneProduct(updated);
       }
 
+      if (!input.categoryId || !input.brandId || input.images.length < 1 || input.images.length > 10) {
+        throw new ProductServiceError('validation-error', 'กรุณาตรวจสอบหมวดหมู่ แบรนด์ และรูปภาพ');
+      }
       const imageRefs = input.images.map(url => {
         const meta = getProductImageMeta(url);
         if (meta?.imageId) return { image_id: meta.imageId };
         if (meta?.uploadId) return { upload_id: meta.uploadId };
-        const num = parseNumericSuffix(url);
-        return num ? { upload_id: num } : { upload_id: 1 };
+        throw new ProductServiceError('validation-error', 'กรุณาโหลดรูปภาพสินค้าใหม่');
       });
-
-      const categoryId = input.categoryId ?? toBackendCategoryId(input.category);
-      const brandId = input.brandId ?? toBackendBrandId(input.brand);
 
       const body: Record<string, any> = {
         product_name: input.name.trim(),
         description: input.description.trim() || input.name.trim(),
         price: formatBackendPrice(input.price),
-        category_id: categoryId,
-        brand_id: brandId,
+        category_id: input.categoryId,
+        brand_id: input.brandId,
         size: input.size.trim() || 'M',
         condition: input.condition,
         sale_type: SALE_TYPE,
@@ -383,22 +401,9 @@ export function createProductService(options: ProductServiceOptions = {}) {
       }
 
       const token = await resolveAccessToken(explicitToken);
-      // For sellers editing/managing their products, prefer the owner endpoint /products/me/{id}
-      if (token) {
-        try {
-          const res = await request(`/products/me/${id}`, { method: 'GET' }, token);
-          const json = await res.json();
-          return transformBackendProduct(json.data ?? json);
-        } catch (error) {
-          if (error instanceof ProductServiceError && error.kind === 'not-found') {
-            return null;
-          }
-          // If forbidden (e.g. non-owner or buyer), fall back to public read below
-        }
-      }
-
+      if (!token) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
       try {
-        const res = await request(`/products/${id}`, { method: 'GET' }, explicitToken);
+        const res = await request(`/products/me/${id}`, { method: 'GET' }, token);
         const json = await res.json();
         return transformBackendProduct(json.data ?? json);
       } catch (error) {

@@ -4,7 +4,9 @@ import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity
 import {
   addProductImage,
   emptyProductFormValues,
+  MAX_PRODUCT_IMAGES,
   uploadProductImage,
+  validateProductImageFile,
   validateProductForm,
   type ProductFieldErrors,
   type ProductFormValues,
@@ -86,9 +88,7 @@ export function syncValuesWithOptions(
     const unbranded = brandList.find(b => b.name === 'ไม่ระบุแบรนด์') ?? brandList[0];
     if (unbranded) {
       updated.brandId = unbranded.id;
-      if (!current.brand) {
-        updated.brand = unbranded.name;
-      }
+      updated.brand = unbranded.name;
     }
   }
 
@@ -115,10 +115,10 @@ export function ProductForm({
   const [fieldErrors, setFieldErrors] = useState<ProductFieldErrors>({});
 
   const applyLoadedOptions = useCallback((catList: CategoryOption[], brandList: BrandOption[]) => {
-    if (catList.length === 0) {
+    if (catList.length === 0 || brandList.length === 0) {
       setCategories([]);
       setBrands([]);
-      setOptionsError('ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ');
+      setOptionsError(catList.length === 0 ? 'ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ' : 'ไม่พบข้อมูลแบรนด์ในระบบ');
       return;
     }
     setCategories(catList);
@@ -164,9 +164,10 @@ export function ProductForm({
   }, [applyLoadedOptions]);
 
   const disabled = submitting || submitSuccess;
-  const cannotSubmit = disabled || loadingOptions || !!optionsError || categories.length === 0;
+  const cannotSubmit = disabled || uploadingImage || loadingOptions || !!optionsError || categories.length === 0 || brands.length === 0;
 
   async function handleAddImage() {
+    if (values.images.length >= MAX_PRODUCT_IMAGES || uploadingImage) return;
     setUploadingImage(true);
     setUploadError(null);
     try {
@@ -176,10 +177,15 @@ export function ProductForm({
         setUploadError('ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ');
         return;
       }
+      const fileError = validateProductImageFile(picked.file);
+      if (fileError) {
+        setUploadError(fileError);
+        return;
+      }
       const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file));
       if (result.url) {
         const imageUrl = result.url;
-        setValues(current => addProductImage(current, imageUrl));
+        setValues(current => current.images.length < MAX_PRODUCT_IMAGES ? addProductImage(current, imageUrl) : current);
       } else {
         setUploadError(result.error);
       }
@@ -224,7 +230,7 @@ export function ProductForm({
   const priceError = fieldErrors.price || serverFieldErrors?.price;
   const categoryError = fieldErrors.category || serverFieldErrors?.category || serverFieldErrors?.category_id;
   const conditionError = serverFieldErrors?.condition;
-  const imagesError = serverFieldErrors?.images || serverFieldErrors?.photos || serverFieldErrors?.product_images;
+  const imagesError = fieldErrors.images || serverFieldErrors?.images || serverFieldErrors?.photos || serverFieldErrors?.product_images;
 
   return (
     <View style={styles.form}>
@@ -351,9 +357,7 @@ export function ProductForm({
             <ActivityIndicator size="small" color={ACCENT} />
             <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
           </View>
-        ) : categories.length === 0 ? (
-          <Text style={styles.fieldErrorText}>ไม่พบข้อมูลหมวดหมู่สินค้าในระบบ</Text>
-        ) : (
+        ) : categories.length === 0 ? null : (
           <View style={styles.chipRow}>
             {categories.map(option => {
               const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
@@ -395,7 +399,8 @@ export function ProductForm({
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>รูปภาพ</Text>
+        <Text style={styles.label}>รูปภาพ * ({values.images.length}/{MAX_PRODUCT_IMAGES})</Text>
+        <Text style={styles.optionsInlineLoadingText}>JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป</Text>
         <View style={styles.imageGrid}>
           {values.images.map((url, index) => (
             <View key={url} style={styles.imageTile}>
@@ -462,7 +467,9 @@ export function ProductForm({
           <TouchableOpacity
             style={styles.addImageTile}
             onPress={() => { void handleAddImage(); }}
-            disabled={uploadingImage || disabled}
+            disabled={uploadingImage || disabled || values.images.length >= MAX_PRODUCT_IMAGES}
+            accessibilityRole="button"
+            accessibilityLabel="เพิ่มรูป"
           >
             {uploadingImage ? (
               <ActivityIndicator color={ACCENT} />

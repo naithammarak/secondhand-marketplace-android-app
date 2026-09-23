@@ -19,6 +19,7 @@ export type ProductEditState = {
   submitSuccess: boolean;
   cancelling: boolean;
   cancelError: boolean;
+  cancelErrorMessage?: string | null;
   cancelSuccess: boolean;
 };
 
@@ -35,6 +36,7 @@ export const initialProductEditState: ProductEditState = {
   submitSuccess: false,
   cancelling: false,
   cancelError: false,
+  cancelErrorMessage: null,
   cancelSuccess: false,
 };
 
@@ -115,14 +117,14 @@ export function createProductEditStore(service: ProductEditService) {
       const productId = state.productId;
       if (!productId || state.cancelling || !service.cancelProduct) return;
       const current = generation;
-      set({ cancelling: true, cancelError: false });
+      set({ cancelling: true, cancelError: false, cancelErrorMessage: null });
       try {
         const product = await service.cancelProduct(productId, token);
         if (current !== generation) return;
         set({ cancelling: false, cancelSuccess: true, cancelError: false, product });
-      } catch {
+      } catch (err) {
         if (current !== generation) return;
-        set({ cancelling: false, cancelError: true });
+        set({ cancelling: false, cancelError: true, cancelErrorMessage: err instanceof Error ? err.message : 'ยกเลิกสินค้าไม่สำเร็จ กรุณาลองใหม่' });
       }
     },
   };

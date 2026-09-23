@@ -111,6 +111,8 @@ test('shows "ลงขายสินค้า" button and navigates to /product
   expect(postProductBtn).toBeTruthy();
   await fireEvent.press(postProductBtn);
   expect(mockPush).toHaveBeenCalledWith('/product/new');
+  await fireEvent.press(screen.getByRole('button', { name: 'สินค้าของฉัน' }));
+  expect(mockPush).toHaveBeenCalledWith('/product/mine');
 });
 
 test('does not show "ลงขายสินค้า" button when seller is not APPROVED', async () => {
@@ -121,5 +123,5 @@ test('does not show "ลงขายสินค้า" button when seller is no
   await render(<LoginScreen />);
 
   expect(screen.queryByRole('button', { name: 'ลงขายสินค้า' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'สินค้าของฉัน' })).toBeNull();
 });
-

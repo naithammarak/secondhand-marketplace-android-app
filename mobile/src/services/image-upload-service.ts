@@ -1,5 +1,5 @@
 // PRODUCT-06: Product image upload service supporting real multipart backend upload and fallback mock.
-import { registerProductImage } from './product-service.ts';
+import { ProductServiceError, registerProductImage } from './product-service.ts';
 
 export interface UploadedImage {
   url: string;
@@ -66,7 +66,7 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
 
       const token = await resolveAccessToken(explicitToken);
       if (!token) {
-        throw new Error('Authentication required for image upload');
+        throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
       }
 
       const formData = new FormData();
@@ -82,23 +82,23 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
         throw new Error('No image file provided for upload');
       }
 
-      const response = await fetcher(`${baseUrl}/products/images/upload`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      let response: Response;
+      try {
+        response = await fetcher(`${baseUrl}/products/images/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+      } catch {
+        throw new ProductServiceError('network-error', 'เครือข่ายขัดข้อง กรุณาลองใหม่');
+      }
 
       if (!response.ok) {
-        let errorMsg = 'Failed to upload image';
-        try {
-          const errJson = await response.json();
-          if (errJson?.error?.message) errorMsg = errJson.error.message;
-        } catch {
-          // ignore
-        }
-        throw new Error(errorMsg);
+        if (response.status === 401) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
+        if (response.status === 403) throw new ProductServiceError('forbidden', 'บัญชีผู้ขายยังไม่ได้รับอนุมัติหรือไม่มีสิทธิ์อัปโหลดรูป');
+        if (response.status === 409) throw new ProductServiceError('conflict', 'สถานะบัญชีหรือรูปภาพเปลี่ยนไป กรุณาลองใหม่');
+        if (response.status === 422) throw new ProductServiceError('validation-error', 'รูปภาพไม่ถูกต้อง กรุณาตรวจสอบชนิดและขนาดไฟล์');
+        throw new ProductServiceError('server-error', 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
       }
 
       const json = await response.json();

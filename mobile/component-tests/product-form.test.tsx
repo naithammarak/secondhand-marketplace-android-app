@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { ProductForm } from '@/components/product-form';
+import { emptyProductFormValues } from '@/products/product-form';
 
 let mockUploadImage = jest.fn();
 let mockGetCategories = jest.fn().mockResolvedValue([
@@ -186,18 +187,14 @@ describe('ProductForm', () => {
     expect(screen.getByDisplayValue('เสื้อผ้าที่แก้ระหว่างรออัปโหลด')).toBeTruthy();
     expect(screen.queryByDisplayValue('เสื้อผ้าเดิม')).toBeNull();
 
-    // 5. Form remains editable and can be submitted with latest values
+    // 5. Form remains editable, but cannot be submitted without a required image
     const submitButton = screen.getByText('ลงขายสินค้า');
     await act(async () => {
       fireEvent.press(submitButton);
     });
 
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'เสื้อผ้าที่แก้ระหว่างรออัปโหลด',
-        images: [],
-      }),
-    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('กรุณาแนบรูปภาพ 1–10 รูป')).toBeTruthy();
   });
 
   test('displays serverFieldErrors under each relevant input', async () => {
@@ -315,6 +312,7 @@ describe('ProductForm', () => {
     render(
       <ProductForm
         mode="create"
+        initialValues={{ ...emptyProductFormValues, images: ['mock://img.jpg'] }}
         onSubmit={onSubmit}
       />,
     );
@@ -371,7 +369,7 @@ describe('ProductForm', () => {
       price: 290,
       category: 'เสื้อผ้า',
       brand: 'ไม่ระบุแบรนด์',
-      images: [],
+      images: ['mock://img.jpg'],
     };
 
     render(
@@ -409,6 +407,7 @@ describe('ProductForm', () => {
     render(
       <ProductForm
         mode="create"
+        initialValues={{ ...emptyProductFormValues, images: ['mock://img.jpg'] }}
         onSubmit={onSubmit}
       />,
     );
@@ -464,5 +463,27 @@ describe('ProductForm', () => {
       }),
     );
   });
-});
 
+  test('blocks submission and offers retry when the brand list is empty', async () => {
+    mockGetBrands.mockResolvedValueOnce([]);
+    const onSubmit = jest.fn();
+    render(<ProductForm mode="create" initialValues={{ ...emptyProductFormValues, images: ['mock://img.jpg'] }} onSubmit={onSubmit} />);
+
+    expect(await screen.findByText('ไม่พบข้อมูลแบรนด์ในระบบ')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('ลงขายสินค้า')); });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => { fireEvent.press(screen.getByText('ลองใหม่อีกครั้ง')); });
+    expect(await screen.findByText('Nike')).toBeTruthy();
+  });
+
+  test('disables image picker after ten images', async () => {
+    render(<ProductForm mode="edit" initialValues={{
+      ...emptyProductFormValues, images: Array.from({ length: 10 }, (_, i) => `mock://img-${i}.jpg`),
+    }} onSubmit={jest.fn()} />);
+    const add = screen.getByRole('button', { name: 'เพิ่มรูป' });
+    expect(add.props.accessibilityState?.disabled ?? add.props.disabled).toBeTruthy();
+    await act(async () => { fireEvent.press(add); });
+    expect(mockUploadImage).not.toHaveBeenCalled();
+  });
+});

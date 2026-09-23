@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,16 +18,20 @@ export default function NewProductScreen() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
+  const submittingRef = useRef(false);
 
   async function handleSubmit(values: ProductFormValues) {
+    if (submittingRef.current || success) return;
+    submittingRef.current = true;
+    let created = false;
     setSubmitting(true);
     setError(null);
     setServerFieldErrors({});
     try {
       await productService.createProduct(values, session?.access_token);
+      created = true;
       setSuccess(true);
-      if (router.canGoBack()) router.back();
-      else router.replace('/');
+      router.replace('/product/mine');
     } catch (err) {
       if (err instanceof ProductServiceError) {
         setError(err.message);
@@ -36,6 +40,7 @@ export default function NewProductScreen() {
         setError(err instanceof Error ? err.message : 'ลงขายสินค้าไม่สำเร็จ กรุณาลองใหม่');
       }
     } finally {
+      if (!created) submittingRef.current = false;
       setSubmitting(false);
     }
   }

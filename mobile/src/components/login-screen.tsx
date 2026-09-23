@@ -117,14 +117,24 @@ function SellerVerificationEntry() {
         </Text>
       </TouchableOpacity>
       {status === 'APPROVED' && (
-        <TouchableOpacity
-          style={styles.button}
-          accessibilityRole="button"
-          accessibilityLabel="ไปหน้าลงขายสินค้า"
-          onPress={() => router.push('/product/new')}
-        >
-          <Text style={styles.buttonText}>ลงขายสินค้า</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={styles.button}
+            accessibilityRole="button"
+            accessibilityLabel="ไปหน้าลงขายสินค้า"
+            onPress={() => router.push('/product/new')}
+          >
+            <Text style={styles.buttonText}>ลงขายสินค้า</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.button}
+            accessibilityRole="button"
+            accessibilityLabel="สินค้าของฉัน"
+            onPress={() => router.push('/product/mine')}
+          >
+            <Text style={styles.buttonText}>สินค้าของฉัน</Text>
+          </TouchableOpacity>
+        </>
       )}
     </>
   );

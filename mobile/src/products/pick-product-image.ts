@@ -21,9 +21,9 @@ const EXTENSION_TYPES: Record<string, string> = {
 
 export function guessProductImageType(fileName?: string | null, mimeType?: string | null): string {
   const declared = (mimeType ?? '').split(';')[0].trim().toLowerCase();
-  if (['image/jpeg', 'image/png'].includes(declared)) return declared;
+  if (declared) return declared;
   const extension = (fileName ?? '').split('.').pop()?.toLowerCase() ?? '';
-  return EXTENSION_TYPES[extension] ?? 'image/jpeg';
+  return EXTENSION_TYPES[extension] ?? 'application/octet-stream';
 }
 
 export async function pickProductImage(): Promise<PickProductImageResult> {
@@ -54,13 +54,17 @@ export async function pickProductImage(): Promise<PickProductImageResult> {
     }
 
     const asset = result.assets[0];
-    const name = asset.fileName ?? `product-${Date.now()}.jpg`;
+    const uriName = asset.uri.startsWith('file:') ? asset.uri.split(/[?#]/)[0].split('/').pop() : undefined;
+    const uriType = guessProductImageType(uriName);
+    // Expo can convert a HEIC library asset into a JPEG file. Upload the resulting file's type and extension.
+    const convertedFile = uriName && uriType !== 'application/octet-stream';
+    const name = convertedFile ? uriName : asset.fileName ?? `product-${Date.now()}`;
     return {
       status: 'picked',
       file: {
         uri: asset.uri,
         name,
-        type: guessProductImageType(asset.fileName, asset.mimeType),
+        type: convertedFile ? uriType : guessProductImageType(asset.fileName, asset.mimeType),
         size: asset.fileSize,
         file: asset.file,
       },

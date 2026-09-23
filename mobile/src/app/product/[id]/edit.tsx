@@ -62,7 +62,7 @@ export default function EditProductScreen() {
             {!state.loading && state.notFound && <Text style={styles.notFoundText}>ไม่พบสินค้านี้</Text>}
             {!state.loading && state.loadError && (
               <View style={styles.loadErrorBox}>
-                <Text style={styles.loadErrorText}>โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
+                <Text style={styles.loadErrorText}>โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาตรวจสอบการเข้าสู่ระบบแล้วลองใหม่</Text>
                 <TouchableOpacity
                   style={styles.retryButton}
                   onPress={() => { void store.retry(session?.access_token); }}
@@ -71,7 +71,10 @@ export default function EditProductScreen() {
                 </TouchableOpacity>
               </View>
             )}
-            {!state.loading && state.product && (
+            {!state.loading && state.product?.status !== 'AVAILABLE' && state.product && (
+              <Text style={styles.notFoundText}>สินค้านี้อยู่ในสถานะที่แก้ไขหรือยกเลิกไม่ได้</Text>
+            )}
+            {!state.loading && state.product?.status === 'AVAILABLE' && (
               <>
                 <ProductForm
                   mode="edit"
@@ -82,10 +85,14 @@ export default function EditProductScreen() {
                   serverFieldErrors={state.submitFieldErrors}
                   onSubmit={handleSubmit}
                 />
-                {state.product.status !== 'CANCELLED' && (
-                  <View style={styles.cancelSection}>
+                <View style={styles.cancelSection}>
                     {state.cancelError && (
-                      <Text style={styles.cancelErrorText}>ยกเลิกสินค้าไม่สำเร็จ กรุณาลองใหม่</Text>
+                      <>
+                        <Text style={styles.cancelErrorText}>{state.cancelErrorMessage ?? 'ยกเลิกสินค้าไม่สำเร็จ กรุณาลองใหม่'}</Text>
+                        <TouchableOpacity style={styles.retryButton} onPress={() => { void store.retry(session?.access_token); }} accessibilityRole="button">
+                          <Text style={styles.retryButtonText}>โหลดสถานะล่าสุด</Text>
+                        </TouchableOpacity>
+                      </>
                     )}
                     {confirmingCancel ? (
                       <View style={styles.confirmBox}>
@@ -127,8 +134,7 @@ export default function EditProductScreen() {
                         <Text style={styles.cancelButtonText}>ยกเลิกการขายสินค้านี้</Text>
                       </TouchableOpacity>
                     )}
-                  </View>
-                )}
+                </View>
                 {state.cancelSuccess && (
                   <Text style={styles.cancelSuccessText}>สินค้านี้ถูกยกเลิกการขายแล้ว กำลังกลับ...</Text>
                 )}

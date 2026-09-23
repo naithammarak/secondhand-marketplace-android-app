@@ -1,5 +1,6 @@
 import {
   CONDITION_OPTIONS,
+  ProductServiceError,
   type BrandOption,
   type CategoryOption,
   type ProductInput,
@@ -25,7 +26,21 @@ export type ProductFieldErrors = {
   price?: string;
   category?: string;
   brand?: string;
+  images?: string;
 };
+
+export const MAX_PRODUCT_IMAGES = 10;
+export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+export function validateProductImageFile(file: { type: string; size?: number }): string | null {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
+    return 'รองรับเฉพาะรูป JPEG หรือ PNG';
+  }
+  if (typeof file.size === 'number' && (file.size <= 0 || file.size > MAX_PRODUCT_IMAGE_BYTES)) {
+    return 'รูปภาพต้องมีขนาดไม่เกิน 5 MiB';
+  }
+  return null;
+}
 
 export function validateProductForm(
   values: ProductFormValues,
@@ -48,6 +63,9 @@ export function validateProductForm(
       errors.brand = 'กรุณาเลือกแบรนด์สินค้า';
     }
   }
+  if (values.images.length < 1 || values.images.length > MAX_PRODUCT_IMAGES) {
+    errors.images = `กรุณาแนบรูปภาพ 1–${MAX_PRODUCT_IMAGES} รูป`;
+  }
   return errors;
 }
 
@@ -62,8 +80,8 @@ export async function uploadProductImage(
   try {
     const uploaded = await uploadImage();
     return { url: uploaded.url, error: null };
-  } catch {
-    return { url: null, error: 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
+  } catch (error) {
+    return { url: null, error: error instanceof ProductServiceError ? error.message : 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่' };
   }
 }
 
