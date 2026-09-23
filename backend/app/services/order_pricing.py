@@ -4,6 +4,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 CURRENCY = "THB"
@@ -13,12 +14,20 @@ SHIPPING_FEE = Decimal("50.00")
 INSPECTION_FEE = Decimal("100.00")
 COMMISSION_RATE = Decimal("0.05")
 
-# สถานะสินค้าที่งานสั่งซื้อใช้ (PRODUCT ยังไม่มีค่าที่ตกลงกัน ดู Decision Log D-01)
+# สถานะสินค้าที่งานสั่งซื้อใช้ ตรงกับ ck_products_status ใน app/models/product.py (ดู D-01)
 PRODUCT_AVAILABLE = "AVAILABLE"
 PRODUCT_RESERVED = "RESERVED"
 
 ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
+ORDER_CANCELLED = "CANCELLED"
+
+# เหตุผลที่ Order ถูกยกเลิก เก็บแยกจากสถานะเพื่อให้หน้าจอบอกผู้ใช้ได้ว่าใครเป็นคนยกเลิก
+CANCEL_REASON_BUYER = "BUYER"
+CANCEL_REASON_EXPIRED = "EXPIRED"
+
+# ผู้ซื้อมีเวลาจ่าย 30 นาทีนับจากสร้าง Order หมดแล้วสินค้าต้องกลับไปขายต่อได้ (D-05)
+PAYMENT_WINDOW = timedelta(minutes=30)
 
 ATTEMPT_SUCCEEDED = "SUCCEEDED"
 ATTEMPT_FAILED = "FAILED"
@@ -60,3 +69,18 @@ def calculate_amounts(item_price: Decimal) -> OrderAmounts:
 
 def receipt_number(order_id: int) -> str:
     return f"RC-{order_id:06d}"
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    """ฐานข้อมูลบางตัว (เช่น SQLite) คืนเวลาแบบไม่มี timezone ให้ถือว่าเป็น UTC เสมอ"""
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def payment_deadline(created_at: datetime) -> datetime:
+    return created_at + PAYMENT_WINDOW

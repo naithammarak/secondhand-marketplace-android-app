@@ -28,11 +28,23 @@ const order = (extra = {}) => ({
   paidAt: null,
   receiptNo: null,
   canPay: true,
+  canCancel: true,
+  expiresAt: '2026-09-18T10:30:00Z',
+  cancelledAt: null,
+  cancelReason: null,
   createdAt: null,
   ...extra,
 });
 
-const paid = () => order({ status: 'WAITING_SELLER_SHIP', paymentStatus: 'PAID', canPay: false, receiptNo: 'RC-000041' });
+const paid = () => order({
+  status: 'WAITING_SELLER_SHIP', paymentStatus: 'PAID', canPay: false, canCancel: false,
+  receiptNo: 'RC-000041',
+});
+
+const cancelled = (reason = 'BUYER') => order({
+  status: 'CANCELLED', canPay: false, canCancel: false,
+  cancelledAt: '2026-09-18T10:05:00Z', cancelReason: reason,
+});
 
 function keys() {
   let n = 0;
@@ -200,7 +212,7 @@ test('switching account clears checkout data and ignores late responses', async 
 // ------------------------------------------------------------------ detail + pay (ORDER-04/05)
 
 function detailSetup(handlers) {
-  const calls = { get: 0, pay: [], receipt: 0 };
+  const calls = { get: 0, pay: [], receipt: 0, cancel: 0 };
   const store = createOrderDetailStore({
     ...tokens(),
     newIdempotencyKey: keys(),
@@ -213,6 +225,10 @@ function detailSetup(handlers) {
       getReceipt: async () => {
         calls.receipt += 1;
         return handlers.getReceipt();
+      },
+      cancelOrder: async () => {
+        calls.cancel += 1;
+        return handlers.cancelOrder(calls.cancel);
       },
     },
   });
@@ -447,4 +463,99 @@ test('an empty page ends pagination even if total says there is more', async () 
   assert.equal(store.hasMore(), false);
   await store.loadMore();
   assert.equal(calls, 2);
+});
+
+
+// ------------------------------------------------------------------ ยกเลิก (ORDER-08)
+
+test('cancelling shows the cancelled order returned by the server', async () => {
+  const { store, calls } = detailSetup({
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: () => cancelled(),
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  await store.cancel();
+
+  const state = store.getSnapshot();
+  assert.equal(calls.cancel, 1);
+  assert.equal(state.order.status, 'CANCELLED');
+  assert.equal(state.order.cancelReason, 'BUYER');
+  assert.equal(state.order.canCancel, false);
+  assert.equal(state.cancelling, false);
+  assert.equal(state.cancelError, null);
+});
+
+test('cancel is never sent when the server says the order cannot be cancelled', async () => {
+  const { store, calls } = detailSetup({
+    getOrder: () => paid(),
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: () => { throw new Error('cancel must not be called'); },
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  await store.cancel();
+  assert.equal(calls.cancel, 0);
+});
+
+test('double tap on cancel sends one request only', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const { store, calls } = detailSetup({
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: async () => { await gate; return cancelled(); },
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  const first = store.cancel();
+  const second = store.cancel();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls.cancel, 1);
+});
+
+test('a conflict while cancelling shows the real status instead of a stale one', async () => {
+  const { store, calls } = detailSetup({
+    getOrder: n => (n === 1 ? order() : paid()),
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: () => { throw new OrderServiceError('conflict', { code: 'order_already_paid' }); },
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  await store.cancel();
+
+  const state = store.getSnapshot();
+  assert.equal(calls.get, 2);
+  assert.equal(state.cancelCode, 'order_already_paid');
+  assert.equal(state.order.paymentStatus, 'PAID');
+  assert.equal(state.order.status, 'WAITING_SELLER_SHIP');
+});
+
+test('an order cancelled by the deadline keeps its reason and blocks paying', async () => {
+  const { store, calls } = detailSetup({
+    getOrder: () => cancelled('EXPIRED'),
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: () => { throw new Error('unused'); },
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  await store.pay('SUCCESS');
+
+  const state = store.getSnapshot();
+  assert.equal(calls.pay.length, 0);
+  assert.equal(state.order.cancelReason, 'EXPIRED');
+  assert.equal(state.order.canPay, false);
+});
+
+test('logging out clears a cancel error', async () => {
+  const { store } = detailSetup({
+    pay: () => { throw new Error('unused'); },
+    cancelOrder: () => { throw new OrderServiceError('network-error'); },
+  });
+  store.setOwner('user-a');
+  await store.open(41);
+  await store.cancel();
+  assert.equal(store.getSnapshot().cancelError, 'network-error');
+  store.setOwner(null);
+  assert.equal(store.getSnapshot().cancelError, null);
 });

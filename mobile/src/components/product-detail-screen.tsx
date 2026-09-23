@@ -97,6 +97,13 @@ export function ProductDetailScreen() {
                 <Row label="สภาพ" value={conditionLabels[state.product.condition]} />
                 <ThemedText type="small" themeColor="textSecondary">{state.product.description}</ThemedText>
               </Card>
+
+              {/* หน้านี้แสดงเฉพาะสินค้าที่ยังพร้อมขาย ส่วนสิทธิ์ซื้อและราคาให้หน้า Checkout ถามจาก server (D-16) */}
+              <Button
+                label="ซื้อสินค้านี้"
+                variant="primary"
+                onPress={() => router.push({ pathname: '/checkout/[productId]', params: { productId: String(id) } })}
+              />
             </View>
           )}
 

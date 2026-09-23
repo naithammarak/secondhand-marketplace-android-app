@@ -72,3 +72,61 @@ E2E ผ่าน HTTP: ดูวิธีรันในหัวไฟล์ `b
 **การทดสอบบนมือถือจริง** — ยังไม่ได้รัน เพราะ Login ต้องผ่าน Google OAuth ด้วยบัญชีทดสอบจริงที่ไม่มีในสภาพแวดล้อมนี้
 ตรรกะของแอป (กดซ้ำ, timeout, สลับบัญชี, pagination) มี unit test ครอบคลุมแล้ว แต่ **ORDER-04 ระบุว่า Mock อย่างเดียวไม่นับว่าปิดงาน**
 ให้ QA รันตาม `mobile/docs/testing/orders-checkout.md` แล้วบันทึกผลกลับในไฟล์นี้
+
+
+---
+
+# ORDER-08 — ยกเลิก Order และเส้นตายการจ่ายเงิน (เพิ่มเติม 2026-09-23)
+
+## Environment
+| รายการ | ค่า |
+|---|---|
+| วันที่ | 2026-09-23 |
+| Base commit | `99ec8bf` (= `origin/main`) |
+| OS | Windows 11 |
+| ฐานข้อมูลที่ใช้ทดสอบ | **SQLite ในหน่วยความจำเท่านั้น** |
+| Node | ตามที่ติดตั้งในเครื่อง (mobile tests) |
+
+## ผลการทดสอบอัตโนมัติ
+| ชุด | ผล |
+|---|---|
+| Backend ทั้งหมด (`pytest`, `DATABASE_URL=""`) | **360 passed, 36 skipped** |
+| └ `test_orders_api.py` (SQLite, พฤติกรรม API) | 61 passed (เดิม 46 + ใหม่ 15) |
+| └ `test_orders_postgres.py` | **skipped ทั้งหมด** (ไม่มี PostgreSQL/Docker ในเครื่องที่แก้) |
+| Mobile `npm run test:logic` | 267 passed (เดิม 256 + ใหม่ 11) |
+| Mobile `npm run test:components` (jest) | 93 passed (เดิม 92 + ใหม่ 1) |
+| Mobile `tsc --noEmit` | ผ่าน |
+| Mobile `expo lint` | ผ่าน (exit 0) |
+
+## กรณีที่เพิ่มและผลลัพธ์ (SQLite)
+| กรณี | Expected | Actual |
+|---|---|---|
+| ผู้ซื้อยกเลิก Order ที่ยังไม่จ่าย | สถานะ `CANCELLED`, `cancel_reason=BUYER`, สินค้ากลับเป็น `AVAILABLE`, ไม่มีแถวเงินใด ๆ | ตรง |
+| ยกเลิกซ้ำ | 200 ผลเดิม `cancelled_at` ไม่เปลี่ยน มี Order เดียว | ตรง |
+| ผู้ซื้อคนอื่น / ผู้ซื้อคนเดิม สั่งซื้อสินค้าเดิมหลังยกเลิก | สร้าง Order ใหม่ได้ ไม่ติด `already_ordered` | ตรง |
+| ยกเลิกหลังจ่ายเงินแล้ว | 409 `order_already_paid` สถานะไม่ถอยหลัง | ตรง |
+| จ่ายเงิน Order ที่ยกเลิกแล้ว | 409 `order_cancelled` ไม่บันทึก attempt | ตรง |
+| ผู้ขาย / คนนอก / บัญชีถูกระงับ ขอยกเลิก | 403 `not_order_buyer` / 404 / 403 `account_inactive` | ตรง |
+| จ่ายเงินหลังเลย `expires_at` | 409 `order_expired`, Order เป็น `CANCELLED` (`EXPIRED`), ไม่มี attempt, สินค้าคืนเป็น `AVAILABLE` | ตรง |
+| เปิดหน้ารายละเอียด / รายการ หลังเลยเวลา | สถานะกลายเป็น `CANCELLED` และสินค้าถูกปล่อย | ตรง |
+| ผู้ซื้อรายอื่นซื้อสินค้าที่การจองหมดเวลา (ยังไม่มีใครเปิดดู Order เดิม) | ซื้อได้ทันที | ตรง |
+| Order ที่จ่ายแล้วถูกเลื่อนเวลาให้เลยเส้นตาย | ไม่ถูกยกเลิก สถานะคงเดิม | ตรง |
+| ยกเลิกหลังเลยเวลาแต่ยังไม่มีใครกวาด | บันทึก `cancel_reason=EXPIRED` ตามความจริง | ตรง |
+
+## ยังไม่ได้ทดสอบ (ต้องทำก่อนปิดงาน)
+1. **ชุด PostgreSQL (`test_orders_postgres.py`)** — เครื่องที่แก้ไม่มี Docker/PostgreSQL จึง skip ทั้งหมด
+   ชุดนี้มี test ใหม่ที่ **ยังไม่เคยรันจริงเลย** ได้แก่
+   `test_cancelled_order_frees_the_product_slot`, `test_cancel_fields_must_match_status`,
+   `test_paid_order_cannot_be_marked_cancelled`, `test_racing_cancel_never_beats_successful_payment`
+   และ migration `b41d7ce09f35` (upgrade/downgrade/backfill) ก็ยังไม่เคยรันบน PostgreSQL
+   ต้องรันตามวิธีในหัวข้อ "วิธีรัน" ด้านบนก่อนถือว่างานนี้ผ่าน
+2. **E2E HTTP (`scripts/order_e2e_smoke.py`)** — ยังไม่ได้รันหลังการแก้ (ต้องใช้ PostgreSQL เช่นกัน)
+   และยังไม่ได้เพิ่มกรณียกเลิก/หมดเวลาเข้าไปในสคริปต์
+3. **การทดสอบบนมือถือจริง** — ยังเหมือนเดิม ให้ QA รันตาม `mobile/docs/testing/orders-checkout.md`
+   ซึ่งเพิ่มกรณี M17–M27 (ปุ่มซื้อในหน้าสินค้า การยกเลิก และการหมดเวลา) แล้ว
+
+## หมายเหตุระหว่างทำ
+- `npm test` รอบหนึ่งมี component test ล้ม 1 รายการแบบไม่คงที่ (React `act` warning ใน `login-screen`)
+  รันซ้ำแล้วผ่านทั้งหมด เป็นอาการเดิมที่ไม่เกี่ยวกับงานนี้ แต่ควรตามแก้
+- สภาพแวดล้อมที่แก้ขาดของเดิมอยู่สองอย่างและได้ติดตั้ง/สร้างใหม่แล้ว: `Pillow` ใน venv ของ backend
+  (มีใน `requirements.txt` อยู่แล้ว) และ type ของ expo-router ใน `mobile/.expo/types` ที่ค้างอยู่ก่อนงาน PRODUCT-07

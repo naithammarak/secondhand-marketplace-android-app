@@ -3,7 +3,8 @@
  * เงินทุกช่องเป็น string จาก backend และห้ามแปลงเป็น number เพื่อคำนวณในแอป
  */
 
-export type OrderStatus = 'WAITING_PAYMENT' | 'WAITING_SELLER_SHIP';
+export type OrderStatus = 'WAITING_PAYMENT' | 'WAITING_SELLER_SHIP' | 'CANCELLED';
+export type CancelReason = 'BUYER' | 'EXPIRED';
 export type PaymentStatus = 'UNPAID' | 'PAID';
 export type ViewerRole = 'buyer' | 'seller';
 export type PaymentOutcome = 'SUCCESS' | 'FAILED';
@@ -49,6 +50,11 @@ export type OrderDetail = {
   paidAt: string | null;
   receiptNo: string | null;
   canPay: boolean;
+  canCancel: boolean;
+  /** เส้นตายการชำระเงินจาก server หน้าจอนับถอยหลังตามค่านี้ ไม่คำนวณเส้นตายเอง */
+  expiresAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: CancelReason | null;
   createdAt: string | null;
 };
 
@@ -61,6 +67,8 @@ export type OrderListItem = {
   totalAmount: string | null;
   sellerPayout: string | null;
   currency: string;
+  expiresAt: string | null;
+  cancelReason: CancelReason | null;
   createdAt: string | null;
   paidAt: string | null;
 };
@@ -96,7 +104,7 @@ export type OrderErrorKind = 'unauthorized' | 'forbidden' | 'not-found' | 'confl
 
 export class OrderServiceError extends Error {
   readonly kind: OrderErrorKind;
-  /** code จาก backend เช่น product_unavailable, already_ordered, order_already_paid */
+  /** code จาก backend เช่น product_unavailable, already_ordered, order_expired */
   readonly code: string | null;
   readonly fields: Record<string, string>;
   /** Order เดิมของผู้ซื้อเมื่อได้ already_ordered */
@@ -118,7 +126,8 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MONEY = /^-?\d+\.\d{2}$/;
-const ORDER_STATUSES: OrderStatus[] = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP'];
+const ORDER_STATUSES: OrderStatus[] = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED'];
+const CANCEL_REASONS: CancelReason[] = ['BUYER', 'EXPIRED'];
 
 const ADDRESS_API_FIELDS: Record<string, keyof ShippingAddress> = {
   recipient_name: 'recipientName',
@@ -173,6 +182,11 @@ function toStatus(value: unknown): OrderStatus {
   return ORDER_STATUSES.find(status => status === value) ?? bad();
 }
 
+function toCancelReason(value: unknown): CancelReason | null {
+  if (value === null || value === undefined) return null;
+  return CANCEL_REASONS.find(reason => reason === value) ?? bad();
+}
+
 function toViewerRole(value: unknown): ViewerRole {
   if (value === 'buyer' || value === 'seller') return value;
   return bad();
@@ -221,6 +235,10 @@ export function toOrderDetail(value: unknown): OrderDetail {
     paidAt: optStr(data.paid_at),
     receiptNo: optStr(data.receipt_no),
     canPay: data.can_pay === true,
+    canCancel: data.can_cancel === true,
+    expiresAt: optStr(data.expires_at),
+    cancelledAt: optStr(data.cancelled_at),
+    cancelReason: toCancelReason(data.cancel_reason),
     createdAt: optStr(data.created_at),
   };
 }
@@ -236,6 +254,8 @@ function toListItem(value: unknown): OrderListItem {
     totalAmount: optMoney(data.total_amount),
     sellerPayout: optMoney(data.seller_payout),
     currency: str(data.currency),
+    expiresAt: optStr(data.expires_at),
+    cancelReason: toCancelReason(data.cancel_reason),
     createdAt: optStr(data.created_at),
     paidAt: optStr(data.paid_at),
   };
@@ -417,6 +437,12 @@ export function createOrderService(options: { baseUrl?: string; fetch?: FetchLik
         body: JSON.stringify({ outcome: input.outcome }),
       }, signal));
       return { attempt: toAttempt(data.attempt), order: toOrderDetail(data.order) };
+    },
+
+    async cancelOrder(token: string, orderId: number, signal?: AbortSignal): Promise<OrderDetail> {
+      // ไม่ต้องใช้ Idempotency-Key: คำขอนี้ไม่สร้างแถวใหม่และเรียกซ้ำได้ผลเดิม (contract D-18)
+      return toOrderDetail(await request(`/orders/${encodeURIComponent(orderId)}/cancel`,
+        { method: 'POST', headers: auth(token) }, signal));
     },
 
     async getReceipt(token: string, orderId: number, signal?: AbortSignal): Promise<Receipt> {

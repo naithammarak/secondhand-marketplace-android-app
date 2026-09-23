@@ -28,7 +28,8 @@ from app.database import Base
 
 MONEY = Numeric(12, 2)
 
-ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP")
+ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED")
+CANCEL_REASONS = ("BUYER", "EXPIRED")
 ATTEMPT_OUTCOMES = ("SUCCEEDED", "FAILED")
 ESCROW_STATUSES = ("HELD",)
 
@@ -54,6 +55,18 @@ class Order(Base):
         CheckConstraint(
             "seller_payout = item_price - commission_fee",
             name="ck_orders_seller_payout",
+        ),
+        # ยกเลิกแล้วต้องมีทั้งเหตุผลและเวลาเสมอ ยังไม่ยกเลิกต้องไม่มีทั้งคู่ กันสถานะครึ่ง ๆ กลาง ๆ
+        CheckConstraint(
+            "(status = 'CANCELLED' AND cancelled_at IS NOT NULL "
+            f"AND cancel_reason IN ({', '.join(repr(value) for value in CANCEL_REASONS)})) "
+            "OR (status <> 'CANCELLED' AND cancelled_at IS NULL AND cancel_reason IS NULL)",
+            name="ck_orders_cancel_fields",
+        ),
+        # จ่ายเงินสำเร็จแล้วยกเลิกไม่ได้ ห้ามมีแถวที่ทั้งจ่ายแล้วและถูกยกเลิก
+        CheckConstraint(
+            "status <> 'CANCELLED' OR paid_at IS NULL",
+            name="ck_orders_cancel_not_paid",
         ),
         UniqueConstraint("buyer_id", "idempotency_key", name="uq_orders_buyer_idempotency_key"),
         # ให้ payment/escrow อ้างอิงคู่ (id, total_amount) ได้ เพื่อบังคับยอดเท่ากันที่ฐานข้อมูล
@@ -100,6 +113,9 @@ class Order(Base):
     idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
+    # กำหนดตอนสร้าง Order เท่านั้น การแก้ค่าหน้าต่างเวลาภายหลังจึงไม่ย้ายเส้นตายของ Order เดิม
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -107,6 +123,8 @@ class Order(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class PaymentAttempt(Base):

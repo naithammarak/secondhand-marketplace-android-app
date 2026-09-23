@@ -1,6 +1,6 @@
 # ORDER-00 — Contract กลาง: สั่งซื้อและจ่ายเงินจำลอง
 
-> สถานะ: **v1 (ใช้สร้าง Schema, Mock และ Test ของ ORDER-01…06)**
+> สถานะ: **v2 (เพิ่มการยกเลิกและเส้นตายการจ่ายเงินใน ORDER-08)**
 > Source of truth ของโค้ด: `backend/app/services/order_pricing.py`, `backend/app/schemas/order.py`,
 > `backend/app/models/order.py` — ถ้าเอกสารนี้กับโค้ดขัดกัน ให้ถือว่าเป็น Bug และแก้ให้ตรงกัน
 
@@ -14,6 +14,7 @@
 | ดูรายการ/รายละเอียด Order ที่ตนเป็นผู้ซื้อ | ✅ | – | – | – |
 | ดูรายการ/รายละเอียด Order ที่ตนเป็นผู้ขาย | – | ✅ | – | – |
 | จ่ายเงินจำลอง | ✅ เฉพาะ Order ของตน | ❌ 403 | ❌ | ❌ |
+| ยกเลิก Order ที่ยังไม่จ่าย | ✅ เฉพาะ Order ของตน | ❌ 403 | ❌ | ❌ |
 | ดูใบเสร็จ | ✅ เฉพาะ Order ของตน | ❌ 403 | ❌ | ❌ |
 
 - สิทธิ์ตัดสินจาก **Token เท่านั้น** (`sub` → `users.supabase_user_id`) ไม่มี Endpoint ใดรับ `buyer_id` / `seller_id` / ยอดเงินจาก Client
@@ -25,11 +26,16 @@
 ## 2. สถานะ
 
 ### Product (ส่วนที่ Order แตะ)
+ค่าเหล่านี้ตรงกับ `ck_products_status` ใน `backend/app/models/product.py` แล้ว (ดู D-01)
+
 | สถานะ | ความหมาย |
 |---|---|
 | `AVAILABLE` | พร้อมขาย ซื้อได้ |
 | `RESERVED` | ถูกจองโดย Order แล้ว |
-| อื่น ๆ / `deleted_at IS NOT NULL` | ซื้อไม่ได้ |
+| `SOLD` / `CANCELLED` / `deleted_at IS NOT NULL` | ซื้อไม่ได้ |
+
+การยกเลิก Order และการหมดเวลาจ่ายเงินคืนสินค้าจาก `RESERVED` เป็น `AVAILABLE` เสมอ
+สินค้าที่ถูกลบ (`deleted_at`) หรือเปลี่ยนสถานะไปแล้วจะไม่ถูกแตะ
 
 ### Order
 ```
@@ -37,9 +43,23 @@
  (ไม่มี) ─────────────────▶ WAITING_PAYMENT ─────────────▶ WAITING_SELLER_SHIP
                               │     ▲
                               └─────┘ pay FAILED (สถานะไม่เปลี่ยน, สินค้ายังถูกจอง, ลองใหม่ได้)
+                              │
+                              │ POST /orders/{id}/cancel   → cancel_reason = BUYER
+                              │ เลย expires_at (30 นาที)    → cancel_reason = EXPIRED
+                              ▼
+                          CANCELLED
 ```
-- ไม่มีการหมดเวลาจ่ายอัตโนมัติและไม่มีการยกเลิกในรอบนี้ (D-05, D-06)
-- สถานะ Order ห้ามถอยหลัง: เมื่อเป็น `WAITING_SELLER_SHIP` แล้ว คำขอจ่ายใด ๆ (SUCCESS/FAILED) ได้ 409
+- สถานะ Order ห้ามถอยหลัง: เมื่อเป็น `WAITING_SELLER_SHIP` แล้ว คำขอจ่ายหรือยกเลิกใด ๆ ได้ 409
+- `CANCELLED` เป็นสถานะสุดท้าย จ่ายเงินไม่ได้อีก และผู้ซื้อสั่งซื้อสินค้าชิ้นเดิมใหม่ได้
+- ฐานข้อมูลบังคับว่า `CANCELLED` ต้องมี `cancelled_at` และ `cancel_reason` เสมอ และต้องไม่มี `paid_at`
+  (`ck_orders_cancel_fields`, `ck_orders_cancel_not_paid`)
+
+### เส้นตายการจ่ายเงิน (D-05)
+- `expires_at = created_at + 30 นาที` กำหนดครั้งเดียวตอนสร้าง Order การแก้ค่าหน้าต่างเวลาภายหลังไม่ย้ายเส้นตายของ Order เดิม
+- **ไม่มี scheduler**: ระบบตรวจและยกเลิกให้ตอนมีคนมาแตะ Order นั้น (lazy expiry) ได้แก่
+  `GET /orders/{id}`, `GET /orders`, การจ่ายเงิน และตอนมีผู้ซื้อรายอื่นขอซื้อสินค้าชิ้นนั้น
+- จุดบังคับใช้ที่แท้จริงคือการจ่ายเงิน ซึ่งล็อกแถว Order อยู่แล้ว จึงไม่มีทางจ่ายสำเร็จหลังเลยเวลา
+- Client ห้ามคิดเส้นตายเอง ให้แสดงเวลาที่เหลือจาก `expires_at` และถามสถานะจริงเมื่อนับถึงศูนย์
 
 ### Payment / Escrow
 | ตาราง | สถานะ |
@@ -103,6 +123,7 @@ seller_payout  = item_price − commission_fee
 | key เดิม + payload เดิม | ได้ผลเดิม (Order เดิม / Attempt เดิม) ไม่สร้างแถวใหม่ Header `Idempotent-Replayed: true` |
 | key เดิม + payload ต่าง | **409** `idempotency_key_reused` |
 | จ่าย FAILED แล้วอยากลองใหม่ | ต้องใช้ **key ใหม่** (key เดิมจะได้ FAILED เดิมกลับมา) |
+| ยกเลิก Order | **ไม่ต้องใช้ key** เพราะไม่สร้างแถวใหม่และเรียกซ้ำได้ผลเดิม (D-18) |
 | key ใหม่ หลังจ่ายสำเร็จแล้ว | **409** `order_already_paid` ไม่มีเงินซ้ำ ไม่บันทึก Attempt |
 | Timeout ไม่รู้ผล | ใช้ **key เดิม** ลองซ้ำได้อย่างปลอดภัย (หรือ `GET /orders/{id}` ตรวจก่อน) |
 
@@ -127,7 +148,9 @@ Validation (422): `{ "detail": { "code": "validation_error", "fields": { "<field
 | 409 | `product_unavailable` | สินค้าไม่พร้อมขาย / ถูกจองไปแล้ว (รวมผู้แพ้การแข่งจอง) |
 | 409 | `already_ordered` | ผู้ซื้อคนนี้จองสินค้านี้ไว้แล้ว มี `order_id` ให้เปิด Order เดิม |
 | 409 | `idempotency_key_reused` | key เดิม payload ต่าง |
-| 409 | `order_already_paid` | จ่ายซ้ำหลังสำเร็จ |
+| 409 | `order_already_paid` | จ่ายซ้ำหลังสำเร็จ หรือขอยกเลิก Order ที่จ่ายแล้ว |
+| 409 | `order_cancelled` | จ่ายเงิน Order ที่ถูกยกเลิกไปแล้ว |
+| 409 | `order_expired` | จ่ายเงินหลังเลย `expires_at` (ระบบยกเลิก Order ให้ในคำขอเดียวกัน) |
 | 422 | `validation_error` | ที่อยู่/`product_id`/`outcome`/`Idempotency-Key` ไม่ถูกต้อง |
 
 ## 7. API
@@ -191,6 +214,8 @@ Response `200`
       "total_amount": "1350.00",
       "seller_payout": null,
       "currency": "THB",
+      "expires_at": "2026-09-18T10:30:00Z",
+      "cancel_reason": null,
       "created_at": "2026-09-18T10:00:00Z",
       "paid_at": null
     }
@@ -225,13 +250,19 @@ Response `200`
   "paid_at": null,
   "receipt_no": null,
   "can_pay": true,
+  "can_cancel": true,
+  "expires_at": "2026-09-18T10:30:00Z",
+  "cancelled_at": null,
+  "cancel_reason": null,
   "created_at": "…",
   "updated_at": "…"
 }
 ```
 มุมมองผู้ขาย: `amounts.shipping_fee/inspection_fee/total_amount = null`, `commission_fee` และ `seller_payout` มีค่า,
-`shipping_address = null` จนกว่าจะ `WAITING_SELLER_SHIP`, `last_payment_attempt = null`, `receipt_no = null`, `can_pay = false`
-`can_pay` คำนวณที่ Server (ผู้ซื้อ + `WAITING_PAYMENT` + บัญชี ACTIVE) — Client ห้ามคิดเอง
+`shipping_address = null` จนกว่าจะ `WAITING_SELLER_SHIP`, `last_payment_attempt = null`, `receipt_no = null`,
+`can_pay = false`, `can_cancel = false` (ผู้ขายเห็น `expires_at` และ `cancel_reason` ได้ เพราะต้องรู้ว่ารออะไรอยู่)
+`can_pay` และ `can_cancel` คำนวณที่ Server (ผู้ซื้อ + `WAITING_PAYMENT` + ยังไม่เลย `expires_at` + บัญชี ACTIVE) — Client ห้ามคิดเอง
+`cancel_reason` เป็น `BUYER` หรือ `EXPIRED` เท่านั้น
 
 ### 7.4 `POST /orders/{id}/payments/simulate`
 ```http
@@ -252,7 +283,30 @@ Response `200` (ทั้ง SUCCESS และ FAILED เป็นผลทา�
 - ยอดที่จ่ายมาจาก `orders.total_amount` เสมอ (body ไม่มีฟิลด์ยอด)
 - เปิดใช้เฉพาะเมื่อ `PAYMENT_SIMULATION_ENABLED=true` และ `APP_ENV` ไม่ใช่ `production`/`prod`
 
-### 7.5 `GET /orders/{id}/receipt`
+### 7.5 `POST /orders/{id}/cancel`
+ยกเลิกคำสั่งซื้อที่ยังไม่ได้ชำระเงิน เฉพาะผู้ซื้อของ Order นั้นและบัญชีต้อง `ACTIVE`
+ไม่มี Request body และไม่ต้องมี `Idempotency-Key` (D-18)
+
+```http
+POST /orders/41/cancel
+Authorization: Bearer <token>
+```
+
+Response `200` → `OrderDetail` ที่ `status = "CANCELLED"`, `cancel_reason = "BUYER"`, `can_pay = false`, `can_cancel = false`
+
+| กรณี | ผล |
+|---|---|
+| ยกเลิกซ้ำ | `200` พร้อมข้อมูลเดิม (`cancelled_at` ไม่เปลี่ยน) ไม่ถือเป็นข้อผิดพลาด |
+| Order จ่ายเงินแล้ว | `409` `order_already_paid` |
+| เลย `expires_at` ไปแล้วแต่ยังไม่มีใครกวาด | `200` และบันทึก `cancel_reason = "EXPIRED"` ตามความจริง |
+| ผู้ขายของ Order | `403` `not_order_buyer` |
+| คนอื่น | `404` `order_not_found` |
+| บัญชีไม่ ACTIVE | `403` `account_inactive` |
+
+ผลข้างเคียงเดียวคือสินค้ากลับเป็น `AVAILABLE` (เฉพาะชิ้นที่ยัง `RESERVED` และยังไม่ถูกลบ)
+ไม่มีการแตะตาราง `payment_attempts` / `payments` / `escrows` / `receipts` เพราะ Order ที่ยกเลิกได้ต้องยังไม่จ่ายเงิน
+
+### 7.6 `GET /orders/{id}/receipt`
 Response `200` (เฉพาะผู้ซื้อ, หลังจ่ายสำเร็จ)
 ```json
 {
@@ -274,12 +328,12 @@ Response `200` (เฉพาะผู้ซื้อ, หลังจ่าย�
 
 | # | เรื่อง | การตัดสินใจ | เหตุผล |
 |---|---|---|---|
-| D-01 | สถานะ Product/Login ใน Repo | Login พร้อม (Supabase JWT + `users`). Product มีแค่ Model/Migration ยังไม่มี API/หน้าจอ และไม่มีค่าสถานะที่ตกลงไว้ → Order กำหนด `AVAILABLE`/`RESERVED` เองในที่เดียว (`order_pricing.py`) | ไม่หยุดงานรอ PRODUCT; ค่าอยู่ที่เดียวเปลี่ยนง่าย |
+| D-01 | สถานะ Product/Login ใน Repo | ~~Order กำหนด `AVAILABLE`/`RESERVED` เองชั่วคราว~~ → **ปิดแล้ว**: งาน PRODUCT-01 เข้า main พร้อม `ck_products_status` = `AVAILABLE/RESERVED/SOLD/CANCELLED` และ `ck_products_sale_type` = `FIXED_PRICE` ค่าที่ ORDER ใช้ตรงกันทั้งหมด | ค่าที่เดาไว้ตรงกับของจริง ไม่ต้องแก้โค้ด |
 | D-02 | ใครซื้อได้ | เฉพาะ `role=BUYER` ที่ `ACTIVE` | ระบบให้ผู้ใช้มีบทบาทเดียว; ปลอดภัยที่สุด |
 | D-03 | ADMIN/INSPECTOR | ไม่มีสิทธิ์อ่าน Order รอบนี้ (404) | Least privilege; งานตรวจสินค้ายังไม่อยู่ใน Scope |
 | D-04 | ค่าธรรมเนียม | ขนส่ง 50, ตรวจ 100 (ผู้ซื้อจ่าย), คอมมิชชัน 5% หักผู้ขาย, THB, ROUND_HALF_UP | ตัวเลขง่ายต่อการตรวจ Demo; คอมมิชชันไม่บวกในยอดผู้ซื้อจึงยอดชำระตรงกับที่แสดง |
-| D-05 | Timer 30 นาที vs Prototype | **ไม่ทำ Timer ในรอบนี้** สินค้าถูกจองจนกว่าจะจ่ายสำเร็จ | Prototype ล่าสุดเลื่อนงานอัตโนมัติ; ไม่มี Scheduler ใน Repo; Timer ที่ไม่มีใครบังคับใช้จะทำให้ข้อมูลกับ UI ไม่ตรงกัน. ความเสี่ยง: ผู้ซื้อค้างจองได้ไม่จำกัด (บันทึกใน Risk) |
-| D-06 | ยกเลิก Order | ไม่ทำรอบนี้ | ตามโจทย์ |
+| D-05 | Timer 30 นาที | **ทำแล้วใน ORDER-08 แบบ lazy expiry**: เก็บ `expires_at` บนแถว Order แล้วตรวจ/ยกเลิกตอนมีคนมาอ่านหรือมาแตะ ไม่เพิ่ม Scheduler เข้า Repo | ข้อกังวลเดิมคือ "Timer ที่ไม่มีใครบังคับใช้" — วิธีนี้บังคับใช้ที่จุดจ่ายเงินซึ่งล็อกแถวอยู่แล้ว UI กับข้อมูลจึงตรงกันเสมอ และปิดความเสี่ยงผู้ซื้อค้างจองไม่จำกัด |
+| D-06 | ยกเลิก Order | **ทำแล้วใน ORDER-08**: `POST /orders/{id}/cancel` เฉพาะผู้ซื้อ เฉพาะ Order ที่ยังไม่จ่าย | โครงสร้างเดิมเผื่อไว้แล้ว (partial unique index ใช้ `status <> 'CANCELLED'` ตั้งแต่ ORDER-01) จึงเพิ่มได้โดยไม่ต้องสร้าง index ใหม่ |
 | D-07 | จองสินค้าระดับ DB | partial unique index `orders(product_id) WHERE status <> 'CANCELLED'` + conditional update `products.status AVAILABLE→RESERVED` ใน Transaction เดียว | ใช้ `<> 'CANCELLED'` เพื่อให้สถานะอนาคต (SHIPPED ฯลฯ) ถูกกันซ้ำโดยอัตโนมัติ |
 | D-08 | แยก Attempt กับ Payment | `payment_attempts` เก็บทุกครั้ง (รวม FAILED); `payments` เก็บเฉพาะสำเร็จ `UNIQUE(order_id)` | ตามโจทย์ และ Constraint ง่าย |
 | D-09 | Idempotency เก็บที่ไหน | เก็บ key + hash บนแถว `orders` และ `payment_attempts` ไม่แยกตาราง | Key ผูกกับทรัพยากรที่มันสร้าง; ไม่ต้องมีงานล้าง key |
@@ -289,5 +343,7 @@ Response `200` (เฉพาะผู้ซื้อ, หลังจ่าย�
 | D-13 | Endpoint จำลอง | ปิดเป็นค่าเริ่มต้น (fail-closed) ต้องตั้ง `PAYMENT_SIMULATION_ENABLED=true` | กันเปิดทิ้งไว้บน Production |
 | D-14 | เงินใน JSON | string | กันความคลาดเคลื่อนของ float ใน JS |
 | D-15 | `already_ordered` | ถ้าผู้ซื้อจองสินค้านี้ไว้แล้ว (key ใหม่ เช่นกด Back แล้วเข้าใหม่) ตอบ 409 พร้อม `order_id` | Mobile พาไป Order เดิมแทนการสร้างซ้ำ |
-| D-16 | ทางเข้า Checkout บน Mobile | ยังไม่มีหน้าสินค้า → เพิ่มทางเข้าชั่วคราว "ซื้อด้วยรหัสสินค้า" (Stub แยกไฟล์) ที่เปิด `/checkout/[productId]` | หน้าสินค้าจริงเรียก `router.push('/checkout/<id>')` ได้ทันทีเมื่อ PRODUCT พร้อม |
+| D-16 | ทางเข้า Checkout บน Mobile | **ปิดแล้ว**: หน้าสินค้าจริง (`/products/[id]`) มีปุ่ม "ซื้อสินค้านี้" ที่เปิด `/checkout/[productId]` แล้ว ทางเข้าชั่วคราว "ซื้อด้วยรหัสสินค้า" ยังอยู่สำหรับการทดสอบด้วยรหัสตรง ๆ | หน้าสินค้าสาธารณะแสดงเฉพาะสินค้าที่ `AVAILABLE` จึงมีปุ่มซื้อได้เสมอ ส่วนสิทธิ์ซื้อ (`self_purchase`, `buyer_role_required`) ให้ Server ตอบในหน้า Checkout |
 | D-17 | ข้อมูลก่อนสร้าง Order | เพิ่ม `GET /orders/checkout-quote?product_id=` คืนสินค้า + ค่าธรรมเนียมจาก Server | หน้า Checkout แสดงยอดจาก Server ได้ก่อนกดยืนยัน ไม่ต้องคำนวณเอง |
+| D-18 | Idempotency ของการยกเลิก | ไม่บังคับ `Idempotency-Key` สำหรับ `POST /orders/{id}/cancel` | คำขอนี้ไม่สร้างแถวใหม่และไม่มีเงินเกี่ยวข้อง เรียกซ้ำแล้วได้ผลเดิมอยู่แล้ว การบังคับ key จะเพิ่มงานให้ Client โดยไม่ได้ความปลอดภัยเพิ่ม |
+| D-19 | หมดเวลาแล้วใช้สถานะอะไร | ใช้ `CANCELLED` ร่วมกับการยกเลิกของผู้ซื้อ แล้วแยกด้วย `cancel_reason` (`BUYER` / `EXPIRED`) ไม่สร้างสถานะ `EXPIRED` แยก | partial unique index `uq_orders_active_product` ผูกกับค่า `'CANCELLED'` อยู่แล้ว การเพิ่มสถานะใหม่ต้องแก้ index ด้วย ส่วนเหตุผลที่ต่างกันเก็บเป็นคอลัมน์ได้ถูกกว่า |

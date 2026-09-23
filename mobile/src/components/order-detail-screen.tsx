@@ -1,12 +1,19 @@
 import { Redirect, useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
-import { formatBaht, formatDateTime, orderStatusLabels, paymentStatusLabels } from '@/orders/order-format';
+import {
+  cancelReasonLabels,
+  formatBaht,
+  formatDateTime,
+  formatRemaining,
+  orderStatusLabels,
+  paymentStatusLabels,
+} from '@/orders/order-format';
 import { useOrderDetail, useOrdersList } from '@/orders/orders-provider';
 import { CONDITION_LABELS } from '@/services/product-service';
 
@@ -16,6 +23,15 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const { state, store } = useOrderDetail();
   const list = useOrdersList();
   const openedFor = useRef<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const order = state.orderId === orderId ? state.order : null;
+  const paying = state.paying !== null;
+  const isBuyer = order?.viewerRole === 'buyer';
+  // เส้นตายมาจาก server ฝั่งแอปทำแค่แปลงเป็นเวลาที่เหลือให้ดู ไม่ตัดสินสถานะเอง
+  const remaining = order?.status === 'WAITING_PAYMENT' ? formatRemaining(order.expiresAt, now) : null;
+  const deadlinePassed = order?.status === 'WAITING_PAYMENT' && !!order.expiresAt && remaining === null;
 
   useEffect(() => {
     // เปิดหน้าทุกครั้งอ่านสถานะจริงจาก server (รวมถึงหลังเปิดแอปใหม่)
@@ -31,11 +47,24 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     if (state.lastResult === 'succeeded') void list.store.refresh();
   }, [list.store, state.lastResult]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  useEffect(() => {
+    // ยกเลิกแล้วรายการคำสั่งซื้อต้องไม่ค้างสถานะ "รอชำระเงิน"
+    if (order?.status === 'CANCELLED') void list.store.refresh();
+  }, [list.store, order?.status]);
 
-  const order = state.orderId === orderId ? state.order : null;
-  const paying = state.paying !== null;
-  const isBuyer = order?.viewerRole === 'buyer';
+  useEffect(() => {
+    // เดินนาฬิกาเฉพาะตอนที่ยังมีเส้นตายให้นับ จะได้ไม่ตั้ง interval ทิ้งไว้เปล่า ๆ
+    if (order?.status !== 'WAITING_PAYMENT' || !order.expiresAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [order?.expiresAt, order?.status]);
+
+  useEffect(() => {
+    // นาฬิกาหมดแล้วแต่สถานะยังเก่า ให้ถามสถานะจริงจาก server หนึ่งครั้ง ห้ามสรุปผลเอง
+    if (deadlinePassed) void store.refresh();
+  }, [deadlinePassed, store]);
+
+  if (!auth.session) return <Redirect href="/" />;
 
   return (
     <Screen>
@@ -63,6 +92,14 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   <ThemedText type="small">ระบบพักเงินไว้จนกว่าจะได้รับสินค้า</ThemedText>
                 </View>
               ) : null}
+              {order.status === 'CANCELLED' ? (
+                <View style={[styles.noticeBox, { borderColor: '#718096' }]}>
+                  <ThemedText type="smallBold" accessibilityLiveRegion="polite">คำสั่งซื้อนี้ถูกยกเลิกแล้ว</ThemedText>
+                  {order.cancelReason ? (
+                    <ThemedText type="small">{cancelReasonLabels[order.cancelReason]}</ThemedText>
+                  ) : null}
+                </View>
+              ) : null}
               {state.lastResult === 'failed' ? (
                 <View style={[styles.noticeBox, { borderColor: '#C53030' }]}>
                   <ThemedText type="smallBold" style={styles.errorText} accessibilityLiveRegion="polite">
@@ -75,6 +112,15 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
               <Card>
                 <StatusBadge status={order.status} label={orderStatusLabels[order.status]} />
                 <Row label="การชำระเงิน" value={paymentStatusLabels[order.paymentStatus]} />
+                {remaining ? <Row label="เหลือเวลาชำระเงิน" value={remaining} /> : null}
+                {deadlinePassed ? (
+                  <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                    หมดเวลาชำระเงินแล้ว กำลังตรวจสถานะล่าสุดจากระบบ
+                  </ThemedText>
+                ) : null}
+                {formatDateTime(order.cancelledAt) ? (
+                  <Row label="ยกเลิกเมื่อ" value={formatDateTime(order.cancelledAt)!} />
+                ) : null}
                 {formatDateTime(order.paidAt) ? <Row label="ชำระเมื่อ" value={formatDateTime(order.paidAt)!} /> : null}
                 {formatDateTime(order.createdAt) ? <Row label="สั่งซื้อเมื่อ" value={formatDateTime(order.createdAt)!} /> : null}
                 <Button
@@ -180,8 +226,52 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                 </Card>
               ) : null}
 
+              {isBuyer && order.canCancel ? (
+                <Card>
+                  <ThemedText type="smallBold">ยกเลิกคำสั่งซื้อ</ThemedText>
+                  {confirmingCancel ? (
+                    <>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        ยืนยันการยกเลิก? สินค้าจะถูกปล่อยให้ผู้อื่นซื้อได้ และคำสั่งซื้อนี้จะกลับมาชำระเงินไม่ได้อีก
+                      </ThemedText>
+                      <View style={styles.buttonRow}>
+                        <Button
+                          label="ไม่ยกเลิก"
+                          disabled={state.cancelling}
+                          onPress={() => setConfirmingCancel(false)}
+                        />
+                        <Button
+                          label={state.cancelling ? 'กำลังยกเลิก' : 'ยืนยันยกเลิก'}
+                          variant="danger"
+                          busy={state.cancelling}
+                          disabled={paying}
+                          onPress={() => { void store.cancel(); }}
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    <Button
+                      label="ยกเลิกคำสั่งซื้อนี้"
+                      disabled={paying || state.cancelling}
+                      onPress={() => setConfirmingCancel(true)}
+                    />
+                  )}
+                  {state.cancelError ? (
+                    <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                      {errorText(state.cancelError, state.cancelCode)}
+                    </ThemedText>
+                  ) : null}
+                </Card>
+              ) : null}
+
               {isBuyer && !order.canPay && state.payError && !state.uncertain ? (
                 <ThemedText type="small" style={styles.errorText}>{errorText(state.payError, state.payCode)}</ThemedText>
+              ) : null}
+
+              {isBuyer && !order.canCancel && state.cancelError ? (
+                <ThemedText type="small" style={styles.errorText}>
+                  {errorText(state.cancelError, state.cancelCode)}
+                </ThemedText>
               ) : null}
 
               {isBuyer && order.receiptNo ? (

@@ -29,6 +29,7 @@ from app.main import app
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import UserRole
+from app.services.order_pricing import payment_deadline, utcnow
 from tests.order_helpers import (
     VALID_ADDRESS,
     create_product,
@@ -153,6 +154,11 @@ def pay(order_id, headers, outcome="SUCCESS", key=None):
         )
 
 
+def cancel(order_id, headers):
+    with TestClient(app) as client:
+        return client.post(f"/orders/{order_id}/cancel", headers=headers)
+
+
 def run_parallel(calls):
     """ปล่อยทุกคำขอพร้อมกันด้วย barrier แล้วคืนผลตามลำดับ"""
     barrier = threading.Barrier(len(calls))
@@ -186,6 +192,7 @@ def insert_order(db, world, product_id=None, key="manual-key-0001", total=Decima
         commission_fee=Decimal("60.00"),
         total_amount=total,
         seller_payout=Decimal("1140.00"),
+        expires_at=payment_deadline(utcnow()),
         **{f"ship_{k}": v for k, v in {**VALID_ADDRESS, "phone": "0812345678"}.items()},
         idempotency_key=key,
         request_hash="0" * 64,
@@ -208,6 +215,14 @@ def test_migration_downgrade_and_upgrade_round_trip(pg_engine):
             )
 
     assert set(ORDER_TABLES) <= tables()
+    # downgrade ปฏิเสธการทำงานเมื่อมี Order สถานะ CANCELLED อยู่ จึงล้างข้อมูลก่อนตรวจ schema
+    with pg_engine.begin() as connection:
+        connection.execute(
+            text(
+                "TRUNCATE receipts, escrows, payments, payment_attempts, orders "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
     run_alembic("downgrade", BASE_REVISION)
     remaining = tables()
     assert not (set(ORDER_TABLES) & remaining)
@@ -488,3 +503,93 @@ def test_parallel_payment_stress(world, db):
         assert count(db, Escrow, order_id=order_id) == 1
         assert count(db, Receipt, order_id=order_id) == 1
         assert count(db, PaymentAttempt, order_id=order_id, outcome="SUCCEEDED") == 1
+
+
+# ------------------------------------------------------------------ ยกเลิก/หมดเวลา (ORDER-08)
+
+
+def set_cancelled(db, order_id, reason="EXPIRED"):
+    db.execute(
+        text(
+            "UPDATE orders SET status = 'CANCELLED', cancel_reason = :reason, "
+            "cancelled_at = now() WHERE id = :id"
+        ),
+        {"id": order_id, "reason": reason},
+    )
+    db.commit()
+
+
+def test_cancelled_order_frees_the_product_slot(db, world):
+    first = insert_order(db, world, key="manual-key-0001")
+    set_cancelled(db, first.id)
+
+    # partial unique index ใช้เงื่อนไข status <> 'CANCELLED' สินค้าจึงว่างให้ Order ใหม่ได้
+    second = insert_order(db, world, key="manual-key-0002")
+    assert second.id != first.id
+    assert count(db, Order) == 2
+
+
+def test_cancel_fields_must_match_status(db, world):
+    order = insert_order(db, world, key="manual-key-0003")
+
+    with pytest.raises(IntegrityError):
+        # ยกเลิกโดยไม่มีเหตุผลและเวลา ถูกปฏิเสธที่ฐานข้อมูล
+        db.execute(text("UPDATE orders SET status = 'CANCELLED' WHERE id = :id"), {"id": order.id})
+        db.commit()
+    db.rollback()
+
+    with pytest.raises(IntegrityError):
+        # เหตุผลนอกรายการที่ตกลงไว้
+        set_cancelled(db, order.id, reason="SOMETHING_ELSE")
+    db.rollback()
+
+    with pytest.raises(IntegrityError):
+        # ยังไม่ยกเลิกแต่มีเหตุผลติดมา
+        db.execute(
+            text("UPDATE orders SET cancel_reason = 'BUYER' WHERE id = :id"), {"id": order.id}
+        )
+        db.commit()
+    db.rollback()
+
+    db.expire_all()
+    assert db.get(Order, order.id).status == "WAITING_PAYMENT"
+
+
+def test_paid_order_cannot_be_marked_cancelled(db, world):
+    order = insert_order(db, world, key="manual-key-0004")
+    db.execute(text("UPDATE orders SET paid_at = now() WHERE id = :id"), {"id": order.id})
+    db.commit()
+
+    with pytest.raises(IntegrityError):
+        set_cancelled(db, order.id, reason="BUYER")
+    db.rollback()
+
+
+def test_racing_cancel_never_beats_successful_payment(world, db, monkeypatch):
+    order_id = create_order(world)
+    locked, release = block_first_success(monkeypatch)
+    results = {}
+    payer = threading.Thread(target=lambda: results.__setitem__("pay", pay(order_id, world["a"])))
+    payer.start()
+    assert locked.wait(timeout=30)
+    canceller = threading.Thread(
+        target=lambda: results.__setitem__("cancel", cancel(order_id, world["a"]))
+    )
+    canceller.start()
+    time.sleep(1.0)
+    assert canceller.is_alive(), "cancel request must wait for the order row lock"
+    release.set()
+    payer.join(timeout=30)
+    canceller.join(timeout=30)
+
+    assert results["pay"].status_code == 200
+    assert results["cancel"].status_code == 409
+    assert results["cancel"].json()["detail"]["code"] == "order_already_paid"
+
+    db.expire_all()
+    assert db.get(Order, order_id).status == "WAITING_SELLER_SHIP"
+    assert count(db, Payment, order_id=order_id) == 1
+    assert count(db, Escrow, order_id=order_id) == 1
+    assert count(db, Receipt, order_id=order_id) == 1
+    # สินค้าที่จ่ายเงินแล้วต้องไม่ถูกปล่อยคืน
+    assert db.get(Product, world["product_id"]).status == "RESERVED"

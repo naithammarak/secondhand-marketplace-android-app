@@ -23,6 +23,9 @@ export type OrderDetailState = {
   lastResult: PaymentResultKind | null;
   /** คำขอจ่ายหมดเวลาและตรวจสถานะแล้วยังไม่รู้ผล ปุ่มลองใหม่จะใช้ key เดิม */
   uncertain: boolean;
+  cancelling: boolean;
+  cancelError: OrderErrorKind | null;
+  cancelCode: string | null;
   receipt: Receipt | null;
   receiptLoading: boolean;
   receiptError: OrderErrorKind | null;
@@ -40,6 +43,9 @@ export const initialOrderDetailState: OrderDetailState = {
   payCode: null,
   lastResult: null,
   uncertain: false,
+  cancelling: false,
+  cancelError: null,
+  cancelCode: null,
   receipt: null,
   receiptLoading: false,
   receiptError: null,
@@ -156,6 +162,40 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
     }
   };
 
+  const cancel = async () => {
+    const { owner, orderId, order } = state;
+    if (!owner || orderId === null || !order) return;
+    if (state.cancelling || state.paying) return;
+    // สิทธิ์ยกเลิกตัดสินที่ server เสมอ หน้าจอไม่คิดเงื่อนไขเอง
+    if (!order.canCancel) return;
+
+    const current = generation;
+    const { signal, done } = track();
+    set({ cancelling: true, cancelError: null, cancelCode: null });
+    try {
+      const updated = await withToken(deps, token => deps.service.cancelOrder(token, orderId, signal), signal);
+      if (current !== generation) return;
+      // ยกเลิกแล้วคำขอจ่ายที่ค้างอยู่ใช้ไม่ได้อีก ล้างทิ้งพร้อมกัน
+      pending = null;
+      set({
+        cancelling: false,
+        order: updated,
+        payError: null,
+        payCode: null,
+        lastResult: null,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (current !== generation || signal.aborted) return;
+      const kind = errorKind(error);
+      set({ cancelling: false, cancelError: kind, cancelCode: errorCode(error) });
+      // สถานะเปลี่ยนไปก่อนแล้ว (เช่น จ่ายเงินสำเร็จพอดี) ให้ดึงของจริงมาแสดง
+      if (kind === 'conflict') await fetchOrder('refresh');
+    } finally {
+      done();
+    }
+  };
+
   return {
     getSnapshot: () => state,
 
@@ -183,6 +223,8 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
     },
 
     pay,
+
+    cancel,
 
     /** ลองส่งคำขอที่ไม่รู้ผลอีกครั้งด้วย key เดิม */
     retryUncertain() {
