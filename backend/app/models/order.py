@@ -79,6 +79,13 @@ class Order(Base):
             sqlite_where=text("status <> 'CANCELLED'"),
             postgresql_where=text("status <> 'CANCELLED'"),
         ),
+        # ใช้ตอบคำถาม "มี Order ที่เลยเส้นตายค้างอยู่ไหม" ที่แคตตาล็อกถามก่อนอ่านทุกครั้ง (D-05)
+        Index(
+            "ix_orders_waiting_expires_at",
+            "expires_at",
+            sqlite_where=text("status = 'WAITING_PAYMENT'"),
+            postgresql_where=text("status = 'WAITING_PAYMENT'"),
+        ),
         Index("ix_orders_buyer_created", "buyer_id", "created_at", "id"),
         Index("ix_orders_seller_created", "seller_id", "created_at", "id"),
     )

@@ -2,12 +2,12 @@
 
 > สถานะ: **ยังไม่ได้รันกับฐานข้อมูลกลาง (Supabase)** ทดสอบแล้วบน PostgreSQL 16 แยกในเครื่องเท่านั้น
 > ต้องให้ DB/Lead ตรวจก่อนรัน
-> ปรับปรุงล่าสุด 2026-09-23: เพิ่ม `a5f1c9d2e7b3` ของ ORDER-09 (ตาราง Audit Log) และ
+> ปรับปรุงล่าสุด 2026-09-23: เพิ่ม `a5f1c9d2e7b3` (ตาราง Audit Log) และ `c93b7e5a1d84` (index ของด่านตรวจหมดเวลา) และ
 > **รันชุด PostgreSQL จริงแล้ว** (upgrade → downgrade → upgrade บน PostgreSQL 16 ในเครื่อง ดูหัวข้อหลักฐาน)
 
 ## Revision ที่เกี่ยวข้อง
 
-ปัจจุบันกราฟรวมเป็น **head เดียว** คือ `a5f1c9d2e7b3` (ตรวจซ้ำได้ด้วย `alembic heads`
+ปัจจุบันกราฟรวมเป็น **head เดียว** คือ `c93b7e5a1d84` (ตรวจซ้ำได้ด้วย `alembic heads`
 และมี test `tests/test_product_upload_schema.py::test_migration_graph_unifies_to_single_head` ยืนยัน)
 
 | Revision | เรื่อง |
@@ -19,6 +19,7 @@
 | `daf675afc8fc`, `9446ec1a2c5d` | constraint/index ของ products และ product images |
 | `b41d7ce09f35` | **ORDER-08**: เพิ่ม `expires_at`, `cancelled_at`, `cancel_reason` และสถานะ `CANCELLED` |
 | `a5f1c9d2e7b3` | **ORDER-09**: สร้างตาราง `admin_access_logs` สำหรับบันทึกการเข้าถึงข้อมูลส่วนบุคคลโดยผู้ดูแล |
+| `c93b7e5a1d84` | **ORDER-09**: index บางส่วน `ix_orders_waiting_expires_at` ให้ด่านตรวจ Order หมดเวลาของแคตตาล็อก |
 
 **ข้อควรระวัง:** `e8a4f1c02d77` ไม่ใช่ head อีกต่อไป มันอยู่กลางกราฟ คำสั่งเดิมในแผนเวอร์ชันก่อน
 (`alembic upgrade e8a4f1c02d77`) จะข้าม migration ของ PRODUCT ไป **ห้ามใช้** ให้ upgrade ถึง `head` เท่านั้น
@@ -67,26 +68,42 @@ Backend ต่อด้วย role เจ้าของตาราง (`postgr
 
 Downgrade ลบตารางทิ้ง **ข้อมูล Audit จะหายไปทั้งหมด** ก่อน downgrade บนข้อมูลจริงต้อง export ก่อนเสมอ
 
+### `c93b7e5a1d84` — index ของด่านตรวจ Order หมดเวลา (ORDER-09)
+สร้าง index อย่างเดียว ไม่แตะข้อมูลและไม่แตะ constraint ใด
+
+```sql
+CREATE INDEX ix_orders_waiting_expires_at ON orders (expires_at) WHERE status = 'WAITING_PAYMENT';
+```
+
+แคตตาล็อกสินค้าถาม "มี Order ที่เลยเส้นตายค้างอยู่ไหม" ก่อนอ่านทุกครั้ง (D-05) index นี้ทำให้คำถามนั้น
+แตะเฉพาะแถวที่ยังรอชำระเงิน บนตารางที่โตแล้วควรสร้างด้วย `CREATE INDEX CONCURRENTLY` แทน
+ซึ่งรันนอก transaction ของ alembic (ดูหมายเหตุในขั้นตอนที่ 5)
+
 ## ขั้นตอนที่แนะนำ
 
 1. สำรองข้อมูล (Supabase: Database → Backups หรือ `pg_dump --schema-only` + ตารางที่เกี่ยวข้อง)
 2. ตรวจ revision ปัจจุบัน: `alembic current` — **บันทึกค่าที่ได้ไว้** เพราะต้องใช้ตอน rollback
-3. `alembic heads` ต้องได้ `a5f1c9d2e7b3` ค่าเดียว ถ้าได้หลายค่าแปลว่ามี branch ค้าง ให้หยุดและ merge ก่อน
+3. `alembic heads` ต้องได้ `c93b7e5a1d84` ค่าเดียว ถ้าได้หลายค่าแปลว่ามี branch ค้าง ให้หยุดและ merge ก่อน
 4. ดู SQL ก่อนรัน: `alembic upgrade <current>:head --sql > order-migration.sql` แล้วให้ผู้ตรวจอ่าน
    **SQL ที่ได้จะรวม migration ของทีม PRODUCT ที่ยังไม่ได้รันด้วย** ถ้ามี ต้องให้เจ้าของงานนั้นตรวจร่วม
 5. รัน: `alembic upgrade head`
+   - ถ้าตาราง `orders` มีแถวจำนวนมากแล้ว ให้สร้าง `ix_orders_waiting_expires_at` ด้วยมือแบบ
+     `CREATE INDEX CONCURRENTLY` ก่อน แล้วค่อย `alembic stamp` ข้าม `c93b7e5a1d84`
+     เพราะ `CREATE INDEX` ธรรมดาจะล็อกการเขียนตารางนั้นระหว่างสร้าง
 6. ตรวจหลังรัน:
    - ตาราง 5 ตารางของ ORDER ครบ และ `relrowsecurity = true` ทุกตาราง
    - `uq_orders_active_product` เป็น partial index ที่มีเงื่อนไข `status <> 'CANCELLED'`
    - `orders` มีคอลัมน์ `expires_at` (NOT NULL), `cancelled_at`, `cancel_reason`
    - `ck_orders_status` รับค่า `CANCELLED` แล้ว และมี `ck_orders_cancel_fields`, `ck_orders_cancel_not_paid`
    - ตาราง `admin_access_logs` ถูกสร้างพร้อม CHECK ครบ 3 ตัวและ `relrowsecurity = true`
+   - มี index `ix_orders_waiting_expires_at` และเป็น partial index ที่มีเงื่อนไข `status = 'WAITING_PAYMENT'`
 7. ตั้ง `products.status` ของสินค้าที่พร้อมขายเป็น `AVAILABLE` (ค่าตรงกับ `ck_products_status` ของทีม PRODUCT แล้ว ดู D-01)
 
 ## Rollback
 
 | จาก | คำสั่ง | ผล |
 |---|---|---|
+| ORDER-09 (index) | `alembic downgrade a5f1c9d2e7b3` | ลบ index `ix_orders_waiting_expires_at` อย่างเดียว ไม่กระทบข้อมูล (ด่านตรวจหมดเวลายังทำงานได้ แค่ช้าลง) |
 | ORDER-09 | `alembic downgrade b41d7ce09f35` | ลบตาราง `admin_access_logs` **พร้อมข้อมูล Audit ทั้งหมด** |
 | ORDER-08 | `alembic downgrade 9446ec1a2c5d` | ลบ 3 คอลัมน์และ CHECK ใหม่ **ปฏิเสธการทำงานถ้ามี Order สถานะ `CANCELLED` อยู่** ต้อง export และตัดสินใจก่อน |
 | ORDER ทั้งหมด | `alembic downgrade d5c9e2a71b40` | ลบ 5 ตาราง **รวมข้อมูล Order/Payment ทั้งหมด** |
@@ -103,6 +120,10 @@ Downgrade ลบตารางทิ้ง **ข้อมูล Audit จะห
 - SQL ของ `b41d7ce09f35` ถูกสร้างและตรวจแบบ offline แล้ว (`alembic upgrade 9446ec1a2c5d:b41d7ce09f35 --sql`)
   ได้ DDL 8 คำสั่งใน transaction เดียว: ADD COLUMN x3 → backfill → SET NOT NULL → drop/add CHECK สถานะ → add CHECK ใหม่ 2 ตัว
 
+- `tests/test_orders_postgres.py::test_migration_backfills_deadlines_for_pre_existing_orders` — **backfill ของแถวเดิม**:
+  downgrade กลับไปก่อน ORDER-08 ใส่ Order แบบเก่าที่ไม่มีเส้นตาย แล้ว upgrade ใหม่
+  ได้ `expires_at = created_at + 30 นาที` จริง (ไม่ใช่เวลาที่รัน migration) และคอลัมน์ยกเลิกยังว่าง
+- `tests/test_orders_postgres.py::test_expiry_lookup_index_exists_after_migration` — index บางส่วนถูกสร้างจริง
 - `tests/test_orders_postgres.py::test_admin_access_log_table_is_created_with_rls` — ตาราง Audit มาพร้อม migration, RLS เปิด, index ครบ
 - `tests/test_orders_postgres.py::test_admin_access_log_checks_reject_incomplete_rows` — CHECK ปฏิเสธเหตุผลสั้น/ว่าง ค่า action/target นอกรายการ และ admin ที่ไม่มีจริง
 
@@ -110,10 +131,10 @@ Downgrade ลบตารางทิ้ง **ข้อมูล Audit จะห
 
 | สิ่งที่รัน | ผล |
 |---|---|
-| `tests/test_orders_postgres.py` (รวม ORDER-08 และ ORDER-09) | **18 passed** |
+| `tests/test_orders_postgres.py` (รวม ORDER-08 และ ORDER-09) | **20 passed** |
 | `tests/test_product_upload_schema.py` + `tests/test_user_migration.py` (ฐานข้อมูลเปล่า, migrate ทั้งกราฟจากข้อมูลเดิม) | **28 passed** |
-| `alembic upgrade head` บนฐานข้อมูลเปล่าอีกชุด | ผ่านทั้งกราฟถึง `a5f1c9d2e7b3` |
+| `alembic upgrade head` บนฐานข้อมูลเปล่าอีกชุด | ผ่านทั้งกราฟถึง `c93b7e5a1d84` |
 | `alembic downgrade -1` แล้ว `alembic upgrade head` ซ้ำ | ผ่าน ตารางหายแล้วกลับมาพร้อม CHECK ครบ ไม่มี duplicate constraint |
-| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **50/50 passed** |
+| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **57/57 passed** |
 
 > ยังไม่ได้รันกับ **Supabase กลาง** ขั้นตอนนั้นต้องให้ผู้ที่ถือสิทธิ์ฐานข้อมูลกลางเป็นผู้รันตามขั้นตอนข้างบน

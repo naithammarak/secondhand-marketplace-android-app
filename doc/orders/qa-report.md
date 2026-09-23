@@ -143,14 +143,14 @@ E2E ผ่าน HTTP: ดูวิธีรันในหัวไฟล์ `b
 ## ผลการทดสอบอัตโนมัติ
 | ชุด | ผล |
 |---|---|
-| Backend ทั้งหมด (SQLite เท่านั้น, `DATABASE_URL=""`) | **389 passed, 38 skipped** |
-| Backend ทั้งหมด **พร้อม PostgreSQL** (`TEST_DATABASE_URL` + `ORDER_TEST_DATABASE_URL`) | **425 passed, 2 skipped** |
-| └ `tests/test_orders_postgres.py` | **18 passed** (เดิม skip ทั้งหมด) |
+| Backend ทั้งหมด (SQLite เท่านั้น, `DATABASE_URL=""`) | **394 passed, 40 skipped** |
+| Backend ทั้งหมด **พร้อม PostgreSQL** (`TEST_DATABASE_URL` + `ORDER_TEST_DATABASE_URL`) | **432 passed, 2 skipped** |
+| └ `tests/test_orders_postgres.py` | **20 passed** (เดิม skip ทั้งหมด) |
 | └ `tests/test_admin_orders.py` (ใหม่) | 28 passed |
 | └ `tests/test_orders_api.py` | 62 passed |
 | └ `tests/test_product_upload_schema.py` + `tests/test_user_migration.py` (ฐานข้อมูลเปล่า) | 28 passed |
 | ที่เหลืออีก 2 skipped รันแยกแล้วผ่าน | `test_auth.py` (30 passed ด้วย `AUTH_TEST_DATABASE_URL`), `test_database_security.py` (1 passed ด้วย `DATABASE_URL` ชี้ฐานข้อมูลทดสอบ) |
-| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **50/50 passed** (เพิ่มกรณี ORDER-08 และ ORDER-09 เข้าไปแล้ว) |
+| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **57/57 passed** (เพิ่มกรณี ORDER-08, ORDER-09 และแคตตาล็อกเข้าไปแล้ว) |
 | Mobile `npm run test:logic` | **281 passed** (เดิม 267 + ใหม่ 14) |
 | Mobile `npm run test:components` | **101 passed** (เดิม 93 + ใหม่ 8 จาก jest run เต็ม) |
 | Mobile `tsc --noEmit` / `expo lint` | ผ่านทั้งคู่ (exit 0) |
@@ -217,3 +217,35 @@ E2E ผ่าน HTTP: ดูวิธีรันในหัวไฟล์ `b
      และยังตรวจว่า revision ของงานยืนยันตัวตนถูกใช้ไปแล้วเหมือนเดิม
 - ตารางทดสอบ PostgreSQL ที่ใช้: `order_test`, `schema_test`, `auth_test`, `security_test` เป็นฐานข้อมูลในเครื่อง
   ที่สร้างใหม่ทุกครั้งและทิ้งได้ ไม่มีการเชื่อมต่อฐานข้อมูลกลางในทุกขั้นตอน
+
+
+## รอบแก้ตามรีวิว PR #92 (2026-09-23)
+
+**ปัญหาที่ผู้รีวิวเจอ (merge blocker):** สินค้าที่การจองหมดเวลาหายจากแคตตาล็อกถาวร
+แคตตาล็อกคืนเฉพาะสินค้า `AVAILABLE` และไม่ได้กวาด Order ที่หมดเวลา ส่วนการกวาดมีแต่ในเส้นทางของงานสั่งซื้อ
+ซึ่งต้องรู้ `product_id` หรือ `order_id` อยู่แล้ว ผู้ซื้อที่เดินดูแอปตามปกติจึงไปไม่ถึงสินค้าชิ้นนั้นเลย
+**ยืนยันแล้วว่าเป็นจริง** (`public_product_filter()` บังคับ `status == "AVAILABLE"` และไม่มีการกวาดใน `product_reads.py`)
+
+**สิ่งที่แก้**
+| รายการ | รายละเอียด |
+|---|---|
+| ย้ายตรรกะการกวาด | `app/services/order_expiry.py` (จากเดิมอยู่ใน `app/api/orders.py`) เพื่อให้แคตตาล็อกเรียกได้โดยไม่ต้องอ้าง API อื่น |
+| จุดกวาดใหม่ | `GET /products` (ทั้งระบบ), `GET /products/{id}` (เฉพาะสินค้านั้น), `GET /products/me` (เฉพาะของผู้ขายคนนั้น) |
+| ต้นทุนต่อคำขอ | ถามด้วยคำสั่งอ่าน `LIMIT 1` ก่อน เขียนเฉพาะเมื่อมีของค้างจริง จำนวนคำสั่งต่อคำขอคงที่ (test เดิม `test_list_query_count_does_not_grow_with_products` ยังคุมอยู่ ปรับจาก 4 เป็น 5) |
+| index รองรับ | migration `c93b7e5a1d84` สร้าง `ix_orders_waiting_expires_at` แบบ partial (`WHERE status = 'WAITING_PAYMENT'`) |
+| กันพัง | การกวาดล้มเหลวไม่ทำให้หน้าสินค้าพัง จับ `SQLAlchemyError` แล้วบันทึก log และอ่านข้อมูลต่อ |
+
+**Test ที่เพิ่ม**
+| กรณี | Expected | Actual |
+|---|---|---|
+| ยังไม่หมดเวลา เปิดแคตตาล็อก | สินค้ายังซ่อน สถานะยัง `RESERVED` (ไม่ถูกปล่อยเพราะแค่มีคนเปิดดู) | ตรง |
+| หมดเวลาแล้ว เปิด `GET /products` | สินค้ากลับมาในรายการ, สินค้าเป็น `AVAILABLE`, Order เป็น `CANCELLED`/`EXPIRED` | ตรง |
+| หมดเวลาแล้ว เปิด `GET /products/{id}` ตรง ๆ | 200 และสินค้าถูกปล่อย โดยไม่ต้องรอให้ใครเปิดหน้ารายการก่อน | ตรง |
+| หมดเวลาแล้ว ผู้ขายเปิด `GET /products/me` | เห็นสถานะ `AVAILABLE` ไม่ใช่ `RESERVED` ค้าง | ตรง |
+| สินค้าที่จ่ายเงินแล้วถูกเลื่อนเวลาให้เลยเส้นตาย | ไม่ถูกปล่อยไม่ว่าจะเปิดแคตตาล็อกกี่ครั้ง | ตรง |
+| E2E ผ่าน HTTP: จอง → หายจากรายการ → หมดเวลา → กลับมาในรายการและเปิดรายละเอียดได้ | ตรงทุกขั้น | ตรง (7 กรณีใหม่) |
+
+**Backfill ของ Order เดิม (ตามที่ผู้รีวิวขอให้ยืนยัน)**
+`test_migration_backfills_deadlines_for_pre_existing_orders` บน PostgreSQL: downgrade กลับไปก่อน ORDER-08
+ใส่ Order แบบเก่าที่ไม่มีคอลัมน์เส้นตาย (`created_at = 2026-09-01T08:00Z`) แล้ว upgrade ใหม่
+ได้ `expires_at = created_at + 30 นาที` จริง ไม่ใช่เวลาที่รัน migration และ `cancelled_at`/`cancel_reason` ยังว่าง

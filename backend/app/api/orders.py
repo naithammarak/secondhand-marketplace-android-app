@@ -5,7 +5,9 @@
 - การจองสินค้าใช้ conditional update (AVAILABLE -> RESERVED) คู่กับ unique index ของ orders
 - การจ่ายเงินล็อกแถว Order ก่อนตรวจสถานะ และ unique constraint กันเงินซ้ำอีกชั้น
 - การหมดเวลาจ่ายเงินไม่ได้ใช้ scheduler แต่ตรวจและยกเลิกให้ตอนมีคนมาอ่านหรือมาแตะ Order นั้น
-  (lazy expiry) จุดบังคับใช้จริงอยู่ที่การจ่ายเงินซึ่งล็อกแถวอยู่แล้ว สินค้าจึงไม่ค้างถูกจอง
+  (lazy expiry) จุดบังคับใช้จริงอยู่ที่การจ่ายเงินซึ่งล็อกแถวอยู่แล้ว
+  ตรรกะการกวาดอยู่ที่ `app/services/order_expiry.py` เพราะแคตตาล็อกสินค้าก็ต้องเรียกด้วย
+  มิฉะนั้นสินค้าที่การจองหมดเวลาจะหายจากแคตตาล็อกแล้วไม่มีใครไปแตะ Order นั้นได้อีก (D-05)
 """
 
 import hashlib
@@ -44,6 +46,10 @@ from app.schemas.order import (
     SimulatePaymentRequest,
     SimulatePaymentResponse,
     ViewerRole,
+)
+from app.services.order_expiry import (
+    release_reserved_products,
+    sweep_expired_orders,
 )
 from app.services.order_pricing import (
     ATTEMPT_FAILED,
@@ -255,57 +261,6 @@ def payment_window_passed(order: Order, now: datetime) -> bool:
         return False
     deadline = as_utc(order.expires_at)
     return deadline is not None and deadline <= now
-
-
-def release_reserved_products(db: Session, product_ids: list[int]) -> None:
-    """คืนสินค้าที่ถูกจองไว้ให้ขายต่อได้ สินค้าที่ถูกลบหรือเปลี่ยนสถานะไปแล้วจะไม่ถูกแตะ"""
-    if not product_ids:
-        return
-    db.execute(
-        update(Product)
-        .where(
-            Product.id.in_(product_ids),
-            Product.status == PRODUCT_RESERVED,
-            Product.deleted_at.is_(None),
-        )
-        .values(status=PRODUCT_AVAILABLE)
-        .execution_options(synchronize_session=False)
-    )
-
-
-def sweep_expired_orders(db: Session, *conditions) -> int:
-    """ยกเลิก Order ที่หมดเวลาจ่ายตามเงื่อนไขที่ให้มา แล้วปล่อยสินค้ากลับไปขายต่อ
-
-    ใช้ conditional update จึงปลอดภัยเมื่อหลายคำขอทำพร้อมกัน มีเพียงคำขอเดียวที่ได้แถวไป
-    ผู้เรียกต้องไม่ถือ row lock ที่ยังต้องใช้ต่อ เพราะฟังก์ชันนี้ปิด transaction ด้วย commit
-    """
-    now = utcnow()
-    try:
-        released = (
-            db.execute(
-                update(Order)
-                .where(
-                    *conditions,
-                    Order.status == ORDER_WAITING_PAYMENT,
-                    Order.expires_at <= now,
-                )
-                .values(
-                    status=ORDER_CANCELLED,
-                    cancel_reason=CANCEL_REASON_EXPIRED,
-                    cancelled_at=now,
-                )
-                .returning(Order.product_id)
-                .execution_options(synchronize_session=False)
-            )
-            .scalars()
-            .all()
-        )
-        release_reserved_products(db, list(released))
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return len(released)
 
 
 def cancel_waiting_order(db: Session, order: Order, reason: str, now: datetime) -> bool:

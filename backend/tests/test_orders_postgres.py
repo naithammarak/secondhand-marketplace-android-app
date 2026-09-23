@@ -10,6 +10,7 @@
 ห้ามชี้ไปที่ฐานข้อมูลกลาง (Supabase)
 """
 
+from datetime import datetime, timezone
 import os
 import threading
 import time
@@ -43,6 +44,8 @@ from tests.order_helpers import (
 PG_URL = os.getenv("ORDER_TEST_DATABASE_URL")
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 BASE_REVISION = "d5c9e2a71b40"
+# revision ก่อน ORDER-08 ใช้จำลอง "ฐานข้อมูลที่มี Order อยู่ก่อนแล้ว" ตอนตรวจ backfill
+PRE_EXPIRY_REVISION = "9446ec1a2c5d"
 ORDER_TABLES = ("orders", "payment_attempts", "payments", "escrows", "receipts")
 
 pytestmark = pytest.mark.skipif(
@@ -654,3 +657,76 @@ def test_admin_access_log_checks_reject_incomplete_rows(db, admin_world):
         db.rollback()
 
     assert count(db, AdminAccessLog) == 1
+
+
+def test_migration_backfills_deadlines_for_pre_existing_orders(db, world):
+    """Order ที่มีอยู่ก่อน ORDER-08 ต้องได้เส้นตาย = created_at + 30 นาที
+
+    ทดสอบเส้นทางจริงของการอัปเกรดบนฐานข้อมูลที่มีข้อมูลอยู่แล้ว ไม่ใช่ฐานข้อมูลเปล่า
+    เพราะแถวเดิมไม่มีคอลัมน์เส้นตาย และถ้า backfill ผิดไปใช้เวลาที่รัน migration
+    Order เก่าทั้งหมดจะได้เวลาอีก 30 นาทีนับจากวันติดตั้ง แทนที่จะหมดอายุไปนานแล้ว
+    """
+    db.execute(
+        text("TRUNCATE receipts, escrows, payments, payment_attempts, orders RESTART IDENTITY CASCADE")
+    )
+    db.commit()
+    run_alembic("downgrade", PRE_EXPIRY_REVISION)
+
+    legacy_created_at = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
+    db.execute(
+        text(
+            """
+            INSERT INTO orders (
+                buyer_id, seller_id, product_id, status,
+                product_name, product_condition, product_size, currency,
+                item_price, shipping_fee, inspection_fee, commission_fee,
+                total_amount, seller_payout,
+                ship_recipient_name, ship_phone, ship_address_line, ship_subdistrict,
+                ship_district, ship_province, ship_postal_code,
+                idempotency_key, request_hash, created_at, updated_at
+            ) VALUES (
+                :buyer_id, :seller_id, :product_id, 'WAITING_PAYMENT',
+                'สินค้าเก่า', 'GOOD', 'M', 'THB',
+                1200.00, 50.00, 100.00, 60.00,
+                1350.00, 1140.00,
+                'ผู้ซื้อ เก่า', '0812345678', '1 ถนนเก่า', 'แขวงเก่า',
+                'เขตเก่า', 'กรุงเทพมหานคร', '10110',
+                'legacy-key-0001', :request_hash, :created_at, :created_at
+            )
+            """
+        ),
+        {
+            "buyer_id": world["buyer_a"],
+            "seller_id": world["seller"],
+            "product_id": world["product_id"],
+            "request_hash": "0" * 64,
+            "created_at": legacy_created_at,
+        },
+    )
+    db.commit()
+
+    run_alembic("upgrade", "head")
+
+    row = db.execute(text("SELECT created_at, expires_at, cancelled_at, cancel_reason FROM orders")).one()
+    assert row.expires_at == payment_deadline(row.created_at)
+    assert row.expires_at == payment_deadline(legacy_created_at)
+    # แถวเดิมยังไม่ถูกยกเลิก คอลัมน์ใหม่ที่เหลือต้องว่าง
+    assert (row.cancelled_at, row.cancel_reason) == (None, None)
+
+    with pytest.raises(IntegrityError):
+        # NOT NULL ของ expires_at ต้องมีผลกับแถวใหม่หลัง backfill ด้วย
+        db.execute(text("INSERT INTO orders (buyer_id) VALUES (:id)"), {"id": world["buyer_a"]})
+        db.commit()
+    db.rollback()
+
+
+def test_expiry_lookup_index_exists_after_migration(pg_engine):
+    """ด่านตรวจ Order หมดเวลาที่แคตตาล็อกเรียกทุกครั้งต้องมี index บางส่วนรองรับ (D-05)"""
+    with pg_engine.connect() as connection:
+        definition = connection.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_orders_waiting_expires_at'")
+        ).scalar_one()
+    assert "expires_at" in definition
+    # index บางส่วน: ต้องแตะเฉพาะแถวที่ยังรอชำระเงิน ไม่ใช่ทั้งตาราง
+    assert "WHERE" in definition
+    assert "status" in definition and "WAITING_PAYMENT" in definition

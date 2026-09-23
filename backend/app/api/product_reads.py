@@ -14,8 +14,10 @@ from app.models.brand import Brand
 from app.models.category import Category
 from app.models.product import Product
 from app.models.product_image import ProductImage
+from app.models.order import Order
 from app.models.user import User, UserRole, UserStatus
 from app.models.verification import Verification
+from app.services.order_expiry import sweep_if_needed
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,29 @@ def latest_approval_status():
         .correlate(User)
         .scalar_subquery()
     )
+
+
+def release_expired_reservations(
+    db: Session, product_id: int | None = None, *, seller_id: int | None = None
+) -> None:
+    """ปล่อยสินค้าที่การจองหมดเวลาก่อนอ่านแคตตาล็อก (D-05)
+
+    แคตตาล็อกคืนเฉพาะสินค้า `AVAILABLE` ถ้าไม่กวาดตรงนี้ สินค้าที่ผู้ซื้อคนก่อนจองไว้แล้วไม่จ่าย
+    จะหายจากรายการถาวร เพราะไม่มีเส้นทางไหนให้ผู้ซื้อคนอื่นไปแตะ Order นั้นได้อีก
+
+    ปกติไม่มีอะไรให้กวาด จึงถามด้วยคำสั่งอ่านที่ราคาถูกก่อนแล้วค่อยเขียนเมื่อจำเป็นจริง
+    การกวาดล้มเหลวต้องไม่ทำให้การเปิดดูสินค้าพัง จึงบันทึก log แล้วอ่านข้อมูลต่อ
+    """
+    conditions = []
+    if product_id is not None:
+        conditions.append(Order.product_id == product_id)
+    if seller_id is not None:
+        conditions.append(Order.seller_id == seller_id)
+    try:
+        sweep_if_needed(db, *conditions)
+    except SQLAlchemyError:
+        logger.exception("PRODUCT-05 expired reservation sweep failed")
+        db.rollback()
 
 
 def public_product_filter():
@@ -264,6 +289,8 @@ def my_products(
     if status is not None and status not in OWNER_STATUSES:
         raise product_error(422, "VALIDATION_ERROR", {"status": ["สถานะสินค้าไม่ถูกต้อง"]})
     response.headers["Cache-Control"] = "no-store"
+    # ผู้ขายก็ต้องไม่เห็นสินค้าของตัวเองค้างสถานะถูกจองทั้งที่การจองหมดอายุไปแล้ว
+    release_expired_reservations(db, seller_id=user.id)
     return list_products(db, page=page, page_size=page_size, term=search_term(q), seller_id=user.id, status=status)
 
 
@@ -293,6 +320,7 @@ def public_products(
 ):
     validate_query(request, {"q", "page", "page_size"})
     response.headers["Cache-Control"] = "no-store"
+    release_expired_reservations(db)
     return list_products(db, page=page, page_size=page_size, term=search_term(q))
 
 
@@ -304,6 +332,7 @@ def public_product_detail(
     if product_id < 1:
         raise product_error(422, "VALIDATION_ERROR", {"product_id": ["ID ต้องมากกว่า 0"]})
     response.headers["Cache-Control"] = "no-store"
+    release_expired_reservations(db, product_id)
     return detail(db, product_id)
 
 

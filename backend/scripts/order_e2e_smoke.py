@@ -35,6 +35,7 @@ from app.models.category import Category
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import User, UserRole, UserStatus
+from app.models.verification import Verification
 from app.services.order_pricing import utcnow
 
 ISSUER = os.getenv("ORDER_E2E_JWT_ISSUER", "https://example-project.supabase.co/auth/v1")
@@ -110,6 +111,16 @@ def main() -> int:
             session.add(user)
             session.flush()
             people[alias] = (user.id, token(uid))
+        session.add(
+            Verification(
+                user_id=people["seller_owner"][0],
+                id_card_image_url="private/evidence.jpg",
+                bank_account_name="demo seller",
+                bank_account_number="1111111111",
+                bank_name="ธนาคารสมมติ",
+                verification_status="APPROVED",
+            )
+        )
         category = Category(category_name="สมมติ")
         brand = Brand(brand_name="สมมติ")
         session.add_all([category, brand])
@@ -133,6 +144,7 @@ def main() -> int:
         p_pay_race = product("pay race")
         p_cancel = product("buyer cancels", owner="seller_other")
         p_expire = product("payment window closes", owner="seller_other")
+        p_catalog = product("catalog visibility")
         session.commit()
 
     a, b = people["buyer_a"][1], people["buyer_b"][1]
@@ -277,6 +289,27 @@ def main() -> int:
               (row.status, row.cancel_reason))
         check("expiry: ไม่บันทึก attempt และไม่มีเงิน (DB)", (0, 0, 0, 0), counts(session, oid_expire))
         check("expiry: สินค้าถูกปล่อยคืน (DB)", "AVAILABLE", session.get(Product, p_expire).status)
+
+
+    # --- ORDER-08: สินค้าที่การจองหมดเวลาต้องกลับมาอยู่ในแคตตาล็อกที่ผู้ซื้อเดินดูตามปกติ
+    check("catalog: สินค้าพร้อมขายอยู่ในรายการ", True,
+          p_catalog in [item["id"] for item in http.get("/products").json()["data"]])
+    oid_catalog = http.post("/orders", json={"product_id": p_catalog, "shipping_address": ADDRESS},
+                            headers={**b, **key()}).json()["id"]
+    check("catalog: จองแล้วหายจากรายการ", False,
+          p_catalog in [item["id"] for item in http.get("/products").json()["data"]])
+    check("catalog: จองแล้วเปิดรายละเอียดไม่ได้", 404, http.get(f"/products/{p_catalog}").status_code)
+    with Session(engine) as session:
+        reserved = session.get(Order, oid_catalog)
+        reserved.expires_at = utcnow() - timedelta(minutes=1)
+        session.commit()
+    check("catalog: หมดเวลาแล้วกลับมาอยู่ในรายการ", True,
+          p_catalog in [item["id"] for item in http.get("/products").json()["data"]])
+    check("catalog: หมดเวลาแล้วเปิดรายละเอียดได้", 200, http.get(f"/products/{p_catalog}").status_code)
+    with Session(engine) as session:
+        check("catalog: สินค้ากลับเป็น AVAILABLE (DB)", "AVAILABLE", session.get(Product, p_catalog).status)
+        check("catalog: Order ถูกยกเลิกเพราะหมดเวลา (DB)", ("CANCELLED", "EXPIRED"),
+              (session.get(Order, oid_catalog).status, session.get(Order, oid_catalog).cancel_reason))
 
     # --- ORDER-09: มุมมองผู้ดูแล
     admin_list = http.get("/admin/orders", headers=admin)
