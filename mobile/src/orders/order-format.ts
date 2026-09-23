@@ -42,14 +42,23 @@ export function formatBaht(amount: string | null | undefined): string {
 /**
  * เวลาที่เหลือก่อนหมดเวลาชำระ ในรูป "นาที:วินาที"
  * คืน null เมื่อไม่มีเส้นตาย อ่านค่าไม่ได้ หรือเลยเวลาไปแล้ว — หน้าจอจะได้ไม่แสดงเวลาติดลบ
+ *
+ * ปัดขึ้น: เศษวินาทีสุดท้ายยังต้องแสดง "0:01" ไม่ใช่หายไปเฉย ๆ ก่อนถึงเส้นตายจริงเกือบ 1 วินาที
+ * และ **ห้ามใช้ค่า null จากฟังก์ชันนี้เป็นตัวตัดสินว่าหมดเวลาแล้ว** ให้เทียบเวลาดิบกับนาฬิกาแทน
  */
 export function formatRemaining(expiresAt: string | null | undefined, now: number): string | null {
-  if (!expiresAt) return null;
-  const deadline = new Date(expiresAt).getTime();
-  if (Number.isNaN(deadline)) return null;
-  const seconds = Math.floor((deadline - now) / 1000);
+  const deadline = deadlineAt(expiresAt);
+  if (deadline === null) return null;
+  const seconds = Math.ceil((deadline - now) / 1000);
   if (seconds <= 0) return null;
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** เวลาเส้นตายเป็นตัวเลข คืน null เมื่อไม่มีหรืออ่านไม่ได้ */
+export function deadlineAt(expiresAt: string | null | undefined): number | null {
+  if (!expiresAt) return null;
+  const deadline = new Date(expiresAt).getTime();
+  return Number.isNaN(deadline) ? null : deadline;
 }
 
 export function formatDateTime(value: string | null | undefined): string | null {

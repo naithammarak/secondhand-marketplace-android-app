@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
 import {
   cancelReasonLabels,
+  deadlineAt,
   formatBaht,
   formatDateTime,
   formatRemaining,
@@ -17,6 +18,9 @@ import {
 import { useOrderDetail, useOrdersList } from '@/orders/orders-provider';
 import { CONDITION_LABELS } from '@/services/product-service';
 
+/** ถามสถานะจริงซ้ำทุกกี่มิลลิวินาทีหลังเลยเส้นตาย จนกว่า server จะตอบสถานะสุดท้าย */
+const DEADLINE_RECHECK_MS = 5000;
+
 export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const auth = useAuth();
   const router = useRouter();
@@ -25,13 +29,17 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const openedFor = useRef<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const lastDeadlineCheck = useRef(0);
 
   const order = state.orderId === orderId ? state.order : null;
   const paying = state.paying !== null;
   const isBuyer = order?.viewerRole === 'buyer';
   // เส้นตายมาจาก server ฝั่งแอปทำแค่แปลงเป็นเวลาที่เหลือให้ดู ไม่ตัดสินสถานะเอง
-  const remaining = order?.status === 'WAITING_PAYMENT' ? formatRemaining(order.expiresAt, now) : null;
-  const deadlinePassed = order?.status === 'WAITING_PAYMENT' && !!order.expiresAt && remaining === null;
+  const waitingPayment = order?.status === 'WAITING_PAYMENT';
+  const deadline = waitingPayment ? deadlineAt(order?.expiresAt) : null;
+  const remaining = waitingPayment ? formatRemaining(order?.expiresAt, now) : null;
+  // ตัดสินจากเวลาดิบ ไม่ใช่จากการที่ข้อความนับถอยหลังกลายเป็นค่าว่าง
+  const deadlinePassed = deadline !== null && now >= deadline;
 
   useEffect(() => {
     // เปิดหน้าทุกครั้งอ่านสถานะจริงจาก server (รวมถึงหลังเปิดแอปใหม่)
@@ -54,15 +62,23 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
 
   useEffect(() => {
     // เดินนาฬิกาเฉพาะตอนที่ยังมีเส้นตายให้นับ จะได้ไม่ตั้ง interval ทิ้งไว้เปล่า ๆ
-    if (order?.status !== 'WAITING_PAYMENT' || !order.expiresAt) return;
+    if (!waitingPayment || deadline === null) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [order?.expiresAt, order?.status]);
+  }, [deadline, waitingPayment]);
 
   useEffect(() => {
-    // นาฬิกาหมดแล้วแต่สถานะยังเก่า ให้ถามสถานะจริงจาก server หนึ่งครั้ง ห้ามสรุปผลเอง
-    if (deadlinePassed) void store.refresh();
-  }, [deadlinePassed, store]);
+    // นาฬิกาหมดแล้วแต่สถานะยังเก่า ให้ถามสถานะจริงจาก server ห้ามสรุปผลเอง
+    // ถามซ้ำเป็นระยะจนกว่า server จะตอบสถานะสุดท้าย เพราะคำตอบครั้งแรกอาจมาถึงก่อนเส้นตายจริง
+    // (เช่น นาฬิกาเครื่องเร็วกว่า server เล็กน้อย) ถ้าถามครั้งเดียวหน้าจอจะค้างที่ "กำลังตรวจสถานะล่าสุด"
+    if (!deadlinePassed) {
+      lastDeadlineCheck.current = 0;
+      return;
+    }
+    if (now - lastDeadlineCheck.current < DEADLINE_RECHECK_MS) return;
+    lastDeadlineCheck.current = now;
+    void store.refresh();
+  }, [deadlinePassed, now, store]);
 
   if (!auth.session) return <Redirect href="/" />;
 

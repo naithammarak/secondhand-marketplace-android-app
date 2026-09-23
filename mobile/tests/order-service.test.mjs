@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOrderService, OrderServiceError } from '../src/services/order-service.ts';
-import { formatBaht, formatRemaining, orderStatusLabel, orderStatusLabels } from '../src/orders/order-format.ts';
+import { deadlineAt, formatBaht, formatRemaining, orderStatusLabel, orderStatusLabels } from '../src/orders/order-format.ts';
 import { validateAddress, normalizeAddress } from '../src/orders/checkout-form.ts';
 import { parseRouteId } from '../src/orders/route-params.ts';
 
@@ -318,4 +318,22 @@ test('ข้อความสถานะกลางถูกใช้แท�
     assert.equal(orderStatusLabel(value), orderStatusLabels.UNKNOWN, `value=${value}`);
   }
   assert.notEqual(orderStatusLabels.UNKNOWN.trim(), '');
+});
+
+
+test('เศษวินาทีสุดท้ายยังต้องนับว่ายังไม่หมดเวลา', () => {
+  // ก่อนแก้: formatRemaining คืน null ใน 999 มิลลิวินาทีสุดท้าย แล้วหน้าจอเข้าใจว่าหมดเวลาไปแล้ว
+  const deadline = '2026-09-18T10:30:00Z';
+  const at = Date.parse(deadline);
+  assert.equal(formatRemaining(deadline, at - 500), '0:01');
+  assert.equal(formatRemaining(deadline, at - 1), '0:01');
+  assert.equal(formatRemaining(deadline, at), null);
+  assert.equal(formatRemaining(deadline, at + 500), null);
+});
+
+test('deadlineAt ให้เวลาดิบไว้ให้หน้าจอตัดสินเอง', () => {
+  assert.equal(deadlineAt('2026-09-18T10:30:00Z'), Date.parse('2026-09-18T10:30:00Z'));
+  assert.equal(deadlineAt(null), null);
+  assert.equal(deadlineAt(undefined), null);
+  assert.equal(deadlineAt('not-a-date'), null);
 });
