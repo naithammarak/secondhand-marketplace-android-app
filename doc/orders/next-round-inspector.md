@@ -39,9 +39,34 @@ SRS กำหนดงานของ Inspector ไว้แล้วใน **FR
 การคัดลอกมาโดยพิมพ์ตามความจำจะกลายเป็นข้อกำหนดปลอมที่แย่กว่าการไม่มีเลย
 ให้เปิดต้นฉบับแล้วคัดลงเอกสารออกแบบของรอบนั้นตอนเริ่มงาน
 
+## 2.1 อัปเดต: มีสัญญา INSPECT-00 แล้ว (issue #54)
+
+หลังเขียนเอกสารนี้ Lead เผยแพร่ **สัญญากลาง INSPECT-00 ใน [issue #54](https://github.com/naithammarak/secondhand-marketplace-android-app/issues/54)**
+(ยัง `OPEN` สถานะ "ร่าง Lead v1 รอ FE/BE/DB/QA ทบทวนก่อนปิด") ใต้ Feature [#52](https://github.com/naithammarak/secondhand-marketplace-android-app/issues/52)
+สัญญานั้นกำหนด transition และสิทธิ์ของช่วงตรวจสินค้าไว้แล้ว
+
+| ก่อน | ผู้ทำ | หลัง |
+|---|---|---|
+| `WAITING_SELLER_SHIP` | Seller เจ้าของแจ้งส่ง | `SHIPPING_TO_CENTER` |
+| `SHIPPING_TO_CENTER` | Inspector รับเข้าศูนย์ | `RECEIVED_AT_CENTER` |
+| `RECEIVED_AT_CENTER` | Inspector เริ่มตรวจ | `INSPECTING` |
+| `INSPECTING` | Inspector เจ้าของงานบันทึกผล | `RESULT_NOTIFIED` |
+
+ชื่อสถานะใน `ORDER_STATUSES_RESERVED` และในตารางของ `contract.md` ถูกปรับให้ตรงกับสัญญานั้นแล้ว
+(เดิมใช้ `SHIPPING_TO_INSPECTION` และ `INSPECTION_REPORTED`) เพื่อไม่ให้มีชื่อสองชุดในโปรเจกต์เดียว
+
+สัญญา INSPECT-00 ระบุตรงกับสิ่งที่ PR #92 เตรียมไว้ว่า **ก่อนเปิด transition ใหม่ ต้องขยาย CHECK ของ
+`orders.status`, Pydantic `OrderStatus` และ decoder/label ของแอปพร้อมกัน** ส่วนที่ PR #92 ทำไปแล้วคือ
+ทำให้ decoder ของแอปไม่พังเมื่อเจอค่าใหม่ และทำให้ตรรกะฝั่ง Backend ไม่ผูกกับชื่อสถานะ
+เหลือเฉพาะการเพิ่มค่าใน CHECK กับ Enum ตอนเริ่ม INSPECT-01
+
 ## 3. คำถามที่ยังเปิดอยู่จริง (ตัดสินเมื่อถึงรอบนั้น)
 
 **Inspector ควรเห็นข้อมูลผู้ซื้อและผู้ขายมากน้อยเพียงใด**
+
+สัญญา INSPECT-00 ให้ทิศทางไว้แล้วว่า Inspector ใช้ "คิว Inspect" แทนการอ่าน Order ของผู้อื่น
+และอ่านผล/หลักฐานได้เฉพาะงานที่ตนเป็นเจ้าของ แต่ **ยังไม่ระบุว่าเห็นฟิลด์ใดของผู้ซื้อ/ผู้ขายบ้าง**
+ข้อนี้จึงยังเปิดอยู่
 
 สิ่งที่มีอยู่แล้วให้ใช้เป็นจุดตั้งต้นของการตัดสิน
 - ORDER-09 วางแบบแผนไว้แล้วว่า "มีสิทธิ์เข้าถึง แต่ระบบไม่แสดงอัตโนมัติ": ปิดบังเป็นค่าตั้งต้น
