@@ -127,7 +127,19 @@ Set mode to `mock` explicitly only for development/test screens. EAS `developmen
 and `production` builds select API mode; the `mock` profile is reserved for isolated UI work.
 The development profile also disables product create/edit mocks, so seller and catalog calls
 use the same `EXPO_PUBLIC_API_BASE_URL`. Set a URL reachable from the test phone in the matching
-EAS environment. Production also carries an explicit
+EAS environment. The `mock` profile enables both catalog and seller/upload mocks; those services
+ignore the API URL when mock mode is on, even when the shared EAS development environment has a
+real URL configured.
+
+A development client loading JavaScript from a local Metro server uses that computer's `.env`
+values for `EXPO_PUBLIC_*`; changing `eas.json` or `.env.example` alone does not change the
+JavaScript Metro is serving. For the Seller → Buyer API check, set
+`EXPO_PUBLIC_PRODUCT_CATALOG_MODE=api`, `EXPO_PUBLIC_PRODUCT_MOCK_MODE=false`, and a phone-reachable
+`EXPO_PUBLIC_API_BASE_URL` in the Metro computer's `.env`, then fully reload the app after edits.
+For isolated mock UI work, set catalog mode to `mock` and the product mock flag to `true`, then fully
+reload. See [Expo's environment-variable guide](https://docs.expo.dev/guides/environment-variables/).
+
+Production also carries an explicit
 `EXPO_PUBLIC_PRODUCT_CATALOG_ENV=production` marker; the resolver refuses mock mode in that
 environment even if the mode variable is misconfigured. Without a URL, the screens show the
 unavailable state.
@@ -231,7 +243,7 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 
 **Automated (run and confirmed passing on this branch):**
 
-- `npm run test:logic` → **256/256 PASS** (service/config, catalog store, and detail store logic tests)
+- `npm run test:logic` → **257/257 PASS** (service/config, catalog store, and detail store logic tests)
 - `npm run test:components` (jest) → **94/94 PASS**, all suites including:
   - `component-tests/product-catalog-ui.test.tsx` (3 tests)
   - `component-tests/product-list-screen.test.tsx` (16 tests)
@@ -355,4 +367,4 @@ based on this frontend-only handoff.
 ### 18.4 Complete Component Test Coverage
 - `component-tests/product-list-screen.test.tsx` (16 tests) covers initial loading, revisit refresh, detail return, list rendering, search, empty states, error/retry, load-more, and navigation.
 - `component-tests/product-detail-screen.test.tsx` (9 tests) covers loading, full detail rendering, out-of-scope assertion (no buy/seller info), unavailable state (404/CANCELLED), invalid id handling, refresh on back, and retry.
-- Current checks: **256 logic tests** + **94 component tests**, typecheck and lint pass. These do not replace Seller → Buyer or physical-device acceptance evidence.
+- Current checks: **257 logic tests** + **94 component tests**, typecheck and lint pass. These do not replace Seller → Buyer or physical-device acceptance evidence.

@@ -27,7 +27,7 @@ let mockUploadCounter = 100;
 
 export function createImageUploadService(options: ImageUploadServiceOptions = {}) {
   let baseUrl: string | undefined;
-  if (options.baseUrl) {
+  if (options.mockMode !== true && options.baseUrl) {
     const parsed = new URL(options.baseUrl);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid API origin');
     baseUrl = parsed.origin;

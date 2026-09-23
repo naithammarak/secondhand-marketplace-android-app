@@ -1,8 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   createProductService, ProductServiceError, registerProductImage,
 } from '../src/services/product-service.ts';
+import { createImageUploadService } from '../src/services/image-upload-service.ts';
+
+test('mock build uploads and creates only in memory even when the EAS environment has an API URL', async () => {
+  const eas = JSON.parse(await readFile(new URL('../eas.json', import.meta.url), 'utf8'));
+  const profile = eas.build.mock.env;
+  assert.equal(profile.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'mock');
+  assert.equal(profile.EXPO_PUBLIC_PRODUCT_MOCK_MODE, 'true');
+
+  const calls = [];
+  const fetcher = async (url) => {
+    calls.push(url);
+    throw new Error('mock build must not call the backend');
+  };
+  const mockMode = profile.EXPO_PUBLIC_PRODUCT_MOCK_MODE === 'true';
+  const baseUrl = 'https://configured-api.example.test';
+  const uploadService = createImageUploadService({ baseUrl, mockMode, fetch: fetcher });
+  const productService = createProductService({ baseUrl, mockMode, fetch: fetcher });
+
+  const uploaded = await uploadService.uploadImage({ uri: 'file:///test-image.jpg' }, 'seller-token');
+  const created = await productService.createProduct({
+    name: 'ทดสอบ mock profile', description: 'ไม่ส่งข้อมูลไป API', size: 'M',
+    condition: 'GOOD', price: 250, category: 'เสื้อผ้า', categoryId: 1,
+    brand: 'Nike', brandId: 2, images: [uploaded.url],
+  }, 'seller-token');
+  const owner = await productService.getProductById(created.id, 'seller-token');
+
+  assert.match(uploaded.url, /^mock:\/\/product-images\//);
+  assert.match(created.id, /^mock-/);
+  assert.equal(owner?.id, created.id);
+  assert.deepEqual(calls, []);
+});
 
 test('loads seller products with bearer token and keeps pagination and statuses', async () => {
   const calls = [];
