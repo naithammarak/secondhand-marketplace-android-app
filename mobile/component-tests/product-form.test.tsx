@@ -4,6 +4,7 @@ import { ProductForm } from '@/components/product-form';
 import { emptyProductFormValues } from '@/products/product-form';
 
 let mockUploadImage = jest.fn();
+let mockPickProductImage = jest.fn().mockResolvedValue({ status: 'picked', file: { uri: 'file:///test-image.jpg', type: 'image/jpeg' } });
 let mockGetCategories = jest.fn().mockResolvedValue([
   { id: 1, name: 'เสื้อผ้า' },
   { id: 2, name: 'รองเท้า' },
@@ -19,6 +20,10 @@ jest.mock('@/services/image-upload-service', () => ({
   createImageUploadService: () => ({
     uploadImage: () => mockUploadImage(),
   }),
+}));
+
+jest.mock('@/products/pick-product-image', () => ({
+  pickProductImage: () => mockPickProductImage(),
 }));
 
 jest.mock('@/services/product-service', () => {
@@ -46,6 +51,7 @@ function deferred() {
 describe('ProductForm', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPickProductImage.mockResolvedValue({ status: 'picked', file: { uri: 'file:///test-image.jpg', type: 'image/jpeg' } });
     mockGetCategories.mockResolvedValue([
       { id: 1, name: 'เสื้อผ้า' },
       { id: 2, name: 'รองเท้า' },
@@ -56,6 +62,26 @@ describe('ProductForm', () => {
       { id: 2, name: 'Nike' },
       { id: 99, name: 'แบรนด์พิเศษ' },
     ]);
+  });
+
+  test('does not start an upload if the account changes while the picker is open', async () => {
+    const picker = deferred();
+    mockPickProductImage.mockReturnValueOnce(picker.promise);
+    const view = render(<ProductForm mode="create" accessToken="old-token" onSubmit={jest.fn()} />);
+    await act(async () => { fireEvent.press(screen.getByText('เพิ่มรูป')); });
+    view.rerender(<ProductForm mode="create" accessToken="new-token" onSubmit={jest.fn()} />);
+    await act(async () => { picker.resolve({ status: 'picked', file: { uri: 'file:///late.jpg', type: 'image/jpeg' } }); });
+    expect(mockUploadImage).not.toHaveBeenCalled();
+  });
+
+  test('does not start an upload if the form closes while the picker is open', async () => {
+    const picker = deferred();
+    mockPickProductImage.mockReturnValueOnce(picker.promise);
+    const view = render(<ProductForm mode="create" accessToken="seller-token" onSubmit={jest.fn()} />);
+    await act(async () => { fireEvent.press(screen.getByText('เพิ่มรูป')); });
+    view.unmount();
+    await act(async () => { picker.resolve({ status: 'picked', file: { uri: 'file:///late.jpg', type: 'image/jpeg' } }); });
+    expect(mockUploadImage).not.toHaveBeenCalled();
   });
 
   test('preserves user edits and removed images when an image upload resolves', async () => {

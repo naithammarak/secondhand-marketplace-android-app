@@ -21,6 +21,7 @@ export default function NewProductScreen() {
   const [error, setError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<Record<string, string>>({});
   const [uncertain, setUncertain] = useState(false);
+  const [checkedInventory, setCheckedInventory] = useState(false);
   const [uploadAbortVersion, setUploadAbortVersion] = useState(0);
   const submittingRef = useRef(false);
   const requestController = useRef<AbortController | null>(null);
@@ -72,8 +73,13 @@ export default function NewProductScreen() {
           <View style={styles.card}>
             <Text style={styles.title}>ลงขายสินค้า</Text>
             {uncertain && (
-              <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/product/mine')} style={styles.checkButton}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => { setCheckedInventory(true); router.push('/product/mine'); }} style={styles.checkButton}>
                 <Text style={styles.checkButtonText}>ตรวจสินค้าของฉันก่อนลงซ้ำ</Text>
+              </TouchableOpacity>
+            )}
+            {uncertain && checkedInventory && (
+              <TouchableOpacity accessibilityRole="button" onPress={() => { setUncertain(false); setError(null); }} style={styles.resumeButton}>
+                <Text style={styles.resumeButtonText}>ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ</Text>
               </TouchableOpacity>
             )}
             <ProductForm
@@ -111,4 +117,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', color: '#1a1f27', marginBottom: Spacing.three },
   checkButton: { backgroundColor: '#96bde9', padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },
   checkButtonText: { color: '#fff', textAlign: 'center', fontWeight: '700' },
+  resumeButton: { padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three, borderWidth: 1, borderColor: '#96bde9' },
+  resumeButtonText: { color: '#33404f', textAlign: 'center', fontWeight: '700' },
 });

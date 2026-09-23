@@ -179,10 +179,13 @@ export function ProductForm({
 
   async function handleAddImage() {
     if (values.images.length >= MAX_PRODUCT_IMAGES || uploadingImage) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
     setUploadingImage(true);
     setUploadError(null);
     try {
       const picked = await pickProductImage();
+      if (controller.signal.aborted) return;
       if (picked.status === 'cancelled') return;
       if (picked.status === 'permission-denied') {
         setUploadError('ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ');
@@ -193,8 +196,6 @@ export function ProductForm({
         setUploadError(fileError);
         return;
       }
-      const controller = new AbortController();
-      uploadController.current = controller;
       const result = await uploadProductImage(() => imageUploadService.uploadImage(picked.file, accessToken, controller.signal));
       if (controller.signal.aborted) return;
       if (result.url) {
@@ -204,8 +205,10 @@ export function ProductForm({
         setUploadError(result.error);
       }
     } finally {
-      uploadController.current = null;
-      setUploadingImage(false);
+      if (uploadController.current === controller) {
+        uploadController.current = null;
+        setUploadingImage(false);
+      }
     }
   }
 
