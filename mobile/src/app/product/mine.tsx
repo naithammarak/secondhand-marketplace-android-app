@@ -78,7 +78,7 @@ export default function MyProductsScreen() {
               {item.mainImageUrl && <Image source={{ uri: item.mainImageUrl }} style={styles.image} />}
               <View style={styles.details}>
                 <Text style={styles.name}>{item.name}</Text>
-                <Text>฿{item.price.toFixed(2)} · {statusLabels[item.status] ?? item.status}</Text>
+                <Text>฿{item.price} · {statusLabels[item.status] ?? item.status}</Text>
                 {item.status === 'AVAILABLE' && <Text style={styles.action}>แก้ไข / ยกเลิกการขาย</Text>}
               </View>
             </TouchableOpacity>

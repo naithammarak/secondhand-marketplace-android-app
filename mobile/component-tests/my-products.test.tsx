@@ -20,8 +20,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockGetMyProducts.mockResolvedValue({
     items: [
-      { id: '42', name: 'เสื้อพร้อมขาย', price: 250, status: 'AVAILABLE', mainImageUrl: null },
-      { id: '43', name: 'เสื้อขายแล้ว', price: 300, status: 'SOLD', mainImageUrl: null },
+      { id: '42', name: 'เสื้อพร้อมขาย', price: '250', status: 'AVAILABLE', mainImageUrl: null },
+      { id: '43', name: 'เสื้อขายแล้ว', price: '300', status: 'SOLD', mainImageUrl: null },
     ],
     hasNext: false,
   });

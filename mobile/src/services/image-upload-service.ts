@@ -1,5 +1,6 @@
 // PRODUCT-06: Product image upload service using multipart API; in-memory uploads are opt-in for development.
 import { ProductServiceError, registerProductImage } from './product-service.ts';
+import { ProductRequestCancelledError, ProductRequestTimeoutError, withProductRequestDeadline } from '../products/product-request-deadline.ts';
 
 export interface UploadedImage {
   url: string;
@@ -21,6 +22,7 @@ export type ImageUploadServiceOptions = {
   mockMode?: boolean;
   fetch?: FetchLike;
   getAccessToken?: () => Promise<string | null | undefined> | string | null | undefined;
+  timeoutMs?: number;
 };
 
 let mockUploadCounter = 100;
@@ -55,7 +57,7 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
   }
 
   return {
-    async uploadImage(fileInput?: UploadFileInput, explicitToken?: string): Promise<UploadedImage> {
+    async uploadImage(fileInput?: UploadFileInput, explicitToken?: string, callerSignal?: AbortSignal): Promise<UploadedImage> {
       if (!baseUrl) {
         if (options.mockMode !== true) {
           throw new ProductServiceError('unavailable', 'ยังไม่ได้ตั้งค่า API สำหรับอัปโหลดรูป');
@@ -68,44 +70,46 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
         return { url: mockUrl, uploadId: mockUploadCounter };
       }
 
-      const token = await resolveAccessToken(explicitToken);
-      if (!token) {
-        throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
-      }
-
-      const formData = new FormData();
-      if (fileInput?.file) {
-        formData.append('file', fileInput.file as any);
-      } else if (fileInput?.uri) {
-        formData.append('file', {
-          uri: fileInput.uri,
-          name: fileInput.name || `product-${Date.now()}.jpg`,
-          type: fileInput.type || 'image/jpeg',
-        } as any);
-      } else {
-        throw new Error('No image file provided for upload');
-      }
-
-      let response: Response;
+      let json: any;
       try {
-        response = await fetcher(`${baseUrl}/products/images/upload`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        });
-      } catch {
+        json = await withProductRequestDeadline(async signal => {
+          const token = await resolveAccessToken(explicitToken);
+          if (!token) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
+          const formData = new FormData();
+          if (fileInput?.file) {
+            formData.append('file', fileInput.file as any);
+          } else if (fileInput?.uri) {
+            formData.append('file', {
+              uri: fileInput.uri,
+              name: fileInput.name || 'product-' + Date.now() + '.jpg',
+              type: fileInput.type || 'image/jpeg',
+            } as any);
+          } else {
+            throw new ProductServiceError('validation-error', 'กรุณาเลือกรูปภาพ');
+          }
+          const response = await fetcher(baseUrl + '/products/images/upload', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token },
+            body: formData,
+            signal,
+          });
+          if (!response.ok) {
+            if (response.status === 401) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
+            if (response.status === 403) throw new ProductServiceError('forbidden', 'บัญชีผู้ขายยังไม่ได้รับอนุมัติหรือไม่มีสิทธิ์อัปโหลดรูป');
+            if (response.status === 409) throw new ProductServiceError('conflict', 'สถานะบัญชีหรือรูปภาพเปลี่ยนไป กรุณาลองใหม่');
+            if (response.status === 422) throw new ProductServiceError('validation-error', 'รูปภาพไม่ถูกต้อง กรุณาตรวจสอบชนิดและขนาดไฟล์');
+            throw new ProductServiceError('server-error', 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
+          }
+          return response.json();
+        }, options.timeoutMs, callerSignal);
+      } catch (error) {
+        if (error instanceof ProductRequestCancelledError) throw error;
+        if (error instanceof ProductRequestTimeoutError) throw new ProductServiceError('timeout', error.message);
+        if (error instanceof ProductServiceError) throw error;
+        if (callerSignal?.aborted) throw new ProductRequestCancelledError();
+        if (error instanceof SyntaxError) throw new ProductServiceError('server-error', 'ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง');
         throw new ProductServiceError('network-error', 'เครือข่ายขัดข้อง กรุณาลองใหม่');
       }
-
-      if (!response.ok) {
-        if (response.status === 401) throw new ProductServiceError('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
-        if (response.status === 403) throw new ProductServiceError('forbidden', 'บัญชีผู้ขายยังไม่ได้รับอนุมัติหรือไม่มีสิทธิ์อัปโหลดรูป');
-        if (response.status === 409) throw new ProductServiceError('conflict', 'สถานะบัญชีหรือรูปภาพเปลี่ยนไป กรุณาลองใหม่');
-        if (response.status === 422) throw new ProductServiceError('validation-error', 'รูปภาพไม่ถูกต้อง กรุณาตรวจสอบชนิดและขนาดไฟล์');
-        throw new ProductServiceError('server-error', 'อัปโหลดรูปไม่สำเร็จ กรุณาลองใหม่');
-      }
-
-      const json = await response.json();
       const data = json.data ?? json;
       const imageUrl = data.image_url;
       const uploadId = typeof data.upload_id === 'number' ? data.upload_id : undefined;

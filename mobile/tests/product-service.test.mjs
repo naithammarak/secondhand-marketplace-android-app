@@ -25,7 +25,7 @@ test('mock build uploads and creates only in memory even when the EAS environmen
   const uploaded = await uploadService.uploadImage({ uri: 'file:///test-image.jpg' }, 'seller-token');
   const created = await productService.createProduct({
     name: 'ทดสอบ mock profile', description: 'ไม่ส่งข้อมูลไป API', size: 'M',
-    condition: 'GOOD', price: 250, category: 'เสื้อผ้า', categoryId: 1,
+    condition: 'GOOD', price: '250', category: 'เสื้อผ้า', categoryId: 1,
     brand: 'Nike', brandId: 2, images: [uploaded.url],
   }, 'seller-token');
   const owner = await productService.getProductById(created.id, 'seller-token');
@@ -49,7 +49,7 @@ test('loads seller products with bearer token and keeps pagination and statuses'
     },
   });
   const page = await service.getMyProducts(2, 'seller-token');
-  assert.deepEqual(page, { items: [{ id: '42', name: 'เสื้อ', price: 250, status: 'CANCELLED', mainImageUrl: null }], hasNext: true });
+  assert.deepEqual(page, { items: [{ id: '42', name: 'เสื้อ', price: '250.00', status: 'CANCELLED', mainImageUrl: null }], hasNext: true });
   assert.equal(calls[0].url, 'https://example.test/products/me?page=2&page_size=20');
   assert.equal(calls[0].init.headers.Authorization, 'Bearer seller-token');
 });
@@ -68,7 +68,7 @@ test('real create refuses missing image upload metadata before sending', async (
   let sent = 0;
   const service = createProductService({ baseUrl: 'https://example.test', fetch: async () => { sent += 1; return new Response('{}'); } });
   const input = {
-    name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: 250,
+    name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: '250',
     category: 'เสื้อผ้า', categoryId: 42, brand: 'Nike', brandId: 101, images: ['https://example.test/unknown.jpg'],
   };
   await assert.rejects(service.createProduct(input, 'seller-token'), error => error instanceof ProductServiceError && error.kind === 'validation-error');
@@ -77,4 +77,56 @@ test('real create refuses missing image upload metadata before sending', async (
   registerProductImage(input.images[0], { uploadId: 77 });
   await service.createProduct(input, 'seller-token');
   assert.equal(sent, 1);
+});
+
+test('create and edit send exact decimal text and required seller fields', async () => {
+  const calls = [];
+  const service = createProductService({ baseUrl: 'https://example.test', fetch: async (url, init) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ data: { id: 1, product_name: 'เสื้อ', description: 'สภาพดี', size: 'M', price: '0.01', images: [] } }));
+  } });
+  const input = { name: ' เสื้อ ', description: ' สภาพดี ', size: ' M ', condition: 'GOOD', price: '0.01', category: 'เสื้อผ้า', categoryId: 1, brand: 'Nike', brandId: 2, images: ['https://example.test/image'] };
+  registerProductImage(input.images[0], { uploadId: 11, imageId: 12 });
+  await service.createProduct(input, 'token');
+  await service.updateProduct('1', { ...input, price: '9999999999.99' }, 'token');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(call => JSON.parse(call.init.body).price), ['0.01', '9999999999.99']);
+  assert.deepEqual(JSON.parse(calls[0].init.body).description, 'สภาพดี');
+  assert.deepEqual(JSON.parse(calls[1].init.body).size, 'M');
+  assert.deepEqual(calls.map(call => call.init.method), ['POST', 'PATCH']);
+});
+
+test('create and edit reject missing description or size before sending', async () => {
+  let sent = 0;
+  const service = createProductService({ baseUrl: 'https://example.test', fetch: async () => { sent++; return new Response('{}'); } });
+  const input = { name: 'เสื้อ', description: '', size: 'M', condition: 'GOOD', price: '1.2', category: 'เสื้อผ้า', categoryId: 1, brand: 'Nike', brandId: 2, images: ['image'] };
+  await assert.rejects(service.createProduct(input, 'token'), error => error.kind === 'validation-error' && !!error.fields.description);
+  await assert.rejects(service.updateProduct('1', { ...input, description: 'สภาพดี', size: '' }, 'token'), error => error.kind === 'validation-error' && !!error.fields.size);
+  assert.equal(sent, 0);
+});
+
+test('create timeout covers response headers and body', async () => {
+  const input = { name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: '1', category: 'เสื้อผ้า', categoryId: 1, brand: 'Nike', brandId: 2, images: ['image-timeout'] };
+  registerProductImage(input.images[0], { uploadId: 21 });
+  for (const fetcher of [
+    async () => new Promise(() => {}),
+    async () => ({ ok: true, json: () => new Promise(() => {}) }),
+  ]) {
+    const service = createProductService({ baseUrl: 'https://example.test', timeoutMs: 10, fetch: fetcher });
+    await assert.rejects(service.createProduct(input, 'token'), error => error.kind === 'timeout');
+  }
+});
+
+test('image upload timeout covers response body', async () => {
+  const service = createImageUploadService({ baseUrl: 'https://example.test', timeoutMs: 10, fetch: async () => ({ ok: true, json: () => new Promise(() => {}) }) });
+  await assert.rejects(service.uploadImage({ uri: 'file:///image.jpg' }, 'token'), error => error.kind === 'timeout');
+});
+
+test('missing API configuration fails closed for product and image writes', async () => {
+  const input = { name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: '1', category: 'เสื้อผ้า', categoryId: 1, brand: 'Nike', brandId: 2, images: ['image'] };
+  const service = createProductService();
+  await assert.rejects(service.createProduct(input, 'token'), error => error.kind === 'unavailable');
+  await assert.rejects(service.updateProduct('1', input, 'token'), error => error.kind === 'unavailable');
+  await assert.rejects(service.cancelProduct('1', 'token'), error => error.kind === 'unavailable');
+  await assert.rejects(createImageUploadService().uploadImage({ uri: 'file:///image.jpg' }, 'token'), error => error.kind === 'unavailable');
 });
