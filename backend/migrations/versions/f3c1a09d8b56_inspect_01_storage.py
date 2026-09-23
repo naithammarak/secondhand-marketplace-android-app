@@ -174,24 +174,48 @@ def upgrade():
     op.execute("""
         CREATE FUNCTION public.inspection_guard_evidence() RETURNS trigger
         LANGUAGE plpgsql AS $$
-        DECLARE final_result text;
+        DECLARE
+            source_id integer;
+            destination_id integer;
+            source_result text;
+            destination_result text;
+            locked_inspection record;
         BEGIN
             IF TG_OP = 'INSERT' THEN
-                SELECT result INTO final_result FROM public.inspections
-                WHERE id = NEW.inspection_id FOR UPDATE;
+                destination_id := NEW.inspection_id;
+            ELSIF TG_OP = 'DELETE' THEN
+                source_id := OLD.inspection_id;
+                destination_id := OLD.inspection_id;
             ELSE
-                SELECT result INTO final_result FROM public.inspections
-                WHERE id = OLD.inspection_id FOR UPDATE;
+                source_id := OLD.inspection_id;
+                destination_id := NEW.inspection_id;
             END IF;
-            IF final_result IS NOT NULL THEN
-                IF TG_OP = 'INSERT' THEN
-                    RAISE EXCEPTION 'final inspection evidence is immutable';
-                ELSIF EXISTS (
-                    SELECT 1 FROM public.inspection_result_evidence
-                    WHERE inspection_id = OLD.inspection_id AND evidence_id = OLD.id
-                ) THEN
+
+            -- Use one lock order for moves in either direction. Finalization
+            -- takes the same inspection row lock, so neither writer can race past it.
+            FOR locked_inspection IN
+                SELECT id, result FROM public.inspections
+                WHERE id IN (source_id, destination_id)
+                ORDER BY id FOR UPDATE
+            LOOP
+                IF locked_inspection.id = source_id THEN
+                    source_result := locked_inspection.result;
+                END IF;
+                IF locked_inspection.id = destination_id THEN
+                    destination_result := locked_inspection.result;
+                END IF;
+            END LOOP;
+
+            IF TG_OP = 'INSERT' OR destination_id IS DISTINCT FROM source_id THEN
+                IF destination_result IS NOT NULL THEN
                     RAISE EXCEPTION 'final inspection evidence is immutable';
                 END IF;
+            END IF;
+            IF TG_OP <> 'INSERT' AND source_result IS NOT NULL AND EXISTS (
+                SELECT 1 FROM public.inspection_result_evidence
+                WHERE inspection_id = source_id AND evidence_id = OLD.id
+            ) THEN
+                RAISE EXCEPTION 'final inspection evidence is immutable';
             END IF;
             IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
             RETURN NEW;

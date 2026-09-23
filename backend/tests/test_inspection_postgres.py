@@ -1,10 +1,11 @@
 """INSPECT-01 integration checks; dedicated empty local PostgreSQL only."""
 
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from threading import Event
 
 import pytest
 from alembic import command
@@ -251,6 +252,85 @@ def test_final_result_freezes_evidence_links_and_selected_metadata(pg_engine, se
         rejects(text("DELETE FROM inspection_evidence WHERE id = :e").bindparams(e=selected.id))
         rejects(text("INSERT INTO inspection_evidence (inspection_id, object_key, mime_type, size_bytes, sha256, uploaded_by) VALUES (:i, :key, 'image/jpeg', 1, :hash, :u)").bindparams(i=inspection.id, key=f"fixtures/inspect01/rejected-{selected.id}.jpg", hash="c" * 64, u=selected.uploaded_by))
         session.rollback()
+
+
+def test_evidence_move_into_final_inspection_is_rejected(pg_engine, seeded):
+    source_order, final_order = seeded[3][1], seeded[4][1]
+    with Session(pg_engine) as session:
+        source = session.scalar(select(Inspection).where(Inspection.order_id == source_order))
+        destination = session.scalar(select(Inspection).where(Inspection.order_id == final_order))
+        evidence = InspectionEvidence(
+            inspection_id=source.id, object_key=f"fixtures/inspect01/move-{source.id}.jpg",
+            mime_type="image/jpeg", size_bytes=1, sha256="e" * 64,
+            uploaded_by=source.inspector_id,
+        )
+        session.add(evidence)
+        session.flush()
+        evidence_id = evidence.id
+        with session.begin_nested():
+            with pytest.raises(DBAPIError, match="final inspection evidence is immutable"):
+                session.execute(
+                    update(InspectionEvidence).where(InspectionEvidence.id == evidence_id)
+                    .values(inspection_id=destination.id)
+                )
+        assert session.get(InspectionEvidence, evidence_id).inspection_id == source.id
+        session.rollback()
+
+
+def test_evidence_move_waits_for_racing_finalization(pg_engine, seeded):
+    source_order, destination_order = seeded[3][1], seeded[2][1]
+    with Session(pg_engine) as session:
+        source = session.scalar(select(Inspection).where(Inspection.order_id == source_order))
+        destination = session.scalar(select(Inspection).where(Inspection.order_id == destination_order))
+        evidence = InspectionEvidence(
+            inspection_id=source.id, object_key=f"fixtures/inspect01/race-move-{source.id}.jpg",
+            mime_type="image/jpeg", size_bytes=1, sha256="f" * 64,
+            uploaded_by=source.inspector_id,
+        )
+        session.add(evidence)
+        session.commit()
+        evidence_id, source_id, destination_id = evidence.id, source.id, destination.id
+        inspector_id = source.inspector_id
+
+    started = Event()
+
+    def move():
+        with Session(pg_engine) as session:
+            started.set()
+            try:
+                session.execute(
+                    update(InspectionEvidence).where(InspectionEvidence.id == evidence_id)
+                    .values(inspection_id=destination_id)
+                )
+                session.commit()
+                return "moved"
+            except DBAPIError:
+                session.rollback()
+                return "rejected"
+
+    try:
+        with Session(pg_engine) as finalizer:
+            finalizer.execute(
+                update(Inspection).where(Inspection.id == destination_id).values(
+                    inspector_id=inspector_id,
+                    started_at=datetime.now(timezone.utc),
+                    result="PASS", summary="Synthetic final result during evidence move race.",
+                    inspected_at=datetime.now(timezone.utc),
+                )
+            )
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(move)
+                assert started.wait(5)
+                with pytest.raises(TimeoutError):
+                    future.result(timeout=0.2)
+                finalizer.commit()
+                assert future.result(timeout=5) == "rejected"
+        with Session(pg_engine) as session:
+            assert session.get(InspectionEvidence, evidence_id).inspection_id == source_id
+    finally:
+        with Session(pg_engine) as session:
+            session.execute(text("DELETE FROM inspection_evidence WHERE id = :id"), {"id": evidence_id})
+            session.commit()
 
 
 def test_racing_final_result_has_one_winner(pg_engine, seeded):
