@@ -10,7 +10,8 @@
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "development",
         "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api",
-        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "false"
+        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "false",
+        "EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY": "true"
       },
       "android": {
         "buildType": "apk"
@@ -23,7 +24,8 @@
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "development",
         "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "mock",
-        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "true"
+        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "true",
+        "EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY": "true"
       },
       "android": {
         "buildType": "apk"
@@ -34,14 +36,16 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "preview",
-        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api"
+        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api",
+        "EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY": "false"
       }
     },
     "production": {
       "environment": "production",
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "production",
-        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api"
+        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api",
+        "EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY": "false"
       }
     }
   }

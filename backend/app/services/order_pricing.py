@@ -18,6 +18,11 @@ COMMISSION_RATE = Decimal("0.05")
 PRODUCT_AVAILABLE = "AVAILABLE"
 PRODUCT_RESERVED = "RESERVED"
 
+# รอบนี้ซื้อได้เฉพาะสินค้าราคาปกติ การประมูลอยู่นอกขอบเขต Prototype (ดู D-20)
+# ปัจจุบัน ck_products_sale_type ยอมรับค่านี้ค่าเดียวอยู่แล้ว ฝั่ง Order จึงเป็นด่านที่สอง
+# ที่ทำให้ระบบยังปฏิเสธการประมูลได้เอง ถ้าวันหนึ่งมีการผ่อนเงื่อนไขที่ตารางสินค้า
+SALE_TYPE_FIXED_PRICE = "FIXED_PRICE"
+
 ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
 ORDER_CANCELLED = "CANCELLED"

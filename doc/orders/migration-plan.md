@@ -1,12 +1,13 @@
-# ORDER-01 / ORDER-08 — แผน Migration ก่อนนำขึ้นฐานข้อมูลกลาง
+# ORDER-01 / ORDER-08 / ORDER-09 — แผน Migration ก่อนนำขึ้นฐานข้อมูลกลาง
 
 > สถานะ: **ยังไม่ได้รันกับฐานข้อมูลกลาง (Supabase)** ทดสอบแล้วบน PostgreSQL 16 แยกในเครื่องเท่านั้น
 > ต้องให้ DB/Lead ตรวจก่อนรัน
-> ปรับปรุงล่าสุด 2026-09-23: กราฟ migration เปลี่ยนไปหลังงาน PRODUCT เข้า main และเพิ่ม `b41d7ce09f35` ของ ORDER-08
+> ปรับปรุงล่าสุด 2026-09-23: เพิ่ม `a5f1c9d2e7b3` ของ ORDER-09 (ตาราง Audit Log) และ
+> **รันชุด PostgreSQL จริงแล้ว** (upgrade → downgrade → upgrade บน PostgreSQL 16 ในเครื่อง ดูหัวข้อหลักฐาน)
 
 ## Revision ที่เกี่ยวข้อง
 
-ปัจจุบันกราฟรวมเป็น **head เดียว** คือ `b41d7ce09f35` (ตรวจซ้ำได้ด้วย `alembic heads`
+ปัจจุบันกราฟรวมเป็น **head เดียว** คือ `a5f1c9d2e7b3` (ตรวจซ้ำได้ด้วย `alembic heads`
 และมี test `tests/test_product_upload_schema.py::test_migration_graph_unifies_to_single_head` ยืนยัน)
 
 | Revision | เรื่อง |
@@ -17,6 +18,7 @@
 | `f3862bffea77` | merge ก่อนงาน PRODUCT-01 |
 | `daf675afc8fc`, `9446ec1a2c5d` | constraint/index ของ products และ product images |
 | `b41d7ce09f35` | **ORDER-08**: เพิ่ม `expires_at`, `cancelled_at`, `cancel_reason` และสถานะ `CANCELLED` |
+| `a5f1c9d2e7b3` | **ORDER-09**: สร้างตาราง `admin_access_logs` สำหรับบันทึกการเข้าถึงข้อมูลส่วนบุคคลโดยผู้ดูแล |
 
 **ข้อควรระวัง:** `e8a4f1c02d77` ไม่ใช่ head อีกต่อไป มันอยู่กลางกราฟ คำสั่งเดิมในแผนเวอร์ชันก่อน
 (`alembic upgrade e8a4f1c02d77`) จะข้าม migration ของ PRODUCT ไป **ห้ามใช้** ให้ upgrade ถึง `head` เท่านั้น
@@ -52,11 +54,24 @@ Backend ต่อด้วย role เจ้าของตาราง (`postgr
 ไม่มีการแก้ตารางเดิมของทีมอื่น (`products`, `users`) — งานสั่งซื้อเขียน `products.status`
 ค่า `RESERVED` (ตอนจอง) และ `AVAILABLE` (ตอนยกเลิก/หมดเวลา) ผ่าน UPDATE เท่านั้น
 
+### `a5f1c9d2e7b3` — ตาราง Audit Log ของผู้ดูแล (ORDER-09)
+สร้างตารางใหม่หนึ่งตาราง **ไม่แตะตารางเดิมเลย**
+
+| รายการ | รายละเอียด |
+|---|---|
+| ตาราง | `admin_access_logs(id, admin_id, action, target_type, target_id, reason, created_at)` |
+| FK | `admin_id → users.id` (เป้าหมายไม่ผูก FK เพราะข้ามหลายตาราง ดู D-22) |
+| CHECK | `action IN ('ORDER_CONTACT_REVEAL')`, `target_type IN ('ORDER')`, `length(trim(reason)) >= 10` |
+| Index | `(target_type, target_id, created_at)` และ `(admin_id, created_at)` |
+| RLS | เปิด ไม่มี policy เหมือนตารางอื่นใน `public` |
+
+Downgrade ลบตารางทิ้ง **ข้อมูล Audit จะหายไปทั้งหมด** ก่อน downgrade บนข้อมูลจริงต้อง export ก่อนเสมอ
+
 ## ขั้นตอนที่แนะนำ
 
 1. สำรองข้อมูล (Supabase: Database → Backups หรือ `pg_dump --schema-only` + ตารางที่เกี่ยวข้อง)
 2. ตรวจ revision ปัจจุบัน: `alembic current` — **บันทึกค่าที่ได้ไว้** เพราะต้องใช้ตอน rollback
-3. `alembic heads` ต้องได้ `b41d7ce09f35` ค่าเดียว ถ้าได้หลายค่าแปลว่ามี branch ค้าง ให้หยุดและ merge ก่อน
+3. `alembic heads` ต้องได้ `a5f1c9d2e7b3` ค่าเดียว ถ้าได้หลายค่าแปลว่ามี branch ค้าง ให้หยุดและ merge ก่อน
 4. ดู SQL ก่อนรัน: `alembic upgrade <current>:head --sql > order-migration.sql` แล้วให้ผู้ตรวจอ่าน
    **SQL ที่ได้จะรวม migration ของทีม PRODUCT ที่ยังไม่ได้รันด้วย** ถ้ามี ต้องให้เจ้าของงานนั้นตรวจร่วม
 5. รัน: `alembic upgrade head`
@@ -65,12 +80,14 @@ Backend ต่อด้วย role เจ้าของตาราง (`postgr
    - `uq_orders_active_product` เป็น partial index ที่มีเงื่อนไข `status <> 'CANCELLED'`
    - `orders` มีคอลัมน์ `expires_at` (NOT NULL), `cancelled_at`, `cancel_reason`
    - `ck_orders_status` รับค่า `CANCELLED` แล้ว และมี `ck_orders_cancel_fields`, `ck_orders_cancel_not_paid`
+   - ตาราง `admin_access_logs` ถูกสร้างพร้อม CHECK ครบ 3 ตัวและ `relrowsecurity = true`
 7. ตั้ง `products.status` ของสินค้าที่พร้อมขายเป็น `AVAILABLE` (ค่าตรงกับ `ck_products_status` ของทีม PRODUCT แล้ว ดู D-01)
 
 ## Rollback
 
 | จาก | คำสั่ง | ผล |
 |---|---|---|
+| ORDER-09 | `alembic downgrade b41d7ce09f35` | ลบตาราง `admin_access_logs` **พร้อมข้อมูล Audit ทั้งหมด** |
 | ORDER-08 | `alembic downgrade 9446ec1a2c5d` | ลบ 3 คอลัมน์และ CHECK ใหม่ **ปฏิเสธการทำงานถ้ามี Order สถานะ `CANCELLED` อยู่** ต้อง export และตัดสินใจก่อน |
 | ORDER ทั้งหมด | `alembic downgrade d5c9e2a71b40` | ลบ 5 ตาราง **รวมข้อมูล Order/Payment ทั้งหมด** |
 
@@ -86,5 +103,17 @@ Backend ต่อด้วย role เจ้าของตาราง (`postgr
 - SQL ของ `b41d7ce09f35` ถูกสร้างและตรวจแบบ offline แล้ว (`alembic upgrade 9446ec1a2c5d:b41d7ce09f35 --sql`)
   ได้ DDL 8 คำสั่งใน transaction เดียว: ADD COLUMN x3 → backfill → SET NOT NULL → drop/add CHECK สถานะ → add CHECK ใหม่ 2 ตัว
 
-> ชุด PostgreSQL ข้างต้น **ยังไม่ถูกรันหลังการแก้ของ ORDER-08** เพราะเครื่องที่แก้ไม่มี Docker/PostgreSQL
-> ผู้ที่มีสภาพแวดล้อมครบต้องรันตามวิธีใน `doc/orders/qa-report.md` แล้วบันทึกผล
+- `tests/test_orders_postgres.py::test_admin_access_log_table_is_created_with_rls` — ตาราง Audit มาพร้อม migration, RLS เปิด, index ครบ
+- `tests/test_orders_postgres.py::test_admin_access_log_checks_reject_incomplete_rows` — CHECK ปฏิเสธเหตุผลสั้น/ว่าง ค่า action/target นอกรายการ และ admin ที่ไม่มีจริง
+
+**รันจริงแล้วเมื่อ 2026-09-23** บน PostgreSQL 16 (Docker `postgres:16-alpine`, พอร์ต 55432 ในเครื่อง)
+
+| สิ่งที่รัน | ผล |
+|---|---|
+| `tests/test_orders_postgres.py` (รวม ORDER-08 และ ORDER-09) | **18 passed** |
+| `tests/test_product_upload_schema.py` + `tests/test_user_migration.py` (ฐานข้อมูลเปล่า, migrate ทั้งกราฟจากข้อมูลเดิม) | **28 passed** |
+| `alembic upgrade head` บนฐานข้อมูลเปล่าอีกชุด | ผ่านทั้งกราฟถึง `a5f1c9d2e7b3` |
+| `alembic downgrade -1` แล้ว `alembic upgrade head` ซ้ำ | ผ่าน ตารางหายแล้วกลับมาพร้อม CHECK ครบ ไม่มี duplicate constraint |
+| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **50/50 passed** |
+
+> ยังไม่ได้รันกับ **Supabase กลาง** ขั้นตอนนั้นต้องให้ผู้ที่ถือสิทธิ์ฐานข้อมูลกลางเป็นผู้รันตามขั้นตอนข้างบน

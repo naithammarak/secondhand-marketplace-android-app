@@ -388,7 +388,7 @@ def test_migration_graph_unifies_to_single_head():
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["b41d7ce09f35"]
+    assert script.get_heads() == ["a5f1c9d2e7b3"]
 
     merge_revision = script.get_revision("f3862bffea77")
     assert set(merge_revision.down_revision) == {"9a18d37ce520", "f02a03c91801"}
@@ -401,6 +401,9 @@ def test_migration_graph_unifies_to_single_head():
 
     order_cancel_revision = script.get_revision("b41d7ce09f35")
     assert order_cancel_revision.down_revision == "9446ec1a2c5d"
+
+    audit_revision = script.get_revision("a5f1c9d2e7b3")
+    assert audit_revision.down_revision == "b41d7ce09f35"
 
 
 def _alembic_config() -> Config:

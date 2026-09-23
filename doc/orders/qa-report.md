@@ -113,20 +113,107 @@ E2E ผ่าน HTTP: ดูวิธีรันในหัวไฟล์ `b
 | Order ที่จ่ายแล้วถูกเลื่อนเวลาให้เลยเส้นตาย | ไม่ถูกยกเลิก สถานะคงเดิม | ตรง |
 | ยกเลิกหลังเลยเวลาแต่ยังไม่มีใครกวาด | บันทึก `cancel_reason=EXPIRED` ตามความจริง | ตรง |
 
-## ยังไม่ได้ทดสอบ (ต้องทำก่อนปิดงาน)
-1. **ชุด PostgreSQL (`test_orders_postgres.py`)** — เครื่องที่แก้ไม่มี Docker/PostgreSQL จึง skip ทั้งหมด
-   ชุดนี้มี test ใหม่ที่ **ยังไม่เคยรันจริงเลย** ได้แก่
-   `test_cancelled_order_frees_the_product_slot`, `test_cancel_fields_must_match_status`,
+## ยังไม่ได้ทดสอบ (สถานะ ณ 2026-09-23 รอบ ORDER-09)
+1. ~~ชุด PostgreSQL~~ → **ปิดแล้ว** รันจริงเมื่อ 2026-09-23 บน PostgreSQL 16 ในเครื่อง ผ่าน 18/18
+   (รวม `test_cancelled_order_frees_the_product_slot`, `test_cancel_fields_must_match_status`,
    `test_paid_order_cannot_be_marked_cancelled`, `test_racing_cancel_never_beats_successful_payment`
-   และ migration `b41d7ce09f35` (upgrade/downgrade/backfill) ก็ยังไม่เคยรันบน PostgreSQL
-   ต้องรันตามวิธีในหัวข้อ "วิธีรัน" ด้านบนก่อนถือว่างานนี้ผ่าน
-2. **E2E HTTP (`scripts/order_e2e_smoke.py`)** — ยังไม่ได้รันหลังการแก้ (ต้องใช้ PostgreSQL เช่นกัน)
-   และยังไม่ได้เพิ่มกรณียกเลิก/หมดเวลาเข้าไปในสคริปต์
-3. **การทดสอบบนมือถือจริง** — ยังเหมือนเดิม ให้ QA รันตาม `mobile/docs/testing/orders-checkout.md`
-   ซึ่งเพิ่มกรณี M17–M27 (ปุ่มซื้อในหน้าสินค้า การยกเลิก และการหมดเวลา) แล้ว
+   และ migration `b41d7ce09f35` ทั้ง upgrade/downgrade/backfill) ดูรายละเอียดในหัวข้อ ORDER-09 ด้านล่าง
+2. ~~E2E HTTP~~ → **ปิดแล้ว** เพิ่มกรณียกเลิก/หมดเวลา/มุมมองผู้ดูแลเข้าไปในสคริปต์ และรันจริงผ่าน 50/50
+3. **การทดสอบบนมือถือจริง** — **ยังติดอยู่** เหตุผลและตัวบล็อกที่ตรวจแล้วอยู่ในหัวข้อ ORDER-09 ด้านล่าง
 
 ## หมายเหตุระหว่างทำ
 - `npm test` รอบหนึ่งมี component test ล้ม 1 รายการแบบไม่คงที่ (React `act` warning ใน `login-screen`)
   รันซ้ำแล้วผ่านทั้งหมด เป็นอาการเดิมที่ไม่เกี่ยวกับงานนี้ แต่ควรตามแก้
 - สภาพแวดล้อมที่แก้ขาดของเดิมอยู่สองอย่างและได้ติดตั้ง/สร้างใหม่แล้ว: `Pillow` ใน venv ของ backend
   (มีใน `requirements.txt` อยู่แล้ว) และ type ของ expo-router ใน `mobile/.expo/types` ที่ค้างอยู่ก่อนงาน PRODUCT-07
+
+
+---
+
+# ORDER-09 — มุมมอง Order ของผู้ดูแล และการปิดรายการค้าง (2026-09-23)
+
+## Environment
+| รายการ | ค่า |
+|---|---|
+| วันที่ | 2026-09-23 |
+| Base commit | `df0d28d` (ORDER-08 บน `feat/order-08-cancel-expiry`) |
+| OS | Windows 11 |
+| ฐานข้อมูลที่ใช้ทดสอบ | SQLite ในหน่วยความจำ **และ PostgreSQL 16** (Docker `postgres:16-alpine` พอร์ต 55432 ในเครื่อง) |
+
+## ผลการทดสอบอัตโนมัติ
+| ชุด | ผล |
+|---|---|
+| Backend ทั้งหมด (SQLite เท่านั้น, `DATABASE_URL=""`) | **389 passed, 38 skipped** |
+| Backend ทั้งหมด **พร้อม PostgreSQL** (`TEST_DATABASE_URL` + `ORDER_TEST_DATABASE_URL`) | **425 passed, 2 skipped** |
+| └ `tests/test_orders_postgres.py` | **18 passed** (เดิม skip ทั้งหมด) |
+| └ `tests/test_admin_orders.py` (ใหม่) | 28 passed |
+| └ `tests/test_orders_api.py` | 62 passed |
+| └ `tests/test_product_upload_schema.py` + `tests/test_user_migration.py` (ฐานข้อมูลเปล่า) | 28 passed |
+| ที่เหลืออีก 2 skipped รันแยกแล้วผ่าน | `test_auth.py` (30 passed ด้วย `AUTH_TEST_DATABASE_URL`), `test_database_security.py` (1 passed ด้วย `DATABASE_URL` ชี้ฐานข้อมูลทดสอบ) |
+| E2E ผ่าน HTTP จริง (`scripts/order_e2e_smoke.py`) | **50/50 passed** (เพิ่มกรณี ORDER-08 และ ORDER-09 เข้าไปแล้ว) |
+| Mobile `npm run test:logic` | **281 passed** (เดิม 267 + ใหม่ 14) |
+| Mobile `npm run test:components` | **101 passed** (เดิม 93 + ใหม่ 8 จาก jest run เต็ม) |
+| Mobile `tsc --noEmit` / `expo lint` | ผ่านทั้งคู่ (exit 0) |
+
+## กรณีที่เพิ่มและผลลัพธ์
+| กรณี | Expected | Actual |
+|---|---|---|
+| ผู้ดูแลเปิดรายการ Order ทั้งระบบ | 200 อีเมลถูกปิดบัง และ **ไม่มีที่อยู่ในรายการเลย** | ตรง |
+| ผู้ดูแลเปิดรายละเอียด Order | ที่อยู่เหลือจังหวัด/รหัสไปรษณีย์/เลขท้ายโทรศัพท์ อีเมลเหลือตัวแรก | ตรง |
+| ผู้ดูแลขอดูข้อมูลเต็มพร้อมเหตุผล | 200 ได้อีเมลและที่อยู่เต็ม พร้อมหนึ่งแถวใน `admin_access_logs` | ตรง |
+| ขอดูข้อมูลเต็มโดยไม่มีเหตุผล / เหตุผลสั้น / ยาวเกิน | 422 `validation_error` และ **ไม่มีแถว Audit** | ตรง |
+| ขอดู Order ที่ไม่มีจริง | 404 `order_not_found` และไม่มีแถว Audit | ตรง |
+| เรียกซ้ำสองครั้ง | ได้ Audit สองแถว (ตั้งใจให้เป็นเช่นนั้น) | ตรง |
+| ปิดด้วย `ADMIN_ORDER_CONTACT_REVEAL_ENABLED=false` | 403 `admin_contact_reveal_disabled`, `contact_reveal_available=false` แต่มุมมองปิดบังยังใช้ได้ | ตรง |
+| ผู้ซื้อ / ผู้ขาย / INSPECTOR / ผู้ดูแลที่ถูกระงับ เรียก `/admin/orders...` | 403 ทุกกรณี และไม่มีแถว Audit | ตรง |
+| ผู้ดูแลเรียก `/orders/{id}`, `/cancel`, `/receipt` | 404 ทุกกรณี (สิทธิ์เดิมไม่เปลี่ยน) | ตรง |
+| ผู้ขายเปิด Order ที่ยังไม่จ่ายหลังผู้ดูแลเปิดดูข้อมูลเต็ม | ยังได้ `shipping_address: null` เหมือนเดิม | ตรง |
+| ผู้ดูแลเปิดรายการขณะมี Order เลยเวลา | Order กลายเป็น `CANCELLED`/`EXPIRED` และสินค้าถูกปล่อย | ตรง |
+| สั่งซื้อสินค้าที่ `sale_type` ไม่ใช่ `FIXED_PRICE` | 409 `sale_type_unsupported` ทั้งที่ `POST /orders` และ `checkout-quote` ไม่มี Order เกิดขึ้น | ตรง |
+| ทางเข้า "ซื้อด้วยรหัสสินค้า" บนมือถือ | ซ่อนเป็นค่าตั้งต้น เปิดได้เฉพาะ build พัฒนาที่ตั้ง flag และ deep link ตรง ๆ ก็ถูกเด้งกลับ | ตรง |
+| สคริปต์ `scripts/release_expired_orders.py` บนฐานข้อมูลจริง | โหมดดูอย่างเดียวไม่เขียนอะไร, `--apply` ยกเลิก 2 Order ที่หมดเวลาและปล่อยสินค้าค้างจอง 1 ชิ้น | ตรง |
+
+## Migration บนฐานข้อมูลแยก (ตามที่โจทย์กำหนดก่อนขึ้น Supabase)
+| ขั้นตอน | ผล |
+|---|---|
+| `alembic upgrade head` บนฐานข้อมูลเปล่า | ผ่านทั้งกราฟถึง `a5f1c9d2e7b3` |
+| `alembic downgrade -1` แล้ว `upgrade head` ซ้ำ | ผ่าน ตาราง `admin_access_logs` หายแล้วกลับมาพร้อม CHECK ครบ 3 ตัวและ FK (ไม่มี duplicate constraint) |
+| upgrade → downgrade → upgrade ของกลุ่ม ORDER ทั้งชุด | ผ่าน (`test_migration_downgrade_and_upgrade_round_trip`) ตารางของทีมอื่นไม่ถูกแตะ |
+| migrate จากฐานข้อมูลที่มีข้อมูลเดิม (users/products/images) | ผ่าน (`test_product_upload_schema.py`, `test_user_migration.py`) |
+
+**ยังไม่ได้รันกับ Supabase กลาง** — ขั้นตอนนั้นต้องให้ผู้ถือสิทธิ์ฐานข้อมูลกลางรันตาม `doc/orders/migration-plan.md`
+
+## การทดสอบบนมือถือจริง (M1–M27) — ยังติด พร้อมผลการตรวจตามโจทย์
+ตรวจตามที่โจทย์สั่ง (FR-01 เปิดทางทั้งอีเมลและ Social Login) ผลคือ **เปิดใช้จริงในรอบนี้ไม่ได้** ด้วยเหตุผลต่อไปนี้
+
+| สิ่งที่ตรวจ | ผลที่ได้ (จาก `GET /auth/v1/settings` ของโปรเจกต์ Supabase ที่ตั้งค่าไว้) |
+|---|---|
+| Email/Password provider | **เปิดอยู่** (`external.email = true`) |
+| สมัครสมาชิกใหม่ | **เปิดอยู่** (`disable_signup = false`) |
+| ยืนยันอีเมลอัตโนมัติ | **ปิด** (`mailer_autoconfirm = false`) → บัญชีใหม่ล็อกอินไม่ได้จนกว่าจะกดลิงก์ในเมลจริง |
+| Magic Link / OTP ทางโทรศัพท์ | อีเมลใช้ได้ผ่าน provider เดียวกัน ส่วน `phone = false` |
+
+ตัวบล็อกที่เหลือ (เรียงตามลำดับที่ต้องแก้)
+1. **แอปยังไม่มีทางล็อกอินด้วยอีเมลเลย** — `mobile/src/auth/auth-provider.tsx` มีแต่ `signInWithOAuth`
+   ผ่าน `createGoogleLoginAdapter` ไม่มีหน้าจอกรอกอีเมล/รหัสผ่านหรือขอ Magic Link
+   ต่อให้สร้างบัญชีในฝั่ง Supabase ได้ ก็ยังล็อกอินในแอปไม่ได้ **ผู้ปลดล็อก:** เจ้าของงาน FR-01 (ต้องมีมติก่อนว่าจะเพิ่มทางล็อกอินนี้ในรอบไหน เพราะเป็น Feature ใหม่ ไม่ใช่การตั้งค่า)
+2. **มีโปรเจกต์ Supabase ชุดเดียว** (ค่าใน `mobile/.env` และ `backend/.env` ชี้ที่เดียวกัน)
+   จึงไม่มี "environment ทดสอบ" ให้เปิดค่าอะไรแยกได้ การสร้างบัญชีทดสอบคือการเขียนลงระบบที่ใช้ร่วมกันทั้งทีม
+   **ผู้ปลดล็อก:** เจ้าของโปรเจกต์ Supabase (สร้างโปรเจกต์ทดสอบแยก + เปิด `mailer_autoconfirm` ที่โปรเจกต์นั้น
+   หรือส่ง service-role key ของโปรเจกต์ทดสอบมาเพื่อสร้างบัญชีแบบยืนยันอีเมลให้เอง)
+3. **ไม่มีเครื่อง Android/Emulator ในสภาพแวดล้อมนี้** เช็กลิสต์ M1–M27 เป็นการทดสอบบนเครื่องจริง
+   **ผู้ปลดล็อก:** QA หรือผู้พัฒนาที่มีเครื่องทดสอบ
+
+จนกว่าทั้งสามข้อจะปลด ตรรกะฝั่งแอปยืนยันได้เท่าที่ unit/component test ครอบคลุม (281 + 101 กรณี)
+และ **ORDER-04 ยังถือว่าไม่ปิด** ตามที่ระบุไว้เดิม
+
+## หมายเหตุระหว่างทำ
+- พบ test ที่ล้มอยู่ก่อนแล้วสองกลุ่ม และแก้ในรอบนี้เพราะขวางการรันชุด PostgreSQL ทั้งชุด
+  1. `tests/test_product_images_upload.py` 3 กรณีที่ตรวจข้อความ log ล้มเมื่อรันรวมกับ test ที่เรียก alembic
+     สาเหตุคือ `fileConfig()` ใน `migrations/env.py` ปิด logger เดิมทั้งหมด ทำให้ `caplog` ของ pytest ตายไปด้วย
+     แก้ด้วย `disable_existing_loggers=False`
+  2. `tests/test_verification_postgres.py::test_migration_upgrades_to_verification_head` ผูกกับเลข revision
+     ตายตัว (`f02a03c91801`) จึงล้มทุกครั้งที่มี migration ใหม่ แก้ให้เทียบกับ head ปัจจุบันของ repo แทน
+     และยังตรวจว่า revision ของงานยืนยันตัวตนถูกใช้ไปแล้วเหมือนเดิม
+- ตารางทดสอบ PostgreSQL ที่ใช้: `order_test`, `schema_test`, `auth_test`, `security_test` เป็นฐานข้อมูลในเครื่อง
+  ที่สร้างใหม่ทุกครั้งและทิ้งได้ ไม่มีการเชื่อมต่อฐานข้อมูลกลางในทุกขั้นตอน

@@ -35,11 +35,15 @@ MAX_PAGE_SIZE = 100
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """ปิดทางบัญชีที่ไม่ใช่ผู้ดูแล ก่อนที่จะแตะข้อมูลคำขอใด ๆ"""
+    """ปิดทางบัญชีที่ไม่ใช่ผู้ดูแล ก่อนที่จะแตะข้อมูลคำขอใด ๆ
+
+    งานอื่นที่ต้องการสิทธิ์ผู้ดูแล (เช่น มุมมอง Order ใน `app/api/admin_orders.py`)
+    ต้องใช้ตัวนี้ร่วมกัน ห้ามเขียนการตรวจสิทธิ์ผู้ดูแลขึ้นใหม่
+    """
     if current_user.role != UserRole.ADMIN or current_user.status != UserStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin role is required to review verification requests",
+            detail="Admin role is required",
         )
     return current_user
 

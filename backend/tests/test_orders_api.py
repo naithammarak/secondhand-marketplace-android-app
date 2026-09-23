@@ -285,6 +285,25 @@ def test_cannot_buy_own_product(world, db):
     assert product_status(db, own_product) == "AVAILABLE"
 
 
+def test_only_fixed_price_products_can_be_ordered(world, db, monkeypatch):
+    """สินค้าประมูลต้องถูกปฏิเสธก่อนคิดราคา (D-20)
+
+    ตาราง products มี CHECK ที่ยอมให้มีแต่ `FIXED_PRICE` อยู่แล้ว จึงสร้างแถวประมูลมาทดสอบไม่ได้
+    ที่นี่จึงสลับค่าที่ระบบยอมรับแทน เพื่อพิสูจน์ว่าด่านนี้ทำงานจริงถ้าวันหนึ่งมีค่าอื่นเข้ามา
+    """
+    monkeypatch.setattr(orders_module, "SALE_TYPE_FIXED_PRICE", "AUCTION")
+
+    response = post_order(world["a"], order_body(world["product_id"]))
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "sale_type_unsupported"
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+    assert count(db, Order) == 0
+
+    quote = client.get(f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["a"])
+    assert quote.status_code == 409
+    assert quote.json()["detail"]["code"] == "sale_type_unsupported"
+
+
 def test_missing_or_soft_deleted_product_is_not_found(world, db):
     deleted = create_product(db, world["seller"], deleted=True)
     for product_id in (deleted, 999999):

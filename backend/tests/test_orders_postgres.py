@@ -26,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 import app.api.orders as orders_module
 from app.database import get_db
 from app.main import app
+from app.models.audit import AdminAccessLog
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import UserRole
@@ -95,8 +96,8 @@ def Session(pg_engine, monkeypatch):
     with pg_engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE receipts, escrows, payments, payment_attempts, orders, products, "
-                "brands, categories, verifications, users RESTART IDENTITY CASCADE"
+                "TRUNCATE admin_access_logs, receipts, escrows, payments, payment_attempts, orders, "
+                "products, brands, categories, verifications, users RESTART IDENTITY CASCADE"
             )
         )
     factory = sessionmaker(bind=pg_engine, autoflush=False, autocommit=False)
@@ -593,3 +594,63 @@ def test_racing_cancel_never_beats_successful_payment(world, db, monkeypatch):
     assert count(db, Receipt, order_id=order_id) == 1
     # สินค้าที่จ่ายเงินแล้วต้องไม่ถูกปล่อยคืน
     assert db.get(Product, world["product_id"]).status == "RESERVED"
+
+
+# ------------------------------------------------------------------ audit log (ORDER-09)
+
+
+def test_admin_access_log_table_is_created_with_rls(pg_engine):
+    """ตาราง Audit ต้องมาพร้อม migration และเปิด RLS เหมือนตารางอื่นใน public schema"""
+    with pg_engine.connect() as connection:
+        rls = connection.execute(
+            text(
+                "SELECT relrowsecurity FROM pg_class WHERE relname = 'admin_access_logs' "
+                "AND relkind = 'r'"
+            )
+        ).scalar_one()
+        indexes = set(
+            connection.execute(
+                text("SELECT indexname FROM pg_indexes WHERE tablename = 'admin_access_logs'")
+            ).scalars()
+        )
+    assert rls is True
+    assert {"ix_admin_access_logs_target", "ix_admin_access_logs_admin"} <= indexes
+
+
+def admin_log(db, world, **overrides):
+    fields = {
+        "admin_id": world["admin"],
+        "action": "ORDER_CONTACT_REVEAL",
+        "target_type": "ORDER",
+        "target_id": 1,
+        "reason": "ตรวจสอบข้อพิพาทการจัดส่งตามคำร้องของผู้ซื้อ",
+    }
+    fields.update(overrides)
+    return AdminAccessLog(**fields)
+
+
+@pytest.fixture
+def admin_world(db, world):
+    admin_id, _ = create_user(db, UserRole.ADMIN, name="Admin One")
+    return {**world, "admin": admin_id}
+
+
+def test_admin_access_log_checks_reject_incomplete_rows(db, admin_world):
+    """เหตุผลสั้นหรือค่านอกรายการต้องถูกปฏิเสธที่ฐานข้อมูล ไม่ใช่แค่ใน API"""
+    db.add(admin_log(db, admin_world))
+    db.commit()
+    assert count(db, AdminAccessLog) == 1
+
+    for row in (
+        admin_log(db, admin_world, reason="สั้นไป"),
+        admin_log(db, admin_world, reason="          "),
+        admin_log(db, admin_world, action="SOMETHING_ELSE"),
+        admin_log(db, admin_world, target_type="USER"),
+        admin_log(db, admin_world, admin_id=999999),
+    ):
+        db.add(row)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    assert count(db, AdminAccessLog) == 1

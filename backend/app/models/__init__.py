@@ -1,3 +1,4 @@
+from app.models.audit import AdminAccessLog
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
@@ -10,6 +11,7 @@ from app.models.verification import Verification
 
 
 __all__ = [
+    "AdminAccessLog",
     "Brand",
     "Category",
     "Escrow",

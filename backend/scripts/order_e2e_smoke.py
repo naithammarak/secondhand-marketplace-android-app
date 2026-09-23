@@ -1,4 +1,6 @@
-"""ORDER-06: ทดสอบ Flow สั่งซื้อ/จ่ายเงินจำลองผ่าน HTTP จริง แล้วตรวจจำนวนแถวจากฐานข้อมูล
+"""ORDER-06: ทดสอบ Flow สั่งซื้อ/จ่ายเงิน/ยกเลิก/หมดเวลา และมุมมองผู้ดูแล ผ่าน HTTP จริง
+
+ตรวจผลจากฐานข้อมูลจริงทุกกรณี (รวม ORDER-08 ยกเลิก/หมดเวลา และ ORDER-09 มุมมองผู้ดูแล)
 
 ใช้กับฐานข้อมูลทดสอบในเครื่องเท่านั้น (ไม่แตะ Supabase กลาง) ข้อมูลทั้งหมดเป็นข้อมูลสมมติ
 
@@ -13,6 +15,7 @@
 คืนค่า 0 เมื่อทุกกรณีผ่าน, 1 เมื่อมีกรณีล้มเหลว
 """
 
+from datetime import timedelta
 import os
 import sys
 import threading
@@ -26,11 +29,13 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from app.models.audit import AdminAccessLog
 from app.models.brand import Brand
 from app.models.category import Category
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import User, UserRole, UserStatus
+from app.services.order_pricing import utcnow
 
 ISSUER = os.getenv("ORDER_E2E_JWT_ISSUER", "https://example-project.supabase.co/auth/v1")
 ADDRESS = {
@@ -85,8 +90,8 @@ def main() -> int:
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE receipts, escrows, payments, payment_attempts, orders, products, "
-                "brands, categories, verifications, users RESTART IDENTITY CASCADE"
+                "TRUNCATE admin_access_logs, receipts, escrows, payments, payment_attempts, orders, "
+                "products, brands, categories, verifications, users RESTART IDENTITY CASCADE"
             )
         )
 
@@ -97,6 +102,7 @@ def main() -> int:
             ("buyer_b", UserRole.BUYER),
             ("seller_owner", UserRole.SELLER),
             ("seller_other", UserRole.SELLER),
+            ("admin_one", UserRole.ADMIN),
         ]:
             uid = uuid.uuid4()
             user = User(supabase_user_id=uid, full_name=f"demo {alias}", email=f"{alias}@example.test",
@@ -125,10 +131,13 @@ def main() -> int:
         p_reserved = product("reserved already", status="RESERVED")
         p_deleted = product("soft deleted", deleted=True)
         p_pay_race = product("pay race")
+        p_cancel = product("buyer cancels", owner="seller_other")
+        p_expire = product("payment window closes", owner="seller_other")
         session.commit()
 
     a, b = people["buyer_a"][1], people["buyer_b"][1]
     owner, other = people["seller_owner"][1], people["seller_other"][1]
+    admin = people["admin_one"][1]
     http = httpx.Client(base_url=base, timeout=30)
 
     # --- Happy path
@@ -227,6 +236,76 @@ def main() -> int:
     check("buyer B list = B's orders in DB only", (b_orders, set()),
           (b_list["total"], {item["id"] for item in b_list["items"]} & {oid, oid2, oid3}))
     check("seller list sees own sales", 4, http.get("/orders", headers=owner).json()["total"])
+
+
+    # --- ORDER-08: ผู้ซื้อยกเลิกเอง
+    oid_cancel = http.post("/orders", json={"product_id": p_cancel, "shipping_address": ADDRESS},
+                           headers={**a, **key()}).json()["id"]
+    cancelled = http.post(f"/orders/{oid_cancel}/cancel", headers=a)
+    check("cancel: 200", 200, cancelled.status_code)
+    check("cancel: status + reason", ("CANCELLED", "BUYER"),
+          (cancelled.json()["status"], cancelled.json()["cancel_reason"]))
+    check("cancel: ปุ่มจ่าย/ยกเลิกปิดแล้ว", (False, False),
+          (cancelled.json()["can_pay"], cancelled.json()["can_cancel"]))
+    again = http.post(f"/orders/{oid_cancel}/cancel", headers=a)
+    check("cancel: ยกเลิกซ้ำได้ผลเดิม", (200, cancelled.json()["cancelled_at"]),
+          (again.status_code, again.json()["cancelled_at"]))
+    with Session(engine) as session:
+        check("cancel: ไม่มีแถวเงินใด ๆ (DB)", (0, 0, 0, 0), counts(session, oid_cancel))
+        check("cancel: สินค้ากลับไปขายต่อได้ (DB)", "AVAILABLE", session.get(Product, p_cancel).status)
+    check("cancel: จ่ายเงิน Order ที่ยกเลิกแล้ว -> 409", 409,
+          http.post(f"/orders/{oid_cancel}/payments/simulate", json={"outcome": "SUCCESS"},
+                    headers={**a, **key()}).status_code)
+    check("cancel: ผู้ซื้อคนเดิมสั่งสินค้าชิ้นเดิมใหม่ได้", 201,
+          http.post("/orders", json={"product_id": p_cancel, "shipping_address": ADDRESS},
+                    headers={**a, **key()}).status_code)
+
+    # --- ORDER-08: หมดเวลาจ่ายเงิน (เลื่อนเส้นตายใน DB แทนการรอ 30 นาทีจริง)
+    oid_expire = http.post("/orders", json={"product_id": p_expire, "shipping_address": ADDRESS},
+                           headers={**a, **key()}).json()["id"]
+    with Session(engine) as session:
+        expiring = session.get(Order, oid_expire)
+        expiring.expires_at = utcnow() - timedelta(minutes=1)
+        session.commit()
+    expired = http.post(f"/orders/{oid_expire}/payments/simulate", json={"outcome": "SUCCESS"},
+                        headers={**a, **key()})
+    check("expiry: จ่ายหลังหมดเวลา -> 409 order_expired", (409, "order_expired"),
+          (expired.status_code, expired.json()["detail"]["code"]))
+    with Session(engine) as session:
+        row = session.get(Order, oid_expire)
+        check("expiry: Order ถูกยกเลิกอัตโนมัติ (DB)", ("CANCELLED", "EXPIRED"),
+              (row.status, row.cancel_reason))
+        check("expiry: ไม่บันทึก attempt และไม่มีเงิน (DB)", (0, 0, 0, 0), counts(session, oid_expire))
+        check("expiry: สินค้าถูกปล่อยคืน (DB)", "AVAILABLE", session.get(Product, p_expire).status)
+
+    # --- ORDER-09: มุมมองผู้ดูแล
+    admin_list = http.get("/admin/orders", headers=admin)
+    check("admin: เปิดรายการได้", 200, admin_list.status_code)
+    check("admin: อีเมลในรายการถูกปิดบัง", True,
+          all("***@" in item["buyer"]["email_masked"] for item in admin_list.json()["items"]))
+    check("admin: ไม่มีที่อยู่ในรายการ", True, "shipping" not in admin_list.text)
+    admin_detail = http.get(f"/admin/orders/{oid}", headers=admin)
+    check("admin: รายละเอียดปิดบังที่อยู่", {"province": ADDRESS["province"],
+                                              "postal_code": ADDRESS["postal_code"],
+                                              "phone_masked": "***0000"},
+          admin_detail.json()["shipping_address_masked"])
+    check("admin: ที่อยู่เต็มไม่หลุดในรายละเอียด", True,
+          ADDRESS["address_line"] not in admin_detail.text and "buyer_a@example.test" not in admin_detail.text)
+    check("admin: ขอดูข้อมูลเต็มโดยไม่มีเหตุผล -> 422", 422,
+          http.post(f"/admin/orders/{oid}/contact", json={}, headers=admin).status_code)
+    revealed = http.post(f"/admin/orders/{oid}/contact",
+                         json={"reason": "ตรวจสอบข้อพิพาทการจัดส่งตามคำร้องของผู้ซื้อ"}, headers=admin)
+    check("admin: เปิดดูข้อมูลเต็มพร้อมเหตุผล", (200, ADDRESS["address_line"], "buyer_a@example.test"),
+          (revealed.status_code, revealed.json()["shipping_address"]["address_line"],
+           revealed.json()["buyer_email"]))
+    with Session(engine) as session:
+        logs = session.scalars(select(AdminAccessLog)).all()
+        check("admin: บันทึก Audit Log หนึ่งแถวต่อการเปิดดูหนึ่งครั้ง (DB)",
+              (1, "ORDER_CONTACT_REVEAL", "ORDER", oid),
+              (len(logs), logs[0].action, logs[0].target_type, logs[0].target_id) if logs else (0,))
+    check("admin: ผู้ซื้อเรียก endpoint ผู้ดูแลไม่ได้", 403, http.get("/admin/orders", headers=a).status_code)
+    check("admin: ผู้ขายเรียก endpoint ผู้ดูแลไม่ได้", 403, http.get("/admin/orders", headers=owner).status_code)
+    check("admin: ผู้ดูแลยังเข้าหน้าผู้ซื้อไม่ได้", 404, http.get(f"/orders/{oid}", headers=admin).status_code)
 
     width = max(len(case) for case, *_ in results)
     print(f"{'CASE'.ljust(width)} | EXPECTED | ACTUAL | RESULT")

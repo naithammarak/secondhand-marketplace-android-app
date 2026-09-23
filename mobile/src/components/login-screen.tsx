@@ -10,6 +10,7 @@ import { router } from 'expo-router';
 import type { VerificationStatus } from '@/services/verification-service';
 import { useVerification } from '@/verification/verification-provider';
 import type { MeErrorKind, SelectableRole } from '@/services/me-service';
+import { isDirectProductIdEntryEnabled } from '@/orders/order-runtime';
 const googleLogo = require("@/assets/images/tabIcons/google-logo.jpg");
 
 const messages: Record<LoginState, string> = {
@@ -158,7 +159,7 @@ function ProductCatalogEntry() {
   );
 }
 
-/** ทางเข้างานสั่งซื้อ: ผู้ซื้อเห็นคำสั่งซื้อและทางเข้าซื้อชั่วคราว ผู้ขายเห็นคำสั่งซื้อสินค้าของตน */
+/** ทางเข้างานสั่งซื้อ: ผู้ซื้อเห็นคำสั่งซื้อ (ทางเข้าด้วยรหัสสินค้าโผล่เฉพาะ build ทดสอบ) */
 function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
   return (
     <>
@@ -170,7 +171,7 @@ function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
       >
         <Text style={styles.buttonText}>{role === 'BUYER' ? 'คำสั่งซื้อของฉัน' : 'คำสั่งซื้อสินค้าของฉัน'}</Text>
       </TouchableOpacity>
-      {role === 'BUYER' && (
+      {role === 'BUYER' && isDirectProductIdEntryEnabled() && (
         <TouchableOpacity
           style={styles.button}
           accessibilityRole="button"

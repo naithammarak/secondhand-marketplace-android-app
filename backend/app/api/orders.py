@@ -58,6 +58,7 @@ from app.services.order_pricing import (
     PAYMENT_METHOD_SIMULATED,
     PRODUCT_AVAILABLE,
     PRODUCT_RESERVED,
+    SALE_TYPE_FIXED_PRICE,
     as_utc,
     calculate_amounts,
     payment_deadline,
@@ -464,6 +465,13 @@ def load_purchasable_product(db: Session, buyer: User, product_id: int) -> Produ
         raise api_error(status.HTTP_404_NOT_FOUND, "product_not_found", "ไม่พบสินค้า")
     if product.user_id == buyer.id:
         raise api_error(status.HTTP_409_CONFLICT, "self_purchase", "ไม่สามารถซื้อสินค้าของตัวเองได้")
+    if product.sale_type != SALE_TYPE_FIXED_PRICE:
+        # การประมูลอยู่นอกขอบเขตรอบนี้ ปฏิเสธไว้ก่อนแทนการคิดราคาจาก products.price (D-20)
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "sale_type_unsupported",
+            "สินค้าชิ้นนี้ไม่ได้ขายแบบราคาปกติ จึงยังสั่งซื้อผ่านระบบนี้ไม่ได้",
+        )
     if product.status == PRODUCT_RESERVED and sweep_expired_orders(db, Order.product_id == product_id):
         # การจองที่หมดเวลาแล้วไม่ควรกันสินค้าไว้ ปล่อยของก่อนแล้วค่อยตัดสินใจจากสถานะล่าสุด
         db.refresh(product)
