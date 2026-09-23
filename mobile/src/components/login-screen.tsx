@@ -307,7 +307,7 @@ const styles = StyleSheet.create({
     elevation: 6,
     opacity: 1,
     width: 380, 
-    minHeight: 500, 
+    minHeight: 500,
     paddingBottom: 32,
     backgroundColor: "#243a73e4",
     alignItems:"center", 
