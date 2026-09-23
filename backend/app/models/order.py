@@ -28,6 +28,10 @@ from app.database import Base
 
 MONEY = Numeric(12, 2)
 
+# เพิ่มสถานะใหม่ได้ด้วยการสลับ CHECK ตัวเดียว (drop แล้ว create ใหม่) ไม่ต้องแก้ชนิดคอลัมน์
+# ตั้งใจไม่ใช้ native enum ของ PostgreSQL เพราะการเพิ่มค่าจะผูกกับ ALTER TYPE และ downgrade ยาก
+# คอลัมน์เป็น String(32) จึงรองรับชื่อสถานะยาว ๆ ของรอบถัดไปได้โดยไม่ต้องขยาย
+# ส่วน uq_orders_active_product ใช้เงื่อนไข `status <> 'CANCELLED'` จึงคลุมสถานะใหม่ให้เองอัตโนมัติ
 ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED")
 CANCEL_REASONS = ("BUYER", "EXPIRED")
 ATTEMPT_OUTCOMES = ("SUCCEEDED", "FAILED")

@@ -40,7 +40,7 @@ from app.schemas.order import (
     ProductSnapshot,
     ShippingAddress,
 )
-from app.services.order_pricing import ORDER_WAITING_SELLER_SHIP, utcnow
+from app.services.order_pricing import utcnow
 from app.services.pii_masking import mask_email, mask_phone
 
 router = APIRouter(prefix="/admin/orders", tags=["Admin orders"])
@@ -83,7 +83,8 @@ def product_snapshot(order: Order) -> ProductSnapshot:
 
 
 def payment_status_of(order: Order) -> PaymentStatus:
-    return PaymentStatus.PAID if order.status == ORDER_WAITING_SELLER_SHIP else PaymentStatus.UNPAID
+    """ดูจาก `paid_at` ไม่ใช่สถานะ สถานะหลังการจัดส่งในรอบถัดไปก็ยังต้องขึ้นว่าชำระแล้ว"""
+    return PaymentStatus.PAID if order.paid_at is not None else PaymentStatus.UNPAID
 
 
 def cancel_reason_of(order: Order) -> CancelReason | None:

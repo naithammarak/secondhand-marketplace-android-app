@@ -27,6 +27,25 @@ ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
 ORDER_CANCELLED = "CANCELLED"
 
+# สถานะที่ยังไม่รับในรอบนี้ แต่ SRS กำหนดไว้แล้ว (FR-15 ถึง FR-18 และกระบวนการหลักขั้นที่ 6-8)
+# เก็บไว้เป็นข้อมูลอ้างอิงเท่านั้น ห้ามเขียนค่าเหล่านี้ลงฐานข้อมูลจนกว่าจะมี Feature รองรับ
+# (ดู doc/orders/contract.md หัวข้อ 2 และ doc/orders/next-round-inspector.md)
+ORDER_STATUSES_RESERVED = (
+    "SHIPPING_TO_INSPECTION",
+    "RECEIVED_AT_CENTER",
+    "INSPECTING",
+    "INSPECTION_REPORTED",
+    "SHIPPING_TO_BUYER",
+    "COMPLETED",
+    "RETURNED_TO_SELLER",
+    "REFUNDED",
+)
+
+# ชุดสถานะที่อนุญาตให้ทำสิ่งนั้นได้ ระบุเป็น "ชุดของสถานะ" ไม่ใช่เงื่อนไขสองทาง
+# เพราะการเพิ่มสถานะหลังการจัดส่งต้องไม่ทำให้ Order กลับมาจ่ายหรือยกเลิกได้อีก
+PAYABLE_ORDER_STATUSES = frozenset({ORDER_WAITING_PAYMENT})
+CANCELLABLE_ORDER_STATUSES = frozenset({ORDER_WAITING_PAYMENT})
+
 # เหตุผลที่ Order ถูกยกเลิก เก็บแยกจากสถานะเพื่อให้หน้าจอบอกผู้ใช้ได้ว่าใครเป็นคนยกเลิก
 CANCEL_REASON_BUYER = "BUYER"
 CANCEL_REASON_EXPIRED = "EXPIRED"

@@ -12,12 +12,14 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.api.admin_orders as admin_orders_module
 import app.api.orders as orders_module
 from app.database import Base, get_db
 from app.main import app
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import UserRole, UserStatus
+from app.schemas.order import PaymentStatus
 from app.services.order_pricing import calculate_amounts, payment_deadline, utcnow
 from tests.order_helpers import (
     VALID_ADDRESS,
@@ -923,3 +925,84 @@ def test_cancel_after_deadline_records_expired_reason(world, db):
     response = cancel(order["id"], world["a"])
     assert response.status_code == 200
     assert response.json()["cancel_reason"] == "EXPIRED"
+
+
+# ------------------------------------------------------- สถานะที่จะเพิ่มในรอบถัดไป (ORDER-00)
+
+
+def future_order(**overrides):
+    """Order ในหน่วยความจำที่มีสถานะของรอบถัดไป ไม่บันทึกลงฐานข้อมูลเพราะ CHECK ยังไม่รับค่านี้"""
+    fields = {
+        "status": "SHIPPING_TO_INSPECTION",
+        "paid_at": utcnow(),
+        "expires_at": utcnow() - timedelta(minutes=5),
+        "cancel_reason": None,
+        "cancelled_at": None,
+    }
+    fields.update(overrides)
+    return Order(**fields)
+
+
+def test_paid_is_decided_by_paid_at_not_by_the_status_name():
+    """สถานะหลังการจัดส่งต้องยังนับว่าจ่ายแล้ว ไม่งั้นใบเสร็จหายและผู้ขายจะไม่เห็นที่อยู่"""
+    moved_on = future_order()
+    assert orders_module.is_paid(moved_on) is True
+    assert admin_orders_module.payment_status_of(moved_on) == PaymentStatus.PAID
+
+    waiting = Order(status="WAITING_PAYMENT", paid_at=None, expires_at=utcnow())
+    assert orders_module.is_paid(waiting) is False
+    assert admin_orders_module.payment_status_of(waiting) == PaymentStatus.UNPAID
+
+
+def test_actions_are_closed_for_statuses_that_are_not_in_the_allowed_set():
+    """เงื่อนไขต้องเป็น "สถานะอยู่ในชุดที่ทำได้ไหม" ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิกไหม" """
+    moved_on = future_order()
+    assert orders_module.is_payable(moved_on) is False
+    assert orders_module.is_cancellable(moved_on) is False
+    # เลยเส้นตายไปแล้วก็ต้องไม่ถูกกวาด เพราะไม่ได้อยู่ในสถานะรอชำระเงินแล้ว
+    assert orders_module.payment_window_passed(moved_on, utcnow()) is False
+
+
+def test_payment_is_refused_when_the_status_is_not_payable(world, db, monkeypatch):
+    """จำลองสถานะของรอบถัดไปด้วยการเปลี่ยนชุดสถานะที่จ่ายได้ ไม่มีทางหลุดไปสร้าง attempt"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "PAYABLE_ORDER_STATUSES", frozenset())
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_payable"
+    assert count(db, PaymentAttempt) == 0
+    assert count(db, Payment) == 0
+    db.expire_all()
+    assert db.get(Order, order["id"]).status == "WAITING_PAYMENT"
+
+
+def test_cancel_is_refused_when_the_status_is_not_cancellable(world, db, monkeypatch):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "CANCELLABLE_ORDER_STATUSES", frozenset())
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_cancellable"
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancelled_at) == ("WAITING_PAYMENT", None)
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_buttons_close_when_the_status_leaves_the_payable_set(world, monkeypatch):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert (order["can_pay"], order["can_cancel"]) == (True, True)
+
+    monkeypatch.setattr(orders_module, "PAYABLE_ORDER_STATUSES", frozenset())
+    detail = client.get(f"/orders/{order['id']}", headers=world["a"]).json()
+    assert (detail["can_pay"], detail["can_cancel"]) == (False, False)
+
+
+def test_reserved_statuses_are_documented_and_fit_the_column():
+    """ชื่อสถานะของรอบถัดไปต้องยาวไม่เกินคอลัมน์ และต้องไม่ทับค่าที่ใช้อยู่แล้ว"""
+    from app.models.order import ORDER_STATUSES
+    from app.services.order_pricing import ORDER_STATUSES_RESERVED
+
+    assert set(ORDER_STATUSES_RESERVED).isdisjoint(ORDER_STATUSES)
+    assert max(len(value) for value in ORDER_STATUSES_RESERVED) <= 32

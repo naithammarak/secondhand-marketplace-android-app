@@ -58,9 +58,11 @@ from app.services.order_pricing import (
     CANCEL_REASON_EXPIRED,
     CURRENCY,
     ESCROW_HELD,
+    CANCELLABLE_ORDER_STATUSES,
     ORDER_CANCELLED,
     ORDER_WAITING_PAYMENT,
     ORDER_WAITING_SELLER_SHIP,
+    PAYABLE_ORDER_STATUSES,
     PAYMENT_METHOD_SIMULATED,
     PRODUCT_AVAILABLE,
     PRODUCT_RESERVED,
@@ -121,6 +123,23 @@ def already_paid() -> HTTPException:
 
 def already_cancelled() -> HTTPException:
     return api_error(status.HTTP_409_CONFLICT, "order_cancelled", "คำสั่งซื้อนี้ถูกยกเลิกแล้ว")
+
+
+def not_payable() -> HTTPException:
+    """สถานะที่เดินหน้าไปแล้ว (เช่น อยู่ระหว่างจัดส่ง) ต้องไม่ตกไปเข้าทางจ่ายเงิน"""
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "order_not_payable",
+        "คำสั่งซื้อนี้อยู่ในขั้นตอนที่ชำระเงินไม่ได้แล้ว",
+    )
+
+
+def not_cancellable() -> HTTPException:
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "order_not_cancellable",
+        "คำสั่งซื้อนี้อยู่ในขั้นตอนที่ยกเลิกเองไม่ได้แล้ว",
+    )
 
 
 def payment_expired_error() -> HTTPException:
@@ -248,11 +267,28 @@ def load_order_for(db: Session, order_id: int, user: User, lock: bool = False) -
 
 
 def is_paid(order: Order) -> bool:
-    return order.status == ORDER_WAITING_SELLER_SHIP
+    """จ่ายเงินสำเร็จแล้วหรือยัง ตัดสินจาก `paid_at` ไม่ใช่จากสถานะ
+
+    สถานะเดินหน้าต่อได้เรื่อย ๆ (ส่งเข้าศูนย์ตรวจ กำลังตรวจ ส่งถึงผู้ซื้อ ฯลฯ) การถามว่า
+    "สถานะเท่ากับ WAITING_SELLER_SHIP ไหม" จึงกลายเป็นเท็จทันทีที่ Order เดินหน้า
+    แล้วใบเสร็จจะหาย ผู้ขายจะไม่เห็นที่อยู่ และหน้าจอจะบอกว่ายังไม่ชำระ
+    ส่วน `paid_at` ถูกตั้งครั้งเดียวตอนจ่ายสำเร็จและไม่มีเส้นทางไหนลบค่านี้
+    """
+    return order.paid_at is not None
 
 
 def is_cancelled(order: Order) -> bool:
     return order.status == ORDER_CANCELLED
+
+
+def is_payable(order: Order) -> bool:
+    """จ่ายได้เฉพาะสถานะในชุดที่ระบุไว้ ไม่ใช่ "ทุกสถานะที่ยังไม่จ่าย" """
+    return order.status in PAYABLE_ORDER_STATUSES
+
+
+def is_cancellable(order: Order) -> bool:
+    """ยกเลิกได้เฉพาะก่อนชำระเงิน สถานะหลังจากนั้นเป็นเรื่องของงานคืนสินค้า/คืนเงินในรอบถัดไป"""
+    return order.status in CANCELLABLE_ORDER_STATUSES
 
 
 def payment_window_passed(order: Order, now: datetime) -> bool:
@@ -312,12 +348,11 @@ def order_address(order: Order) -> ShippingAddress:
 
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
     paid = is_paid(order)
-    cancelled = is_cancelled(order)
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
+    # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
     # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
     actionable = (
-        not paid
-        and not cancelled
+        is_payable(order)
         and not payment_window_passed(order, utcnow())
         and viewer.status == UserStatus.ACTIVE
     )
@@ -375,7 +410,8 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             commission_fee=order.commission_fee,
             seller_payout=order.seller_payout,
         ),
-        shipping_address=order_address(order) if order.status == ORDER_WAITING_SELLER_SHIP else None,
+        # ผู้ขายเห็นที่อยู่ตั้งแต่จ่ายเงินสำเร็จเป็นต้นไป และต้องไม่หายไปเมื่อสถานะเดินหน้าต่อ (D-12)
+        shipping_address=order_address(order) if paid else None,
         last_payment_attempt=None,
         paid_at=order.paid_at,
         receipt_no=None,
@@ -669,6 +705,8 @@ def cancel_order(
 
         if is_cancelled(order):
             db.rollback()  # ยกเลิกไปแล้ว ไม่มีอะไรต้องเปลี่ยน ปล่อยล็อกทันที
+        elif not is_cancellable(order):
+            raise not_cancellable()
         else:
             now = utcnow()
             # เลยเวลาไปแล้วให้บันทึกตามความจริงว่าหมดเวลา ผลที่ผู้ใช้เห็นเหมือนกัน
@@ -724,6 +762,9 @@ def simulate_payment(
             # จุดบังคับใช้จริงของ Timer: ยกเลิกให้เสร็จก่อนแล้วจึงปฏิเสธคำขอ ไม่บันทึก attempt
             sweep_expired_orders(db, Order.id == order.id)
             raise payment_expired_error()
+        if not is_payable(order):
+            # สถานะอื่นที่ยังไม่มีในรอบนี้ (เช่น ระหว่างจัดส่ง) ต้องถูกปฏิเสธ ไม่ใช่ตกมาสร้าง attempt
+            raise not_payable()
 
         attempt = PaymentAttempt(
             order_id=order.id,
