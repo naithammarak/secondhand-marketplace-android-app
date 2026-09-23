@@ -28,6 +28,7 @@ PG_URL = os.getenv("INSPECT_TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parents[1]
 PRE_INSPECT = "9446ec1a2c5d"
 INSPECT_HEAD = "f3c1a09d8b56"
+CERT_HEAD = "c7e4b21a9d08"
 NEW_TABLES = {"shipments", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"}
 pytestmark = pytest.mark.skipif(not PG_URL, reason="INSPECT_TEST_DATABASE_URL is not set")
 
@@ -105,7 +106,8 @@ def pg_engine():
 
 def test_migration_graph_and_schema(pg_engine):
     script = ScriptDirectory.from_config(_config())
-    assert script.get_heads() == [INSPECT_HEAD]
+    assert script.get_heads() == [CERT_HEAD]
+    assert script.get_revision(CERT_HEAD).down_revision == INSPECT_HEAD
     assert script.get_revision(INSPECT_HEAD).down_revision == PRE_INSPECT
     with pg_engine.connect() as connection:
         assert NEW_TABLES <= set(inspect(connection).get_table_names(schema="public"))

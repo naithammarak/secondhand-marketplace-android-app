@@ -1,0 +1,211 @@
+"""Real PostgreSQL end-to-end INSPECT API flow; never touches a shared DB."""
+
+import os
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
+from pathlib import Path
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from fastapi.testclient import TestClient
+from PIL import Image
+from sqlalchemy import create_engine, inspect, select
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
+
+from app.api import inspections as inspect_api
+from app.database import get_db
+from app.main import app
+from app.models.certificate import Certificate
+from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
+from app.models.order import Order
+from app.models.shipment import Shipment
+from app.models.user import UserRole
+from tests.order_helpers import create_product, create_user, new_key, order_body, patch_auth
+
+
+URL = os.getenv("INSPECT_FLOW_TEST_DATABASE_URL")
+pytestmark = pytest.mark.skipif(not URL, reason="INSPECT_FLOW_TEST_DATABASE_URL is not set")
+
+
+@pytest.fixture(scope="module")
+def pg_engine():
+    parsed = make_url(URL)
+    if parsed.get_backend_name() != "postgresql" or parsed.host not in {"localhost", "127.0.0.1", "::1"} or "test" not in (parsed.database or "").lower() or URL == os.getenv("DATABASE_URL"):
+        pytest.fail("INSPECT_FLOW_TEST_DATABASE_URL must be a separate local PostgreSQL test database")
+    engine = create_engine(URL)
+    with engine.connect() as connection:
+        if inspect(connection).get_table_names(schema="public"):
+            pytest.fail("INSPECT_FLOW_TEST_DATABASE_URL must be empty")
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "migrations"))
+    old = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = URL
+    try:
+        command.upgrade(config, "head")
+    finally:
+        if old is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = old
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def world(pg_engine, monkeypatch, tmp_path):
+    patch_auth(monkeypatch)
+    monkeypatch.setenv("PAYMENT_SIMULATION_ENABLED", "true")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("CERT_PUBLIC_ORIGIN", "https://cert.example.test")
+    monkeypatch.setenv("INSPECT_PRIVATE_STORAGE_DIR", str(tmp_path / "private-inspection-images"))
+
+    def override_db():
+        with Session(pg_engine) as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_db
+    with Session(pg_engine) as session:
+        buyer, buyer_h = create_user(session, UserRole.BUYER)
+        seller, seller_h = create_user(session, UserRole.SELLER)
+        _, inspector_h = create_user(session, UserRole.INSPECTOR)
+        _, other_h = create_user(session, UserRole.BUYER)
+        product_id = create_product(session, seller)
+    with TestClient(app) as client:
+        yield client, pg_engine, buyer_h, seller_h, inspector_h, other_h, product_id
+    app.dependency_overrides.pop(get_db, None)
+
+
+def request_headers(auth):
+    return {**auth, "Idempotency-Key": new_key()}
+
+
+def image_bytes():
+    output = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(output, format="PNG")
+    return output.getvalue()
+
+
+def started_work(world):
+    client, _, buyer, seller, inspector, other, product = world
+    created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    paid = client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer))
+    assert paid.status_code == 200, paid.text
+    assert client.get(f"/orders/{order_id}/inspection-progress", headers=other).status_code == 404
+    ship_key = new_key()
+    shipment = client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo Express", "tracking_number": "DEMO-42"}, headers={**seller, "Idempotency-Key": ship_key})
+    assert shipment.status_code == 200, shipment.text
+    assert shipment.json()["order_status"] == "SHIPPING_TO_CENTER"
+    again = client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo Express", "tracking_number": "DEMO-42"}, headers={**seller, "Idempotency-Key": ship_key})
+    assert again.status_code == 200 and again.headers["Idempotent-Replayed"] == "true"
+    assert client.get(f"/orders/{order_id}/inspection-progress", headers=buyer).json()["order_status"] == "SHIPPING_TO_CENTER"
+    queue = client.get("/inspections", headers=inspector)
+    assert queue.status_code == 200, queue.text
+    work_id = next(item["id"] for item in queue.json()["items"] if item["order_id"] == order_id)
+    assert client.get(f"/inspections/{work_id}", headers=other).status_code == 403
+    received = client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector))
+    assert received.status_code == 200 and received.json()["order_status"] == "RECEIVED_AT_CENTER", received.text
+    started = client.post(f"/inspections/{work_id}/start", json={}, headers=request_headers(inspector))
+    assert started.status_code == 200 and started.json()["order_status"] == "INSPECTING", started.text
+    return order_id, work_id
+
+
+@pytest.mark.parametrize("result", ["PASS", "MINOR_ISSUE", "NOT_AS_DESCRIBED", "FAKE"])
+def test_seller_inspector_buyer_flow(world, result):
+    client, engine, buyer, seller, inspector, other, _ = world
+    order_id, work_id = started_work(world)
+    image_key = new_key()
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers={**inspector, "Idempotency-Key": image_key})
+    assert uploaded.status_code == 201, uploaded.text
+    photo_id = uploaded.json()["evidence"]["id"]
+    replay = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers={**inspector, "Idempotency-Key": image_key})
+    assert replay.status_code == 201 and replay.headers["Idempotent-Replayed"] == "true", replay.text
+    assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 404
+    payload = {"result": result, "summary": "The item was inspected against its Order snapshot.", "evidence_ids": [photo_id]}
+    result_key = new_key()
+    saved = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": result_key})
+    assert saved.status_code == 200 and saved.json()["result"] == result, saved.text
+    assert saved.json()["order_status"] == "RESULT_NOTIFIED"
+    repeated = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": result_key})
+    assert repeated.status_code == 200 and repeated.headers["Idempotent-Replayed"] == "true", repeated.text
+    assert client.post(f"/inspections/{work_id}/result", json=payload, headers=request_headers(inspector)).status_code == 409
+    buyer_view = client.get(f"/orders/{order_id}/inspection", headers=buyer)
+    assert buyer_view.status_code == 200 and buyer_view.json()["result"] == result, buyer_view.text
+    assert [item["id"] for item in buyer_view.json()["evidence"]] == [photo_id]
+    assert client.get(f"/orders/{order_id}/inspection", headers=other).status_code == 404
+    assert client.get(f"/orders/{order_id}/inspection", headers=seller).status_code == 403
+    photo = client.get(f"/inspection-evidence/{photo_id}", headers=buyer)
+    assert photo.status_code == 200 and photo.headers["Cache-Control"] == "no-store" and photo.content
+    assert client.get(f"/inspection-evidence/{photo_id}", headers=other).status_code == 404
+    positive = result in {"PASS", "MINOR_ISSUE"}
+    assert bool(buyer_view.json()["certificate"]) is positive
+    assert buyer_view.json()["next_action"] == ("WAIT_BUYER_DECISION" if positive else "RETURN_TO_SELLER")
+    if positive:
+        token = buyer_view.json()["certificate"]["public_url"].rsplit("/", 1)[-1]
+        assert client.get(f"/certificates/{token}").json()["result"] == result
+    with Session(engine) as session:
+        assert session.scalar(select(Order).where(Order.id == order_id)).status == "RESULT_NOTIFIED"
+        assert session.scalar(select(Inspection).where(Inspection.id == work_id)).result == result
+        assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 1
+        assert session.query(InspectionEvidence).filter_by(inspection_id=work_id).count() == 1
+        assert (session.query(Certificate).filter_by(order_id=order_id).count() == 1) is positive
+
+
+def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatch):
+    client, engine, buyer, _, inspector, _, _ = world
+    order_id, work_id = started_work(world)
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    photo_id = uploaded.json()["evidence"]["id"]
+    payload = {"result": "PASS", "summary": "The item matches the original Order snapshot.", "evidence_ids": [photo_id]}
+    key = new_key()
+    original = inspect_api.issue_certificate
+    monkeypatch.setattr(inspect_api, "issue_certificate", lambda *args: (_ for _ in ()).throw(RuntimeError("certificate offline")))
+    failed = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
+    assert failed.status_code == 503 and failed.json()["detail"]["code"] == "certificate_unavailable", failed.text
+    with Session(engine) as session:
+        assert session.get(Order, order_id).status == "INSPECTING"
+        assert session.get(Inspection, work_id).result is None
+        assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 0
+        assert session.query(Certificate).filter_by(order_id=order_id).count() == 0
+    monkeypatch.setattr(inspect_api, "issue_certificate", original)
+    retried = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
+    assert retried.status_code == 200 and retried.json()["certificate"] is not None, retried.text
+
+
+def test_concurrent_ship_creates_one_shipment(world):
+    client, engine, buyer, seller, _, _, product = world
+    created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
+    order_id = created.json()["id"]
+    assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+
+    def submit(_):
+        return client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo Express", "tracking_number": "DEMO-42"}, headers=request_headers(seller)).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(submit, range(2))) == [200, 409]
+    with Session(engine) as session:
+        assert session.query(Shipment).filter_by(order_id=order_id).count() == 1
+        assert session.query(Inspection).filter_by(order_id=order_id).count() == 1
+
+
+def test_concurrent_result_replay_has_one_certificate(world):
+    client, engine, _, _, inspector, _, _ = world
+    order_id, work_id = started_work(world)
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    photo_id = uploaded.json()["evidence"]["id"]
+    payload = {"result": "MINOR_ISSUE", "summary": "Minor wear, otherwise matching the Order snapshot.", "evidence_ids": [photo_id]}
+    key = new_key()
+
+    def submit(_):
+        return client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(submit, range(2)))
+    assert [item.status_code for item in responses] == [200, 200], [item.text for item in responses]
+    assert sorted(item.headers.get("Idempotent-Replayed", "false") for item in responses) == ["false", "true"]
+    with Session(engine) as session:
+        assert session.query(Certificate).filter_by(order_id=order_id).count() == 1
+        assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 1

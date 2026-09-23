@@ -1,5 +1,6 @@
 from app.models.brand import Brand
 from app.models.category import Category
+from app.models.certificate import Certificate
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
@@ -14,6 +15,7 @@ from app.models.verification import Verification
 __all__ = [
     "Brand",
     "Category",
+    "Certificate",
     "Escrow",
     "Inspection",
     "InspectionEvidence",
