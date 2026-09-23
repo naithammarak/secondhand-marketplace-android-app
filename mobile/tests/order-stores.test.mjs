@@ -559,3 +559,75 @@ test('logging out clears a cancel error', async () => {
   store.setOwner(null);
   assert.equal(store.getSnapshot().cancelError, null);
 });
+
+
+test('การรีเฟรชที่มาช้าต้องไม่ลบผลการยกเลิกที่สำเร็จแล้ว', async () => {
+  // อ่านที่ออกไปก่อนการยกเลิกอาจกลับมาทีหลัง ถ้าไม่จัดลำดับ Order จะเด้งกลับเป็น "รอชำระเงิน"
+  let release;
+  const slowRefresh = new Promise(resolve => { release = resolve; });
+  let gets = 0;
+  const store = createOrderDetailStore({
+    ...tokens(),
+    newIdempotencyKey: keys(),
+    service: {
+      getOrder: async () => {
+        gets += 1;
+        if (gets === 1) return order();
+        await slowRefresh;
+        return order(); // server ตอบสถานะเก่าที่อ่านไว้ก่อนการยกเลิก
+      },
+      simulatePayment: async () => { throw new Error('unused'); },
+      getReceipt: async () => { throw new Error('unused'); },
+      cancelOrder: async () => cancelled(),
+    },
+  });
+
+  store.setOwner('user-a');
+  await store.open(41);
+
+  const refreshing = store.refresh();
+  await store.cancel();
+  assert.equal(store.getSnapshot().order.status, 'CANCELLED');
+
+  release();
+  await refreshing;
+
+  const state = store.getSnapshot();
+  assert.equal(state.order.status, 'CANCELLED');
+  assert.equal(state.order.canCancel, false);
+  assert.equal(state.refreshing, false);
+});
+
+test('การรีเฟรชที่มาช้าต้องไม่ลบผลการจ่ายเงินที่สำเร็จแล้ว', async () => {
+  let release;
+  const slowRefresh = new Promise(resolve => { release = resolve; });
+  let gets = 0;
+  const store = createOrderDetailStore({
+    ...tokens(),
+    newIdempotencyKey: keys(),
+    service: {
+      getOrder: async () => {
+        gets += 1;
+        if (gets === 1) return order();
+        await slowRefresh;
+        return order();
+      },
+      simulatePayment: async () => ({ attempt: { id: 1, outcome: 'SUCCEEDED', amount: '1350.00', createdAt: null }, order: paid() }),
+      getReceipt: async () => { throw new Error('unused'); },
+      cancelOrder: async () => { throw new Error('unused'); },
+    },
+  });
+
+  store.setOwner('user-a');
+  await store.open(41);
+
+  const refreshing = store.refresh();
+  await store.pay('SUCCESS');
+  assert.equal(store.getSnapshot().order.paymentStatus, 'PAID');
+
+  release();
+  await refreshing;
+
+  assert.equal(store.getSnapshot().order.paymentStatus, 'PAID');
+  assert.equal(store.getSnapshot().lastResult, 'succeeded');
+});

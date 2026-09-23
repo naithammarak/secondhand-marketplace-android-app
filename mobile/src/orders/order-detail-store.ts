@@ -61,6 +61,13 @@ type PendingPayment = { key: string; outcome: PaymentOutcome };
 export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
   let state: OrderDetailState = initialOrderDetailState;
   let generation = 0;
+  /**
+   * นับครั้งที่ได้ "คำตอบที่เชื่อถือกว่าการอ่าน" (ผลการจ่ายและผลการยกเลิก)
+   * การอ่านที่ออกไปก่อนหน้านั้นอาจกลับมาทีหลังและทับสถานะใหม่ได้ เช่น กดรีเฟรชแล้วกดยกเลิก
+   * คำตอบของรีเฟรชที่มาช้าจะพา Order กลับไปเป็น WAITING_PAYMENT ทั้งที่ยกเลิกสำเร็จแล้ว
+   * จึงต้องทิ้งผลการอ่านที่ออกไปก่อนคำตอบล่าสุดเสมอ
+   */
+  let orderEpoch = 0;
   let pending: PendingPayment | null = null;
   let controllers = new Set<AbortController>();
   const listeners = new Set<() => void>();
@@ -93,11 +100,17 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
     const { owner, orderId } = state;
     if (!owner || orderId === null) return null;
     const current = generation;
+    const epoch = orderEpoch;
     const { signal, done } = track();
     set(mode === 'load' ? { loading: true, loadError: null } : { refreshing: true, loadError: null });
     try {
       const order = await withToken(deps, token => deps.service.getOrder(token, orderId, signal), signal);
       if (current !== generation) return null;
+      if (epoch !== orderEpoch) {
+        // มีผลการจ่ายหรือการยกเลิกเข้ามาหลังจากคำขออ่านนี้ออกไป ผลที่อ่านมาถือว่าเก่ากว่า
+        set({ loading: false, refreshing: false });
+        return null;
+      }
       set({ order, loading: false, refreshing: false });
       return order;
     } catch (error) {
@@ -132,6 +145,7 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
       }, signal), signal);
       if (current !== generation) return;
       pending = null;
+      orderEpoch += 1;
       set({
         paying: null,
         uncertain: false,
@@ -177,6 +191,8 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
       if (current !== generation) return;
       // ยกเลิกแล้วคำขอจ่ายที่ค้างอยู่ใช้ไม่ได้อีก ล้างทิ้งพร้อมกัน
       pending = null;
+      // การอ่านที่ยังค้างอยู่ต้องทับผลการยกเลิกนี้ไม่ได้
+      orderEpoch += 1;
       set({
         cancelling: false,
         order: updated,
