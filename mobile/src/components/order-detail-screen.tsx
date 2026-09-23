@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
+import { InspectionOrderPanel } from '@/components/inspection-order-panel';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
 import { formatBaht, formatDateTime, orderStatusLabels, paymentStatusLabels } from '@/orders/order-format';
 import { useOrderDetail, useOrdersList } from '@/orders/orders-provider';
@@ -87,6 +88,11 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   <ThemedText type="small" style={styles.errorText}>{errorText(state.loadError)}</ThemedText>
                 ) : null}
               </Card>
+
+              {auth.session ? <InspectionOrderPanel
+                orderId={order.id} status={order.status} role={order.viewerRole}
+                token={auth.session.access_token} onChanged={() => { void store.refresh(); void list.store.refresh(); }}
+              /> : null}
 
               <Card>
                 <ThemedText type="smallBold">{order.product.name}</ThemedText>

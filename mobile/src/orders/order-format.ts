@@ -4,6 +4,10 @@ import type { OrderStatus, PaymentStatus } from '../services/order-service';
 export const orderStatusLabels: Record<OrderStatus, string> = {
   WAITING_PAYMENT: 'รอชำระเงิน',
   WAITING_SELLER_SHIP: 'ชำระแล้ว รอผู้ขายจัดส่ง',
+  SHIPPING_TO_CENTER: 'กำลังส่งเข้าศูนย์ตรวจ',
+  RECEIVED_AT_CENTER: 'ศูนย์ตรวจรับสินค้าแล้ว',
+  INSPECTING: 'กำลังตรวจสอบสินค้า',
+  RESULT_NOTIFIED: 'แจ้งผลตรวจแล้ว',
 };
 
 export const paymentStatusLabels: Record<PaymentStatus, string> = {

@@ -34,6 +34,8 @@ export default function TabLayout() {
                 <Stack.Screen name="orders/index" />
                 <Stack.Screen name="orders/[orderId]" />
                 <Stack.Screen name="receipt/[orderId]" />
+                <Stack.Screen name="inspections/index" />
+                <Stack.Screen name="inspections/[inspectionId]" />
               </Stack>
             </OrdersProvider>
           </ReviewProvider>

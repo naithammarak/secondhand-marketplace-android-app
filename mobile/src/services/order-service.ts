@@ -3,7 +3,8 @@
  * เงินทุกช่องเป็น string จาก backend และห้ามแปลงเป็น number เพื่อคำนวณในแอป
  */
 
-export type OrderStatus = 'WAITING_PAYMENT' | 'WAITING_SELLER_SHIP';
+export type OrderStatus = 'WAITING_PAYMENT' | 'WAITING_SELLER_SHIP' | 'SHIPPING_TO_CENTER'
+  | 'RECEIVED_AT_CENTER' | 'INSPECTING' | 'RESULT_NOTIFIED';
 export type PaymentStatus = 'UNPAID' | 'PAID';
 export type ViewerRole = 'buyer' | 'seller';
 export type PaymentOutcome = 'SUCCESS' | 'FAILED';
@@ -118,7 +119,8 @@ type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MONEY = /^-?\d+\.\d{2}$/;
-const ORDER_STATUSES: OrderStatus[] = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP'];
+const ORDER_STATUSES: OrderStatus[] = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP',
+  'SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED'];
 
 const ADDRESS_API_FIELDS: Record<string, keyof ShippingAddress> = {
   recipient_name: 'recipientName',

@@ -253,6 +253,11 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && (
           <OrderEntries role={auth.account.role} />
         )}
+        {auth.account?.role === 'INSPECTOR' && (
+          <TouchableOpacity style={styles.button} accessibilityRole="button" onPress={() => router.push('/inspections')}>
+            <Text style={styles.buttonText}>เปิดคิวตรวจสินค้า</Text>
+          </TouchableOpacity>
+        )}
         {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER' || auth.account?.role === 'ADMIN') && (
           <ProductCatalogEntry />
         )}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOrderService, OrderServiceError } from '../src/services/order-service.ts';
+import { createOrderService, OrderServiceError, toOrderDetail } from '../src/services/order-service.ts';
 import { formatBaht } from '../src/orders/order-format.ts';
 import { validateAddress, normalizeAddress } from '../src/orders/checkout-form.ts';
 import { parseRouteId } from '../src/orders/route-params.ts';
@@ -45,6 +45,12 @@ function recorder(respond) {
   };
   return { calls, fetch };
 }
+
+test('Order decoder accepts all four Inspect statuses', () => {
+  for (const status of ['SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED']) {
+    assert.equal(toOrderDetail(detail({ status })).status, status);
+  }
+});
 
 test('create sends only product and address with the idempotency key', async () => {
   const { calls, fetch } = recorder(() => json(201, detail()));
