@@ -9,7 +9,21 @@
       "environment": "development",
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "development",
-        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "mock"
+        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api",
+        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "false"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "mock": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "development",
+        "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "mock",
+        "EXPO_PUBLIC_PRODUCT_MOCK_MODE": "true"
       },
       "android": {
         "buildType": "apk"

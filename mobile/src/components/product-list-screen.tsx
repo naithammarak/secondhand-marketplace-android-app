@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useEffect, useSyncExternalStore } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -38,14 +38,20 @@ function ProductCard({ item, onPress }: { item: ProductListItem; onPress(): void
 }
 
 export function ProductListScreen() {
+  const returningFromDetail = useRef(false);
   const state = useSyncExternalStore(
     productCatalogStore.subscribe, productCatalogStore.getSnapshot, productCatalogStore.getSnapshot,
   );
 
-  useEffect(() => {
-    // เข้าหน้านี้ครั้งแรกให้โหลดรายการ ถ้าเคยโหลดไว้แล้ว (กลับจาก detail) ไม่โหลดซ้ำ เพื่อรักษาคำค้น/ตำแหน่งรายการ
-    if (!state.loaded) void productCatalogStore.load();
-  }, [state.loaded]);
+  useFocusEffect(useCallback(() => {
+    if (returningFromDetail.current) {
+      returningFromDetail.current = false;
+      return;
+    }
+    // The shared store survives navigation; a new catalog visit must read page 1 again.
+    if (productCatalogStore.getSnapshot().loaded) void productCatalogStore.refresh();
+    else void productCatalogStore.load();
+  }, []));
 
   const emptyMessage = state.query.trim() ? 'ไม่พบสินค้าตามคำค้น' : 'ยังไม่มีสินค้า';
 
@@ -74,7 +80,10 @@ export function ProductListScreen() {
           renderItem={({ item }) => (
             <ProductCard
               item={item}
-              onPress={() => router.push({ pathname: '/products/[id]', params: { id: String(item.id) } })}
+              onPress={() => {
+                returningFromDetail.current = true;
+                router.push({ pathname: '/products/[id]', params: { id: String(item.id) } });
+              }}
             />
           )}
           ListHeaderComponent={

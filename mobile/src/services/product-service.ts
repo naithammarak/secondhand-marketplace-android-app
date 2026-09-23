@@ -198,15 +198,15 @@ function transformBackendProduct(data: any): Product {
 }
 
 export function createProductService(options: ProductServiceOptions = {}) {
+  const mockMode = options.mockMode === true;
   let baseUrl: string | undefined;
-  if (options.baseUrl) {
+  if (!mockMode && options.baseUrl) {
     const parsed = new URL(options.baseUrl);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid API origin');
     baseUrl = parsed.origin;
   }
 
   const fetcher = options.fetch ?? fetch;
-  const mockMode = options.mockMode === true;
   const unavailable = () => new ProductServiceError('unavailable', 'ยังไม่ได้ตั้งค่า API สำหรับสินค้า');
 
   async function resolveAccessToken(explicitToken?: string): Promise<string | null> {
