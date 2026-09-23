@@ -65,18 +65,27 @@ export function ProductDetailScreen() {
           {!state.loading && state.product && (
             <View style={{ gap: Spacing.three }}>
               <View style={styles.imageRow}>
-                {state.product.images
-                  .slice()
-                  .sort((a, b) => a.sortOrder - b.sortOrder)
-                  .map(image => (
-                    <ProductImage
-                      key={image.imageId}
-                      uri={image.imageUrl}
-                      width={140}
-                      height={140}
-                      accessibilityLabel={`รูปสินค้า ${state.product?.productName ?? ''}`}
-                    />
-                  ))}
+                {state.product.images.length > 0 ? (
+                  state.product.images
+                    .slice()
+                    .sort((a, b) => a.sortOrder - b.sortOrder)
+                    .map(image => (
+                      <ProductImage
+                        key={image.imageId}
+                        uri={image.imageUrl}
+                        width={140}
+                        height={140}
+                        accessibilityLabel={`รูปสินค้า ${state.product?.productName ?? ''}`}
+                      />
+                    ))
+                ) : (
+                  <ProductImage
+                    uri={null}
+                    width={140}
+                    height={140}
+                    accessibilityLabel={`รูปสินค้า ${state.product?.productName ?? ''}`}
+                  />
+                )}
               </View>
 
               <Card>

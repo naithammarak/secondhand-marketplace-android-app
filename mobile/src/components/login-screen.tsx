@@ -122,7 +122,6 @@ function SellerVerificationEntry() {
  * TEMPORARY PRODUCT-07 entry point — navigation เข้าหน้าค้นหา/รายการสินค้าเท่านั้น
  * ลบ block นี้ได้ทันทีเมื่อมี navigation ถาวร (เช่น tab bar) มาแทนที่
  * หมายเหตุ: /products และ /products/[id] เป็น public ตาม contract (ไม่ต้อง login)
- * แต่ตอนนี้ยังไม่มีทางเข้าผ่าน UI สำหรับผู้ใช้ที่ยังไม่ login หรือบัญชี ADMIN
  */
 function ProductCatalogEntry() {
   return (
@@ -232,7 +231,9 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && (
           <OrderEntries role={auth.account.role} />
         )}
-        {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER') && <ProductCatalogEntry />}
+        {(auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER' || auth.account?.role === 'ADMIN') && (
+          <ProductCatalogEntry />
+        )}
 
         {auth.accountError && (
           <TouchableOpacity
@@ -264,14 +265,24 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
         {busy && <ActivityIndicator accessibilityLabel="กำลังเข้าสู่ระบบ" />}
 
         {state !== 'success' && (
-          <TouchableOpacity
-            style={[styles.button, busy && styles.buttonDisabled]}
-            disabled={busy}
-            onPress={() => { void controller.start(); }}
-          >
-            <Image source={googleLogo} style={styles.icon} />
-            <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[styles.button, busy && styles.buttonDisabled]}
+              disabled={busy}
+              onPress={() => { void controller.start(); }}
+            >
+              <Image source={googleLogo} style={styles.icon} />
+              <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.button, { marginTop: 12 }]}
+              accessibilityRole="button"
+              accessibilityLabel="ไปหน้าค้นหาสินค้าโดยไม่ต้องเข้าสู่ระบบ"
+              onPress={() => router.push('/products')}
+            >
+              <Text style={styles.buttonText}>ค้นหาสินค้า</Text>
+            </TouchableOpacity>
+          </>
         )}
       </ThemedView>
     </SafeAreaView>
@@ -296,7 +307,8 @@ const styles = StyleSheet.create({
     elevation: 6,
     opacity: 1,
     width: 380, 
-    height: 500, 
+    minHeight: 500,
+    paddingBottom: 32,
     backgroundColor: "#243a73e4",
     alignItems:"center", 
     alignSelf: "center", 

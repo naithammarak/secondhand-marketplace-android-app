@@ -247,7 +247,7 @@ async function readJson(response: Response): Promise<unknown> {
 
 export type ListProductsParams = { q?: string; page?: number; pageSize?: number };
 
-// MOCK: replace when backend API is ready — ตาราง in-memory จำลอง GET /products, /products/{id}
+// MOCK: explicit development/test fixture for GET /products and GET /products/{id}.
 // สินค้า id 107 มี status CANCELLED เพื่อทดสอบว่าไม่โผล่ใน public list และ detail ตอบ 404
 // สินค้า id 104 มีรูปที่ url ใช้งานไม่ได้จริงเพื่อทดสอบ placeholder ตอนโหลดรูปไม่สำเร็จ
 type MockSeedProduct = ProductDetail & { publicListMainImage: ProductMainImage | null };
@@ -487,11 +487,19 @@ async function mockGetProduct(id: number): Promise<ProductDetail> {
   return { ...detail, images: detail.images.map(image => ({ ...image })) };
 }
 
-export function createProductCatalogService(options: {
-  baseUrl?: string; fetch?: FetchLike; timeoutMs?: number;
-} = {}) {
+export type ProductCatalogServiceOptions = {
+  mode?: 'api' | 'mock';
+  baseUrl?: string;
+  unavailableCode?: string;
+  fetch?: FetchLike;
+  timeoutMs?: number;
+};
+
+export function createProductCatalogService(options: ProductCatalogServiceOptions = {}) {
+  const mode = options.mode ?? 'api';
+  const unavailableCode = options.unavailableCode ?? 'PRODUCT_CATALOG_API_BASE_URL_MISSING';
   let baseUrl: string | undefined;
-  if (options.baseUrl) {
+  if (mode === 'api' && options.baseUrl) {
     const parsed = new URL(options.baseUrl);
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Invalid API origin');
     baseUrl = parsed.origin;
@@ -500,7 +508,7 @@ export function createProductCatalogService(options: {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   const request = async (path: string, init: RequestInit, signal?: AbortSignal): Promise<unknown> => {
-    if (!baseUrl) throw new ProductCatalogError('unavailable');
+    if (!baseUrl) throw new ProductCatalogError('unavailable', { code: unavailableCode });
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
@@ -539,8 +547,8 @@ export function createProductCatalogService(options: {
 
   return {
     async listProducts(params: ListProductsParams = {}, signal?: AbortSignal): Promise<ProductPage> {
-      // MOCK: replace when backend API is ready — ไม่มี baseUrl แปลว่ายังไม่เชื่อม backend จริง
-      if (!baseUrl) return mockListProducts(params);
+      // Mock catalog data must always be selected explicitly; missing API configuration is unavailable.
+      if (mode === 'mock') return mockListProducts(params);
 
       const query = new URLSearchParams();
       const q = (params.q ?? '').trim();
@@ -551,8 +559,7 @@ export function createProductCatalogService(options: {
     },
 
     async getProduct(id: number, signal?: AbortSignal): Promise<ProductDetail> {
-      // MOCK: replace when backend API is ready
-      if (!baseUrl) return mockGetProduct(id);
+      if (mode === 'mock') return mockGetProduct(id);
 
       const body = obj(await request(`/products/${encodeURIComponent(id)}`, { method: 'GET' }, signal));
       return toDetail(body.data);
