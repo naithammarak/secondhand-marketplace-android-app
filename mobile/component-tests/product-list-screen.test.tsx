@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import { ProductListScreen } from '@/components/product-list-screen';
 import type { ProductCatalogState } from '@/products/product-catalog-store';
@@ -8,8 +8,16 @@ const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 let mockCanGoBack = true;
+let mockFocusCallback: (() => void) | null = null;
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => {
+    jest.requireActual<typeof import('react')>('react').useEffect(() => {
+      mockFocusCallback = callback;
+      callback();
+      return () => { mockFocusCallback = null; };
+    }, [callback]);
+  },
   router: {
     push: (...args: unknown[]) => mockPush(...args),
     back: () => mockBack(),
@@ -81,6 +89,7 @@ jest.mock('@/products/product-catalog-instance', () => ({
 beforeEach(() => {
   jest.clearAllMocks();
   mockCanGoBack = true;
+  mockFocusCallback = null;
   mockState = defaultState();
   listeners = new Set();
   mockStore = {
@@ -105,10 +114,36 @@ describe('ProductListScreen', () => {
     expect(mockStore.load).toHaveBeenCalledTimes(1);
   });
 
-  test('does not call store.load() when already loaded (e.g. returning from detail)', () => {
+  test('refreshes cached results when opening the catalog again', () => {
     mockState = defaultState({ loaded: true, items: [sampleItem1] });
     render(<ProductListScreen />);
     expect(mockStore.load).not.toHaveBeenCalled();
+    expect(mockStore.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps cached items and search position when returning from detail', () => {
+    mockState = defaultState({ loaded: true, query: 'เสื้อ', items: [sampleItem1] });
+    render(<ProductListScreen />);
+    mockStore.refresh.mockClear();
+
+    fireEvent.press(screen.getByLabelText('เสื้อเชิ้ตสีฟ้า'));
+    act(() => { mockFocusCallback?.(); });
+
+    expect(mockStore.refresh).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('ค้นหาชื่อสินค้า').props.value).toBe('เสื้อ');
+    expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+  });
+
+  test('refreshes again on a later catalog focus after detail return', () => {
+    mockState = defaultState({ loaded: true, items: [sampleItem1] });
+    render(<ProductListScreen />);
+    mockStore.refresh.mockClear();
+
+    fireEvent.press(screen.getByLabelText('เสื้อเชิ้ตสีฟ้า'));
+    act(() => { mockFocusCallback?.(); });
+    act(() => { mockFocusCallback?.(); });
+
+    expect(mockStore.refresh).toHaveBeenCalledTimes(1);
   });
 
   test('renders loading indicator when loading initial products', () => {

@@ -24,10 +24,9 @@ Business scope:
   (2026-09-18)" — the single frozen source for field names, envelope shape, status/condition
   enums, pagination/search rules, and the error code table. All type/decode/mock behavior in
   this ticket is derived from that comment, not guessed.
-- PRODUCT-07 depends on the public list/detail endpoints from PRODUCT-05. The checked-out
-  `main` does not currently register `GET /products` or `GET /products/{id}`, so API-backed
-  acceptance remains pending. The mock is available only through explicit configuration — see
-  Sections 5 and 6.
+- PRODUCT-07 uses the public list/detail endpoints from PRODUCT-05. `main` now registers
+  `GET /products` and `GET /products/{id}`. Cross-account and physical-device acceptance
+  remains pending. The mock is available only through explicit configuration — see Sections 5 and 6.
 - Branch: `PRODUCT-07`, created from `origin/main` (i.e. after PRODUCT-06 / PR #74 was merged).
 
 ## 3. Architecture & Frontend Files
@@ -124,11 +123,14 @@ continue to cover unavailable products and broken image URLs without depending o
 Set `EXPO_PUBLIC_PRODUCT_CATALOG_MODE=api` and a valid `EXPO_PUBLIC_API_BASE_URL` to use the
 backend. If a URL is configured and mode is omitted, API mode is selected. Missing or invalid
 API configuration fails with `ProductCatalogError('unavailable')`; it never falls back to mock.
-Set mode to `mock` explicitly only for development/test screens. EAS development builds select
-mock, while preview and production builds select API mode. Production also carries an explicit
+Set mode to `mock` explicitly only for development/test screens. EAS `development`, `preview`,
+and `production` builds select API mode; the `mock` profile is reserved for isolated UI work.
+The development profile also disables product create/edit mocks, so seller and catalog calls
+use the same `EXPO_PUBLIC_API_BASE_URL`. Set a URL reachable from the test phone in the matching
+EAS environment. Production also carries an explicit
 `EXPO_PUBLIC_PRODUCT_CATALOG_ENV=production` marker; the resolver refuses mock mode in that
-environment even if the mode variable is misconfigured. Set `EXPO_PUBLIC_API_BASE_URL` in the
-matching EAS preview/production environment; without it, the screens show the unavailable state.
+environment even if the mode variable is misconfigured. Without a URL, the screens show the
+unavailable state.
 
 Endpoints consumed (per Contract v1.0, §7):
 
@@ -177,8 +179,9 @@ user types directly.
 **List / Search:**
 
 ```
-ProductListScreen mounts
-→ if not state.loaded yet: productCatalogStore.load()   (page 1, empty query)
+ProductListScreen gains focus
+→ if not state.loaded yet: productCatalogStore.load()   (page 1, current query)
+→ if revisiting cached catalog: productCatalogStore.refresh() (page 1, current query)
 → user types → store.setQuery(text) → debounced 300ms → page reset to 1, results replace
 → scroll to bottom → store.loadMore() → next page appended (deduped by id), stops when meta.hasNext is false
 → pull-to-refresh → store.refresh() → page 1 re-fetched immediately (no debounce), current query kept
@@ -228,10 +231,10 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 
 **Automated (run and confirmed passing on this branch):**
 
-- `npm run test:logic` → **244/244 PASS** (service/config, catalog store, and detail store logic tests)
-- `npm run test:components` (jest) → **81/81 PASS**, all suites including:
+- `npm run test:logic` → **256/256 PASS** (service/config, catalog store, and detail store logic tests)
+- `npm run test:components` (jest) → **94/94 PASS**, all suites including:
   - `component-tests/product-catalog-ui.test.tsx` (3 tests)
-  - `component-tests/product-list-screen.test.tsx` (14 tests)
+  - `component-tests/product-list-screen.test.tsx` (16 tests)
   - `component-tests/product-detail-screen.test.tsx` (9 tests)
 - `npx tsc --noEmit` → **PASS** (0 errors)
 - `npx expo lint` → **PASS** (0 errors)
@@ -255,19 +258,20 @@ login, gated by role. PRODUCT-07 follows the same existing pattern:
 
 ## 14. Known Limitations / Blocker for Real Backend Integration
 
-- **Backend Dependency:** `main` in the reviewed checkout has no public `GET /products` or `GET /products/{id}` route yet. API-backed list/detail acceptance and matching image-order evidence remain pending.
-- **Environment Safety:** `.env.example` selects explicit mock mode for local UI work. EAS development builds use mock; preview and production use API mode. Production also rejects mock mode, and missing or invalid API configuration shows the unavailable state.
+- **Backend Integration:** `main` registers public list/detail routes. A local read-only API probe decoded list/detail/search for the same public item; seller create/persistence, cross-account visibility, and image order still need test data and device evidence.
+- **Environment Safety:** `.env.example` and EAS development/preview/production select API. The separate `mock` profile opts into fixtures. Production rejects mock mode; missing or invalid API configuration shows the unavailable state.
 - Detail screen shows every image at a fixed 140×140 tile with no full-screen/zoom viewer.
 - Search has no cancel/clear (✕) button — clearing is done by manually deleting the text.
 
 ## 15. Handoff Checklist
 
-- [ ] รายการ/รายละเอียดใช้ API จริงและข้อมูลตรงกัน รวมลำดับรูป (รอ public endpoints และทดสอบจริง)
+- [ ] รายการ/รายละเอียดใช้ API จริงและข้อมูลตรงกัน รวมลำดับรูป (รอทดสอบ Seller → Buyer ด้วย id เดียวกัน)
 - [ ] แนบหลักฐานมือถือจริงและผลทดสอบ navigation/state (รอทดสอบบนเครื่องจริง)
 - [x] Explicit mock/API configuration in `.env.example` and EAS profiles; API mode fails closed when URL is missing/invalid
 - [x] Replace/remove or extend the temporary `ProductCatalogEntry` in `login-screen.tsx` to give logged-out and ADMIN users a way to reach `/products`
 - [x] Add component tests for `product-list-screen.tsx` / `product-detail-screen.tsx`
-- [ ] Backend: provide public PRODUCT-05 list/detail endpoints on `main` and test Mobile → API → Supabase end-to-end
+- [x] Backend: public PRODUCT-05 list/detail endpoints registered on `main`
+- [ ] Test Mobile → API → Supabase end-to-end with an approved Seller and Buyer
 - [ ] Manually test on a physical Android/iOS device (pull-to-refresh, infinite scroll,
       keyboard behavior with `keyboardShouldPersistTaps`)
 
@@ -337,7 +341,8 @@ based on this frontend-only handoff.
 - `EXPO_PUBLIC_PRODUCT_CATALOG_MODE=mock` explicitly selects seeded data for development/test.
 - A configured API URL selects API mode by default; `api` mode without a valid URL reports an
   unavailable configuration error.
-- EAS development profile selects mock; preview and production profiles select API mode. The
+- EAS development, preview, and production profiles select API mode; the `mock` profile selects
+  the isolated fixture. The
   production environment marker and React Native release mode reject mock mode, so a release
   cannot silently replace missing backend data with mock products.
 
@@ -348,6 +353,6 @@ based on this frontend-only handoff.
 - In `mobile/src/components/product-detail-screen.tsx`, when `product.images` is empty, a placeholder `ProductImage` is rendered.
 
 ### 18.4 Complete Component Test Coverage
-- `component-tests/product-list-screen.test.tsx` (14 tests) covers initial loading, list rendering, search debouncing, empty states, error/retry, load-more, and navigation.
+- `component-tests/product-list-screen.test.tsx` (16 tests) covers initial loading, revisit refresh, detail return, list rendering, search, empty states, error/retry, load-more, and navigation.
 - `component-tests/product-detail-screen.test.tsx` (9 tests) covers loading, full detail rendering, out-of-scope assertion (no buy/seller info), unavailable state (404/CANCELLED), invalid id handling, refresh on back, and retry.
-- Current checks: **244 logic tests** + **81 component tests**, typecheck and lint pass. These do not replace API-backed or physical-device acceptance evidence.
+- Current checks: **256 logic tests** + **94 component tests**, typecheck and lint pass. These do not replace Seller → Buyer or physical-device acceptance evidence.

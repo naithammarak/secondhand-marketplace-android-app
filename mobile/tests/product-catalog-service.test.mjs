@@ -143,7 +143,10 @@ test('the EAS production profile selects the real service when its API URL is co
   assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'development');
   assert.equal(eas.build.preview.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'preview');
   assert.equal(eas.build.production.env.EXPO_PUBLIC_PRODUCT_CATALOG_ENV, 'production');
-  assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'mock');
+  assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'api');
+  assert.equal(eas.build.development.env.EXPO_PUBLIC_PRODUCT_MOCK_MODE, 'false');
+  assert.equal(eas.build.mock.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'mock');
+  assert.equal(eas.build.mock.env.EXPO_PUBLIC_PRODUCT_MOCK_MODE, 'true');
   assert.equal(eas.build.preview.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'api');
   assert.equal(eas.build.production.env.EXPO_PUBLIC_PRODUCT_CATALOG_MODE, 'api');
 
