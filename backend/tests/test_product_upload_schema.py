@@ -388,7 +388,14 @@ def test_migration_graph_unifies_to_single_head():
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["9446ec1a2c5d"]
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "9446ec1a2c5d" in {
+        revision.revision
+        for revision in script.iterate_revisions(
+            heads[0], "9446ec1a2c5d", inclusive=True
+        )
+    }
 
     merge_revision = script.get_revision("f3862bffea77")
     assert set(merge_revision.down_revision) == {"9a18d37ce520", "f02a03c91801"}

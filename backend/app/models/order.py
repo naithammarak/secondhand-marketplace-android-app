@@ -28,7 +28,10 @@ from app.database import Base
 
 MONEY = Numeric(12, 2)
 
-ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP")
+ORDER_STATUSES = (
+    "WAITING_PAYMENT", "WAITING_SELLER_SHIP", "SHIPPING_TO_CENTER",
+    "RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED",
+)
 ATTEMPT_OUTCOMES = ("SUCCEEDED", "FAILED")
 ESCROW_STATUSES = ("HELD",)
 
@@ -68,6 +71,7 @@ class Order(Base):
         ),
         Index("ix_orders_buyer_created", "buyer_id", "created_at", "id"),
         Index("ix_orders_seller_created", "seller_id", "created_at", "id"),
+        Index("ix_orders_inspection_queue", "status", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
