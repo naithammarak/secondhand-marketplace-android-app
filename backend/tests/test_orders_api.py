@@ -996,7 +996,27 @@ def test_buttons_close_when_the_status_leaves_the_payable_set(world, monkeypatch
 
     monkeypatch.setattr(orders_module, "PAYABLE_ORDER_STATUSES", frozenset())
     detail = client.get(f"/orders/{order['id']}", headers=world["a"]).json()
-    assert (detail["can_pay"], detail["can_cancel"]) == (False, False)
+    # ยังอยู่ในชุดที่ยกเลิกได้ ปุ่มยกเลิกต้องไม่ปิดตามปุ่มจ่าย
+    assert (detail["can_pay"], detail["can_cancel"]) == (False, True)
+
+
+def test_cancel_button_follows_the_cancellable_set_not_the_payable_set(world, db, monkeypatch):
+    """สถานะที่จ่ายได้แต่ยกเลิกไม่ได้ หน้าจอต้องไม่เปิดปุ่มยกเลิกที่กดแล้วได้ 409"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "CANCELLABLE_ORDER_STATUSES", frozenset())
+    assert "WAITING_PAYMENT" in orders_module.PAYABLE_ORDER_STATUSES
+
+    detail = client.get(f"/orders/{order['id']}", headers=world["a"])
+    assert detail.status_code == 200
+    assert (detail.json()["can_pay"], detail.json()["can_cancel"]) == (True, False)
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_cancellable"
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancelled_at, row.cancel_reason) == ("WAITING_PAYMENT", None, None)
+    assert product_status(db, world["product_id"]) == "RESERVED"
 
 
 def test_reserved_statuses_are_documented_and_fit_the_column():

@@ -351,11 +351,10 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
     # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
     # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
-    actionable = (
-        is_payable(order)
-        and not payment_window_passed(order, utcnow())
-        and viewer.status == UserStatus.ACTIVE
-    )
+    # จ่ายได้กับยกเลิกได้ตัดสินจากชุดสถานะของตัวเอง ชุดใดชุดหนึ่งเปลี่ยนต้องไม่ลากอีกปุ่มไปด้วย
+    within_window = not payment_window_passed(order, utcnow()) and viewer.status == UserStatus.ACTIVE
+    can_pay = within_window and is_payable(order)
+    can_cancel = within_window and is_cancellable(order)
     if role == ViewerRole.BUYER:
         last_attempt = db.scalars(
             select(PaymentAttempt)
@@ -385,8 +384,8 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             last_payment_attempt=attempt_view(last_attempt) if last_attempt else None,
             paid_at=order.paid_at,
             receipt_no=receipt_no,
-            can_pay=actionable,
-            can_cancel=actionable,
+            can_pay=can_pay,
+            can_cancel=can_cancel,
             expires_at=order.expires_at,
             cancelled_at=order.cancelled_at,
             cancel_reason=reason,
