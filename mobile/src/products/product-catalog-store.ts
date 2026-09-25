@@ -2,6 +2,7 @@ import type {
   ProductCatalogErrorKind,
   ProductCatalogService,
   ProductListItem,
+  ProductCategory,
   ProductPageMeta,
 } from '../services/product-catalog-service.ts';
 
@@ -20,6 +21,10 @@ function errorKind(error: unknown): ProductCatalogErrorKind {
 
 export type ProductCatalogState = {
   query: string;
+  categoryId: number | null;
+  categories: ProductCategory[];
+  categoriesLoading: boolean;
+  categoriesError: ProductCatalogErrorKind | null;
   page: number;
   pageSize: number;
   items: ProductListItem[];
@@ -33,6 +38,7 @@ export type ProductCatalogState = {
 
 export function createInitialProductCatalogState(pageSize = CATALOG_PAGE_SIZE): ProductCatalogState {
   return {
+    categoryId: null, categories: [], categoriesLoading: false, categoriesError: null,
     query: '', page: 1, pageSize, items: [], meta: null,
     loaded: false, loading: false, refreshing: false, loadingMore: false, error: null,
   };
@@ -40,7 +46,7 @@ export function createInitialProductCatalogState(pageSize = CATALOG_PAGE_SIZE): 
 
 export type ProductCatalogStoreDeps = {
   /** รับผ่าน dependency injection เพื่อให้ test ควบคุม response/ลำดับ/เวลาได้ */
-  service: Pick<ProductCatalogService, 'listProducts'>;
+  service: Pick<ProductCatalogService, 'listProducts'> & Partial<Pick<ProductCatalogService, 'getCategories'>>;
   pageSize?: number;
   debounceMs?: number;
 };
@@ -82,7 +88,7 @@ export function createProductCatalogStore(deps: ProductCatalogStoreDeps) {
       error: null,
     });
     try {
-      const result = await deps.service.listProducts({ q: state.query, page, pageSize: state.pageSize });
+      const result = await deps.service.listProducts({ q: state.query, page, pageSize: state.pageSize, ...(state.categoryId !== null ? { categoryId: state.categoryId } : {}) });
       if (current !== generation) return;
       // หน้าถัดไปอาจซ้อนกับหน้าก่อนเมื่อมีสินค้าใหม่ระหว่างเลื่อน จึงตัดรายการซ้ำตาม id
       let items = result.items;
@@ -103,6 +109,21 @@ export function createProductCatalogStore(deps: ProductCatalogStoreDeps) {
   return {
     getSnapshot: () => state,
 
+    async loadCategories() {
+      if (state.categoriesLoading || state.categories.length || !deps.service.getCategories) return;
+      set({ categoriesLoading: true, categoriesError: null });
+      try { set({ categories: await deps.service.getCategories() }); }
+      catch (error) { set({ categoriesError: errorKind(error) }); }
+      finally { set({ categoriesLoading: false }); }
+    },
+
+    setCategory(categoryId: number | null) {
+      if (categoryId === state.categoryId) return Promise.resolve();
+      clearDebounce();
+      set({ categoryId, items: [], meta: null, loaded: false, page: 1 });
+      return fetchPage('load');
+    },
+
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
@@ -116,7 +137,8 @@ export function createProductCatalogStore(deps: ProductCatalogStoreDeps) {
 
     /** เปลี่ยนคำค้น: อัปเดตข้อความทันทีเพื่อให้พิมพ์ลื่น แต่ดีเลย์การค้นหาจริง debounceMs และรีเซ็ตหน้าเป็น 1 เสมอ */
     setQuery(query: string) {
-      set({ query });
+      generation += 1;
+      set({ query, items: [], meta: null, loaded: false, loading: false, loadingMore: false, refreshing: false, error: null });
       clearDebounce();
       debounceTimer = setTimeout(() => {
         debounceTimer = undefined;
@@ -140,7 +162,7 @@ export function createProductCatalogStore(deps: ProductCatalogStoreDeps) {
     },
 
     loadMore() {
-      if (busy() || !state.loaded || !state.meta?.hasNext) return Promise.resolve();
+      if (debounceTimer !== undefined || busy() || !state.loaded || !state.meta?.hasNext) return Promise.resolve();
       return fetchPage('more');
     },
 

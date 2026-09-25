@@ -23,7 +23,7 @@ export function BuyByProductIdScreen() {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   const open = () => {
     const productId = parseRouteId(value.trim());
@@ -46,7 +46,7 @@ export function BuyByProductIdScreen() {
           <View style={styles.field}>
             <ThemedText type="smallBold">รหัสสินค้า</ThemedText>
             <TextInput
-              style={[styles.input, { color: theme.text, borderColor: error ? '#C53030' : theme.backgroundSelected }]}
+              style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: error ? theme.danger : theme.border }]}
               value={value}
               onChangeText={text => { setValue(text); setError(''); }}
               keyboardType="number-pad"

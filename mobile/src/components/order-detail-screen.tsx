@@ -31,7 +31,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     if (state.lastResult === 'succeeded') void list.store.refresh();
   }, [list.store, state.lastResult]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   const order = state.orderId === orderId ? state.order : null;
   const paying = state.paying !== null;

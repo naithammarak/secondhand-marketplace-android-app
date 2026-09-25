@@ -1,3 +1,5 @@
+import { MarketplaceHeader } from '@/components/marketplace-header';
+import { useTheme } from '@/hooks/use-theme';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -6,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/auth-provider';
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/constants/theme';
 import { createProductService, ProductServiceError } from '@/services/product-service';
 
 const productService = createProductService({
@@ -15,6 +17,7 @@ const productService = createProductService({
 });
 
 export default function NewProductScreen() {
+  const styles = makeStyles(useTheme());
   const { session } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -69,10 +72,10 @@ export default function NewProductScreen() {
 
   return (
     <View style={styles.page}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea}>
+        <MarketplaceHeader title="ลงขายสินค้า" back />
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
-            <Text style={styles.title}>ลงขายสินค้า</Text>
             {uncertain && (
               <TouchableOpacity accessibilityRole="button" onPress={() => { setCheckedInventory(true); router.push('/product/mine'); }} style={styles.checkButton}>
                 <Text style={styles.checkButtonText}>ตรวจสินค้าของฉันก่อนลงซ้ำ</Text>
@@ -95,29 +98,23 @@ export default function NewProductScreen() {
               onSubmit={handleSubmit}
             />
           </View>
-        </SafeAreaView>
-      </ScrollView>
+        </ScrollView>
+      </SafeAreaView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#eaf3fb' },
-  scrollContent: { flexGrow: 1, alignItems: 'center' },
-  safeArea: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four },
+const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
+  page: { flex: 1, backgroundColor: theme.background, alignItems: 'center' },
+  scrollContent: { flexGrow: 1 },
+  safeArea: { flex: 1, width: '100%', maxWidth: MaxContentWidth, backgroundColor: theme.surface },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: Spacing.four,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    backgroundColor: theme.surface,
+    padding: Spacing.three,
   },
-  title: { fontSize: 22, fontWeight: '700', color: '#1a1f27', marginBottom: Spacing.three },
-  checkButton: { backgroundColor: '#96bde9', padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },
+  title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: Spacing.three },
+  checkButton: { backgroundColor: theme.primary, padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },
   checkButtonText: { color: '#fff', textAlign: 'center', fontWeight: '700' },
-  resumeButton: { padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three, borderWidth: 1, borderColor: '#96bde9' },
-  resumeButtonText: { color: '#33404f', textAlign: 'center', fontWeight: '700' },
+  resumeButton: { padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three, borderWidth: 1, borderColor: theme.primary },
+  resumeButtonText: { color: theme.text, textAlign: 'center', fontWeight: '700' },
 });

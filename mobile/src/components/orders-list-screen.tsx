@@ -1,11 +1,16 @@
-import { Redirect, useRouter } from 'expo-router';
+import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
+import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { FlatList, Pressable, RefreshControl, View } from 'react-native';
+import { FlatList, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
+import { useTheme } from '@/hooks/use-theme';
+import { MarketplaceHeader } from './marketplace-header';
+import { MarketplaceNav } from './marketplace-nav';
+import { CONDITION_LABELS } from '@/services/product-service';
 import { Spacing } from '@/constants/theme';
 import { formatBaht, formatDateTime, orderStatusLabels } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
@@ -16,21 +21,22 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
   const createdAt = formatDateTime(item.createdAt);
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`คำสั่งซื้อ ${item.id} ${item.product.name}`}
-      onPress={onPress}>
+    <View>
       <Card>
-        <ThemedText type="smallBold">#{item.id} {item.product.name}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">#{item.id}{createdAt ? ` · ${createdAt}` : ''}</ThemedText>
         <StatusBadge status={item.status} label={orderStatusLabels[item.status]} />
+        <ThemedText type="smallBold">{item.product.name}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[item.product.condition] ?? item.product.condition} · {item.product.size}</ThemedText>
         <Row label={item.viewerRole === 'buyer' ? 'ยอดชำระ' : 'ยอดที่จะได้รับ'} value={formatBaht(amount)} />
-        {createdAt ? <ThemedText type="small" themeColor="textSecondary">สั่งซื้อเมื่อ {createdAt}</ThemedText> : null}
+        <Button label={item.viewerRole === 'buyer' && item.paymentStatus === 'UNPAID' ? 'ชำระเงิน' : 'ดูรายละเอียด'}
+          variant={item.paymentStatus === 'UNPAID' ? 'primary' : 'secondary'} onPress={onPress} />
       </Card>
-    </Pressable>
+    </View>
   );
 }
 
 export function OrdersListScreen() {
+  const theme = useTheme();
   const auth = useAuth();
   const router = useRouter();
   const { state, store } = useOrdersList();
@@ -40,18 +46,20 @@ export function OrdersListScreen() {
     if (state.owner) void store.load();
   }, [state.owner, store]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
+  if (!auth.session) return <MarketplaceLoginRequired destination={{ kind: 'orders' }} />;
 
   const title = auth.account?.role === 'SELLER' ? 'คำสั่งซื้อสินค้าของฉัน' : 'คำสั่งซื้อของฉัน';
 
   return (
     <Screen>
-      <SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', padding: Spacing.three }]}>
-        <ThemedText type="subtitle">{title}</ThemedText>
+      <SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
+        <MarketplaceHeader title={title} />
         <FlatList
-          data={state.items}
+          style={{ flex: 1 }}
+          data={state.owner === auth.session.user.id ? state.items : []}
           keyExtractor={item => String(item.id)}
-          contentContainerStyle={{ gap: Spacing.three, paddingBottom: Spacing.four }}
+          contentContainerStyle={{ gap: 12, padding: 16 }}
           refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => { void store.refresh(); }} />}
           onEndReachedThreshold={0.3}
           onEndReached={() => { void store.loadMore(); }}
@@ -87,7 +95,7 @@ export function OrdersListScreen() {
               : store.hasMore() ? <Button label="โหลดเพิ่ม" onPress={() => { void store.loadMore(); }} /> : null
           }
         />
-        <Button label="กลับ" onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} />
+        <View style={{ backgroundColor: theme.surface }}><MarketplaceNav selected="orders" /></View>
       </SafeAreaView>
     </Screen>
   );

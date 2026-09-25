@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { ProductDetailScreen } from '@/components/product-detail-screen';
 import { ProductCatalogError, type ProductDetail } from '@/services/product-catalog-service';
 
+const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
 let mockCanGoBack = true;
@@ -11,6 +12,7 @@ let mockRouteId = '101';
 jest.mock('expo-router', () => ({
   router: {
     back: () => mockBack(),
+    push: (...args: unknown[]) => mockPush(...args),
     replace: (...args: unknown[]) => mockReplace(...args),
     canGoBack: () => mockCanGoBack,
   },
@@ -88,7 +90,7 @@ describe('ProductDetailScreen', () => {
     });
   });
 
-  test('renders full product detail without buy button or seller info', async () => {
+  test('renders full product detail with a purchase action', async () => {
     mockGetProduct.mockResolvedValue(sampleProduct);
 
     render(<ProductDetailScreen />);
@@ -107,7 +109,8 @@ describe('ProductDetailScreen', () => {
     expect(screen.getByText('เสื้อเชิ้ตมือสองสภาพดี ใส่ไม่กี่ครั้ง')).toBeTruthy();
 
     // Verify out-of-scope elements are absent
-    expect(screen.queryByText('ซื้อสินค้า')).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: 'ซื้อสินค้า' }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/checkout/[productId]', params: { productId: '101' } });
     expect(screen.queryByText('สั่งซื้อ')).toBeNull();
     expect(screen.queryByText('ผู้ขาย')).toBeNull();
   });
@@ -122,7 +125,6 @@ describe('ProductDetailScreen', () => {
     render(<ProductDetailScreen />);
 
     expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
-    expect(screen.getByText('🖼')).toBeTruthy();
     expect(screen.getByLabelText('รูปสินค้า เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
   });
 
@@ -197,7 +199,7 @@ describe('ProductDetailScreen', () => {
     render(<ProductDetailScreen />);
 
     expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
-    const backBtn = screen.getByText('กลับ');
+    const backBtn = screen.getByRole('button', { name: 'กลับ' });
     fireEvent.press(backBtn);
     expect(mockBack).toHaveBeenCalledTimes(1);
   });
