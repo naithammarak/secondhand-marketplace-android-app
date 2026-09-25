@@ -134,6 +134,7 @@ def upgrade():
                 RETURN OLD;
             END IF;
             IF OLD.result IS NOT NULL AND (
+                NEW.order_id IS DISTINCT FROM OLD.order_id OR
                 NEW.result IS DISTINCT FROM OLD.result OR
                 NEW.summary IS DISTINCT FROM OLD.summary OR
                 NEW.inspected_at IS DISTINCT FROM OLD.inspected_at OR
@@ -211,10 +212,7 @@ def upgrade():
                     RAISE EXCEPTION 'final inspection evidence is immutable';
                 END IF;
             END IF;
-            IF TG_OP <> 'INSERT' AND source_result IS NOT NULL AND EXISTS (
-                SELECT 1 FROM public.inspection_result_evidence
-                WHERE inspection_id = source_id AND evidence_id = OLD.id
-            ) THEN
+            IF TG_OP <> 'INSERT' AND source_result IS NOT NULL THEN
                 RAISE EXCEPTION 'final inspection evidence is immutable';
             END IF;
             IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;

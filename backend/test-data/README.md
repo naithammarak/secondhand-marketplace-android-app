@@ -49,7 +49,12 @@ python -m scripts.seed_inspections --database-url "postgresql+psycopg://...@loca
 
 Preview is read-only. Apply uses one transaction and an advisory lock for the namespace. Running it twice reports `already-present` with the same Order IDs; a changed scenario reports `fixture conflict` and rolls back. Use a new namespace for another run. This fixture is for database validation only; it cannot stand in for real uploaded files or CERT issuance.
 
-Run integration checks with a **different empty** local PostgreSQL database URL:
+Run integration checks with a **different empty** local PostgreSQL database URL. The isolated cluster must have non-superuser `anon` and `authenticated` roles; the test grants them table access in the test database so a rejected read/write proves RLS rather than a missing table grant. Create these roles only in the local test cluster if they do not already exist:
+
+```sql
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+```
 
 ```powershell
 $env:INSPECT_TEST_DATABASE_URL = "postgresql+psycopg://...@localhost/inspect_migration_test"
