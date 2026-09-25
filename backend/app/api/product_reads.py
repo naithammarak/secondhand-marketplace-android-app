@@ -133,6 +133,7 @@ def list_products(
     term: str | None,
     seller_id: int | None = None,
     status: str | None = None,
+    category_id: int | None = None,
 ) -> dict:
     filters = [Product.deleted_at.is_(None)]
     if seller_id is None:
@@ -143,6 +144,8 @@ def list_products(
             filters.append(Product.status == status)
     if term is not None:
         filters.append(name_filter(term))
+    if category_id is not None:
+        filters.append(Product.category_id == category_id)
 
     try:
         if seller_id is None:
@@ -289,11 +292,12 @@ def public_products(
     q: str | None = Query(None, description="คำค้นจากชื่อสินค้า เช่น เสื้อ — ไม่จำเป็นต้องกรอก ปล่อยว่างเพื่อดูทั้งหมด ตัว q สีจางเป็นข้อความตัวอย่างในช่อง"),
     page: int = Query(1, ge=1, description="หน้าที่ต้องการดู เริ่มจาก 1 — ทดลองครั้งแรกใช้ 1 ตามเดิม"),
     page_size: int = Query(20, ge=1, le=50, description="จำนวนสินค้าต่อหน้า ตั้งแต่ 1–50 — ใช้ 20 ตามเดิมได้"),
+    category_id: int | None = Query(None, ge=1, description="กรองตาม ID หมวดหมู่จาก GET /categories"),
     db: Session = Depends(get_db),
 ):
-    validate_query(request, {"q", "page", "page_size"})
+    validate_query(request, {"q", "page", "page_size", "category_id"})
     response.headers["Cache-Control"] = "no-store"
-    return list_products(db, page=page, page_size=page_size, term=search_term(q))
+    return list_products(db, page=page, page_size=page_size, term=search_term(q), category_id=category_id)
 
 
 @router.get("/products/{product_id}", summary="ดูรายละเอียดสินค้าที่พร้อมขาย", description="ไม่ต้องเข้าสู่ระบบ ใส่ product_id จากช่อง id ในผลลัพธ์ GET /products แล้วกด Execute เพื่อดูข้อมูลและรูปทั้งหมดของสินค้านั้น")

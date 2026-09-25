@@ -174,6 +174,33 @@ def test_public_list_only_currently_approved_available_sellers(db):
         assert client.get(f"/products/{product_id}").status_code == 404
 
 
+def test_category_filter_combines_search_pagination_and_visibility(db):
+    seller_id, _ = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    other = Category(category_name="กระเป๋า")
+    db.add(other)
+    db.commit()
+    expected = [product(db, seller_id, category_id, brand_id, name="Blue Shirt") for _ in range(3)]
+    product(db, seller_id, other.id, brand_id, name="Blue Bag")
+    product(db, seller_id, category_id, brand_id, name="Blue Hidden", status="SOLD")
+    product(db, seller_id, category_id, brand_id, name="Red Shirt")
+    first = client.get("/products", params={"category_id": category_id, "q": "Blue", "page_size": 2})
+    assert first.status_code == 200
+    assert first.json()["meta"]["total"] == 3
+    assert first.json()["meta"]["has_next"] is True
+    second = client.get("/products", params={"category_id": category_id, "q": "Blue", "page_size": 2, "page": 2})
+    assert {row["id"] for row in first.json()["data"] + second.json()["data"]} == set(expected)
+    assert second.json()["meta"]["has_next"] is False
+    assert client.get("/products", params={"category_id": 999999}).json()["meta"]["total"] == 0
+
+
+@pytest.mark.parametrize("query", ["category_id=0", "category_id=-1", "category_id=abc", "category_id=1&category_id=2"])
+def test_category_filter_rejects_invalid_or_duplicate_ids(query):
+    response = client.get(f"/products?{query}")
+    assert response.status_code == 422
+
+
 def test_search_literals_trim_and_case_insensitive(db):
     seller_id, _ = create_user(db, UserRole.SELLER)
     approve(db, seller_id)

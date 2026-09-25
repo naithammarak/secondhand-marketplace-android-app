@@ -1,16 +1,20 @@
+import { marketplaceReturn } from '@/auth/marketplace-return-instance';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, Image, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createLoginController, type LoginAdapter, type LoginState } from '@/auth/login-controller';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
 import { router } from 'expo-router';
 import type { VerificationStatus } from '@/services/verification-service';
 import { useVerification } from '@/verification/verification-provider';
 import type { MeErrorKind, SelectableRole } from '@/services/me-service';
-const googleLogo = require("@/assets/images/tabIcons/google-logo.jpg");
+import { useTheme } from '@/hooks/use-theme';
+import { MarketplaceIcon } from './marketplace-icon';
+import { MarketplaceNav } from './marketplace-nav';
+import { Button } from './order-ui';
 
 const messages: Record<LoginState, string> = {
   ready: 'เข้าสู่ระบบเพื่อใช้งานบัญชีของคุณ',
@@ -51,6 +55,7 @@ export function RoleSelection({ selectedRole, saving, error, backendReady = true
   onSelect(role: SelectableRole): void;
   onConfirm(): void;
 }) {
+  const styles = makeStyles(useTheme());
   const disabled = saving || !backendReady;
   return (
     <View style={styles.roleSection}>
@@ -88,6 +93,7 @@ export function RoleSelection({ selectedRole, saving, error, backendReady = true
 
 /** ทางเข้าหน้าตรวจคำขอของผู้ดูแล แสดงเฉพาะบัญชีที่ backend บอกว่าเป็น ADMIN */
 function AdminReviewEntry() {
+  const styles = makeStyles(useTheme());
   return (
     <TouchableOpacity
       style={styles.button}
@@ -102,6 +108,7 @@ function AdminReviewEntry() {
 
 /** ทางเข้าหน้ายืนยันตัวตนผู้ขาย พร้อมสถานะล่าสุดจาก backend */
 function SellerVerificationEntry() {
+  const styles = makeStyles(useTheme());
   const { state } = useVerification();
   const status = state.record?.status;
   return (
@@ -146,6 +153,7 @@ function SellerVerificationEntry() {
  * หมายเหตุ: /products และ /products/[id] เป็น public ตาม contract (ไม่ต้อง login)
  */
 function ProductCatalogEntry() {
+  const styles = makeStyles(useTheme());
   return (
     <TouchableOpacity
       style={styles.button}
@@ -160,6 +168,7 @@ function ProductCatalogEntry() {
 
 /** ทางเข้างานสั่งซื้อ: ผู้ซื้อเห็นคำสั่งซื้อและทางเข้าซื้อชั่วคราว ผู้ขายเห็นคำสั่งซื้อสินค้าของตน */
 function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
+  const styles = makeStyles(useTheme());
   return (
     <>
       <TouchableOpacity
@@ -170,16 +179,7 @@ function OrderEntries({ role }: { role: 'BUYER' | 'SELLER' }) {
       >
         <Text style={styles.buttonText}>{role === 'BUYER' ? 'คำสั่งซื้อของฉัน' : 'คำสั่งซื้อสินค้าของฉัน'}</Text>
       </TouchableOpacity>
-      {role === 'BUYER' && (
-        <TouchableOpacity
-          style={styles.button}
-          accessibilityRole="button"
-          accessibilityLabel="ซื้อสินค้าด้วยรหัสสินค้า"
-          onPress={() => router.push('/buy-by-product-id')}
-        >
-          <Text style={styles.buttonText}>ซื้อด้วยรหัสสินค้า (ทดสอบ)</Text>
-        </TouchableOpacity>
-      )}
+
     </>
   );
 }
@@ -193,12 +193,14 @@ function roleMessage(role: string | null | undefined) {
 }
 
 export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapter }) {
+  const styles = makeStyles(useTheme());
   const auth = useAuth();
   const adapter = adapterOverride ?? auth.loginAdapter;
   const [controller] = useState(() => createLoginController(adapter));
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [roleChoice, setRoleChoice] = useState<{ userId: string; role: SelectableRole } | null>(null);
   const hadSession = useRef(false);
+  const [actionError, setActionError] = useState(false);
   useEffect(() => () => controller.cancel(), [controller]);
   useEffect(() => {
     if (auth.session) {
@@ -209,6 +211,17 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
       controller.reset();
     }
   }, [auth.session, controller]);
+  useEffect(() => {
+    if (!auth.session || auth.initializing || auth.accountChecking || auth.accountError
+      || auth.account?.source !== 'backend' || !auth.account.role) return;
+    let active = true;
+    void marketplaceReturn.consume().then(destination => {
+      if (!active || !destination) return;
+      if (destination.kind === 'checkout') router.replace({ pathname: '/checkout/[productId]', params: { productId: String(destination.productId) } });
+      else router.replace(destination.kind === 'orders' ? '/orders' : '/sell');
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [auth.session, auth.initializing, auth.accountChecking, auth.accountError, auth.account]);
   const selectedRole = auth.account?.role === null && roleChoice && roleChoice.userId === auth.session?.user.id
     ? roleChoice.role
     : null;
@@ -221,18 +234,20 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   if (auth.session) return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.content}>
+        <ScrollView contentContainerStyle={{ gap: 16, padding: 20 }}>
         <ThemedText type="subtitle" style={styles.statusTitle}>
           {auth.account?.role
             ? (auth.account.fullName ? `ยินดีต้อนรับ ${auth.account.fullName}` : 'ยินดีต้อนรับ')
             : 'กำลังตรวจสอบบัญชี'}
         </ThemedText>
+        {actionError && <ThemedText accessibilityLiveRegion="polite">ดำเนินการไม่สำเร็จ กรุณาลองใหม่</ThemedText>}
         {auth.accountChecking && <ActivityIndicator accessibilityLabel="กำลังตรวจสอบบัญชี" />}
         {auth.account && <ThemedText>{roleMessage(auth.account.role)}</ThemedText>}
         {auth.accountError && <ThemedText accessibilityLiveRegion="polite">
           {messages[auth.accountError]}
         </ThemedText>}
         {auth.account?.source === 'mock' && (
-          <ThemedText type="small">กำลังใช้ผลจำลอง /me จนกว่า Backend จะพร้อม</ThemedText>
+          <ThemedText type="small">บริการบัญชียังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง</ThemedText>
         )}
 
         {auth.account && auth.account.role === null && !auth.accountChecking && !auth.accountError && (
@@ -269,98 +284,55 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => { void auth.logout(); }}
+          onPress={() => { void marketplaceReturn.clear().catch(() => undefined).then(() => auth.logout()).catch(() => setActionError(true)); }}
         >
           <Text style={styles.buttonText}>ออกจากระบบ</Text>
         </TouchableOpacity>
+        </ScrollView>
+        <MarketplaceNav selected="profile" />
       </SafeAreaView>
     </ThemedView>
   );
 
-   return (
-    <SafeAreaView style={styles.container}>
-      <ThemedView style={styles.card}>
-        <Image source={require("@/assets/images/tabIcons/google-logo.jpg")} style={styles.logo} />
-        <ThemedText type="subtitle" style={styles.title}>เข้าสู่ระบบ</ThemedText>
-        <ThemedText accessibilityLiveRegion="polite" style={styles.message}>{messages[state]}</ThemedText>
-
-        {busy && <ActivityIndicator accessibilityLabel="กำลังเข้าสู่ระบบ" />}
-
-        {state !== 'success' && (
-          <>
-            <TouchableOpacity
-              style={[styles.button, busy && styles.buttonDisabled]}
-              disabled={busy}
-              onPress={() => { void controller.start(); }}
-            >
-              <Image source={googleLogo} style={styles.icon} />
-              <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.button, { marginTop: 12 }]}
-              accessibilityRole="button"
-              accessibilityLabel="ไปหน้าค้นหาสินค้าโดยไม่ต้องเข้าสู่ระบบ"
-              onPress={() => router.push('/products')}
-            >
-              <Text style={styles.buttonText}>ค้นหาสินค้า</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </ThemedView>
-    </SafeAreaView>
+  return (
+    <ThemedView style={styles.container}>
+      <SafeAreaView style={styles.content}>
+        <ScrollView contentContainerStyle={styles.loginContent}>
+          <View style={styles.card}>
+            <View style={styles.brandmark}><MarketplaceIcon name="orders" size={32} color="#ffffff" /></View>
+            <ThemedText type="title" style={styles.title}>ซื้อขายสินค้ามือสอง</ThemedText>
+            <ThemedText accessibilityLiveRegion="polite" style={styles.message}>{messages[state]}</ThemedText>
+            {busy && <ActivityIndicator accessibilityLabel="กำลังเข้าสู่ระบบ" />}
+            {state !== 'success' && <View style={{ width: '100%', gap: 12, marginTop: 24 }}>
+              <Button label="เข้าสู่ระบบด้วย Google" variant="primary" busy={busy} onPress={() => { void controller.start(); }} />
+              <Button label="ดูสินค้าก่อน" onPress={() => { controller.cancel(); void marketplaceReturn.clear().catch(() => undefined).then(() => router.replace('/')); }} />
+            </View>}
+            <ThemedText type="small" themeColor="textSecondary" style={styles.hint}>
+              ผู้ขายต้องยืนยันตัวตนด้วยบัตรประชาชนและบัญชีธนาคารก่อนลงขาย
+            </ThemedText>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ThemedView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { 
-    flex: 1,
-    width: "100%", 
-    height: "100%",
-    alignItems:"center", 
-    justifyContent: 'center', 
-    backgroundColor: '#96bde9' 
-  },
-  content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four },
-  card: { 
-    shadowColor: "#000",
-    shadowOffset: { width: 15, height: 20 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
-    opacity: 1,
-    width: 380, 
-    minHeight: 500,
-    paddingBottom: 32,
-    backgroundColor: "#243a73e4",
-    alignItems:"center", 
-    alignSelf: "center", 
-    borderRadius: 90 
-  },
-  title: { color: "white",textAlign: "center", marginTop: 40 ,fontFamily: "Kanit-Regular"},
-  message: { color: "white",textAlign: 'center', marginTop: 12, marginBottom: 50,fontFamily: "Kanit-Regular" },
-  button: {
-    flexDirection: "row", // ให้ icon กับข้อความอยู่ในแถวเดียวกัน
-    width: 250,
-    height: 50,
-    backgroundColor: "#fcfcfd",
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    alignSelf: "center",
-    marginTop: 10,
-    fontFamily: "Kanit-Regular",
-  },
-  buttonText: { color: "black", fontSize: 16, fontWeight: "600", marginLeft: 10 },
-  buttonDisabled: { backgroundColor: "#999" },
-  icon: { width: 30, height: 30, resizeMode: "contain" },
-  statusTitle: { alignSelf: 'stretch', flexShrink: 1, textAlign: 'center' },
-  roleSection: { width: '100%', alignItems: 'center', gap: Spacing.two, marginTop: Spacing.four },
+const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background, alignItems: 'center' },
+  content: { flex: 1, width: '100%', maxWidth: MaxContentWidth, backgroundColor: theme.surface },
+  loginContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  card: { width: '100%', maxWidth: 380, alignItems: 'center', paddingVertical: 32 },
+  brandmark: { width: 72, height: 72, borderRadius: 20, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  title: { textAlign: 'center' },
+  message: { textAlign: 'center', color: theme.textSecondary, marginTop: 10 },
+  hint: { textAlign: 'center', marginTop: 32, maxWidth: 300 },
+  button: { flexDirection: 'row', minHeight: 48, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.backgroundElement, borderRadius: 10, justifyContent: 'center', alignItems: 'center', padding: 12 },
+  buttonText: { color: theme.primary, fontSize: 14, fontFamily: Fonts.display, textAlign: 'center' },
+  buttonDisabled: { opacity: 0.5 },
+  statusTitle: { alignSelf: 'stretch', textAlign: 'center' },
+  roleSection: { width: '100%', gap: Spacing.three },
   roleWarning: { textAlign: 'center' },
   roleOptions: { flexDirection: 'row', gap: Spacing.two },
-  roleOption: { minWidth: 110, padding: Spacing.three, borderWidth: 2, borderColor: '#778',
-    borderRadius: 10, alignItems: 'center', backgroundColor: '#fff' },
-  roleOptionSelected: { borderColor: '#243a73', backgroundColor: '#dce9ff' },
-  roleOptionText: { color: '#111', fontSize: 16, fontWeight: '600' },
-  logo: { marginTop:70,width: 100, height: 100, borderRadius:20},
-  circle: { width:80, height:80, borderRadius:40, backgroundColor:"#ffff"}
+  roleOption: { flex: 1, padding: 16, borderWidth: 1, borderColor: theme.border, borderRadius: 10, alignItems: 'center', backgroundColor: theme.surface },
+  roleOptionSelected: { borderColor: theme.primary, backgroundColor: theme.backgroundSelected },
+  roleOptionText: { color: theme.text, fontSize: 15, fontFamily: Fonts.display },
 });

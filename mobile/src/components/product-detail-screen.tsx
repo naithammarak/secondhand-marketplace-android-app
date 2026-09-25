@@ -1,12 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useTheme } from '@/hooks/use-theme';
+import { MarketplaceHeader } from './marketplace-header';
 import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Row, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { formatBaht } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
@@ -22,6 +24,10 @@ const detailErrorMessages: Record<string, string> = {
 };
 
 export function ProductDetailScreen() {
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const imageSize = Math.min(width, MaxContentWidth) - 32;
+  const [selection, setSelection] = useState({ productId: NaN, index: 0 });
   const params = useLocalSearchParams<{ id: string }>();
   // id ที่ parse ไม่ได้ส่งเป็น NaN ให้ store เองปฏิเสธเป็น not-available โดยไม่เรียก service (ดู isValidProductId)
   const id = parseRouteId(params.id) ?? NaN;
@@ -40,73 +46,69 @@ export function ProductDetailScreen() {
     else router.replace('/products');
   }
 
+  const selectedImage = selection.productId === id ? selection.index : 0;
+  const product = state.product?.id === id ? state.product : null;
+  const images = product?.images.slice().sort((a, b) => a.sortOrder - b.sortOrder) ?? [];
   return (
     <Screen>
-      <ScrollView contentContainerStyle={orderUiStyles.scrollContent}>
-        <SafeAreaView style={[orderUiStyles.content, { width: '100%' }]}>
+      <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.surface }]}>
+        <MarketplaceHeader title="รายละเอียดสินค้า" back />
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body}>
           {state.loading && <Loading label="กำลังโหลดข้อมูลสินค้า" />}
-
-          {!state.loading && state.notAvailable && (
-            <Card>
-              <ThemedText accessibilityLiveRegion="polite">สินค้าไม่พร้อมแสดง</ThemedText>
-              <Button label="กลับรายการ" onPress={() => { void handleBackToList(); }} />
-            </Card>
-          )}
-
-          {!state.loading && state.error && (
-            <Card>
-              <ThemedText accessibilityLiveRegion="polite">
-                {detailErrorMessages[state.error] ?? 'โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่'}
-              </ThemedText>
-              <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.retry(); }} />
-            </Card>
-          )}
-
-          {!state.loading && state.product && (
-            <View style={{ gap: Spacing.three }}>
-              <View style={styles.imageRow}>
-                {state.product.images.length > 0 ? (
-                  state.product.images
-                    .slice()
-                    .sort((a, b) => a.sortOrder - b.sortOrder)
-                    .map(image => (
-                      <ProductImage
-                        key={image.imageId}
-                        uri={image.imageUrl}
-                        width={140}
-                        height={140}
-                        accessibilityLabel={`รูปสินค้า ${state.product?.productName ?? ''}`}
-                      />
-                    ))
-                ) : (
-                  <ProductImage
-                    uri={null}
-                    width={140}
-                    height={140}
-                    accessibilityLabel={`รูปสินค้า ${state.product?.productName ?? ''}`}
-                  />
-                )}
-              </View>
-
-              <Card>
-                <ThemedText type="subtitle">{state.product.productName}</ThemedText>
-                <ThemedText type="smallBold">{formatBaht(state.product.price)}</ThemedText>
-                <Row label="หมวดหมู่" value={state.product.category.categoryName} />
-                <Row label="แบรนด์" value={state.product.brand.brandName} />
-                <Row label="ขนาด" value={state.product.size} />
-                <Row label="สภาพ" value={conditionLabels[state.product.condition]} />
-                <ThemedText type="small" themeColor="textSecondary">{state.product.description}</ThemedText>
-              </Card>
+          {!state.loading && state.notAvailable && <Card>
+            <ThemedText accessibilityLiveRegion="polite">สินค้าไม่พร้อมแสดง</ThemedText>
+            <Button label="กลับรายการ" onPress={() => { void handleBackToList(); }} />
+          </Card>}
+          {!state.loading && state.error && <Card>
+            <ThemedText accessibilityLiveRegion="polite">{detailErrorMessages[state.error] ?? 'โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่'}</ThemedText>
+            <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.retry(); }} />
+          </Card>}
+          {!state.loading && product && <>
+            <ProductImage uri={images[selectedImage]?.imageUrl} width="100%" height={imageSize}
+              accessibilityLabel={`รูปสินค้า ${product.productName}`} />
+            {images.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnails}>
+              {images.map((image, index) => <Pressable key={image.imageId}
+                accessibilityRole="button" accessibilityLabel={`ดูรูปที่ ${index + 1}`} accessibilityState={{ selected: selectedImage === index }}
+                onPress={() => setSelection({ productId: id, index })} style={[styles.thumbnail, { borderColor: selectedImage === index ? theme.primary : theme.border }]}>
+                <ProductImage uri={image.imageUrl} width={64} height={64} borderRadius={7} />
+              </Pressable>)}
+            </ScrollView>}
+            <ThemedText type="title">{product.productName}</ThemedText>
+            <View style={[styles.condition, { backgroundColor: theme.backgroundSelected }]}>
+              <ThemedText type="small" style={{ color: theme.primary }}>สภาพ · {conditionLabels[product.condition]}</ThemedText>
             </View>
-          )}
-
-          <Button label="กลับ" onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/products'); }} />
-        </SafeAreaView>
-      </ScrollView>
+            <View>
+              <Row label="หมวดหมู่" value={product.category.categoryName} />
+              <Row label="แบรนด์" value={product.brand.brandName} />
+              <Row label="ขนาด" value={product.size} />
+              <Row label="สภาพ" value={conditionLabels[product.condition]} />
+            </View>
+            <View style={[styles.description, { borderColor: theme.border }]}>
+              <ThemedText type="subtitle">รายละเอียด</ThemedText>
+              <ThemedText themeColor="textSecondary">{product.description || 'ผู้ขายไม่ได้ระบุรายละเอียดเพิ่มเติม'}</ThemedText>
+            </View>
+          </>}
+        </ScrollView>
+        {!state.loading && product && <View style={[styles.purchase, { borderColor: theme.border }]}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="small" themeColor="textSecondary">ราคาสินค้า</ThemedText>
+            <ThemedText style={styles.price}>{formatBaht(product.price)}</ThemedText>
+          </View>
+          <Button label="ซื้อสินค้า" variant="primary" onPress={() => router.push({
+            pathname: '/checkout/[productId]', params: { productId: String(product.id) },
+          })} />
+        </View>}
+      </SafeAreaView>
     </Screen>
   );
 }
-
 const styles = StyleSheet.create({
-  imageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  page: { flex: 1, alignSelf: 'center', gap: 0 },
+  body: { padding: 16, gap: Spacing.three },
+  thumbnails: { gap: 8 },
+  thumbnail: { padding: 2, borderRadius: 10, borderWidth: 2 },
+  condition: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  description: { gap: 8, borderTopWidth: 1, paddingTop: 16, paddingBottom: 16 },
+  purchase: { borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  price: { fontFamily: Fonts.displayBold, fontSize: 24, lineHeight: 34 },
 });

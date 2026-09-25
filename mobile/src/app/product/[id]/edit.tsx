@@ -1,3 +1,4 @@
+import { useTheme } from '@/hooks/use-theme';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -5,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/constants/theme';
 import { createProductEditStore } from '@/products/product-edit-store';
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createProductService } from '@/services/product-service';
@@ -16,6 +17,7 @@ const productService = createProductService({
 });
 
 export default function EditProductScreen() {
+  const styles = makeStyles(useTheme());
   const { session } = useAuth();
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -149,31 +151,31 @@ export default function EditProductScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#eaf3fb' },
+const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
+  page: { flex: 1, backgroundColor: theme.background },
   scrollContent: { flexGrow: 1, alignItems: 'center' },
-  safeArea: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four },
+  safeArea: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.three },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: Spacing.four,
+    backgroundColor: theme.surface,
+    borderRadius: 12,
+    padding: Spacing.three,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 4,
   },
-  title: { fontSize: 22, fontWeight: '700', color: '#1a1f27', marginBottom: Spacing.three },
-  notFoundText: { fontSize: 16, color: '#4a5568', textAlign: 'center' },
+  title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: Spacing.three },
+  notFoundText: { fontFamily: Fonts.sans, fontSize: 16, color: '#4a5568', textAlign: 'center' },
   loadErrorBox: { alignItems: 'center', gap: Spacing.two },
-  loadErrorText: { fontSize: 14, color: '#d9534f', textAlign: 'center' },
+  loadErrorText: { fontFamily: Fonts.sans, fontSize: 14, color: '#d9534f', textAlign: 'center' },
   retryButton: {
-    backgroundColor: '#96bde9',
+    backgroundColor: theme.primary,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.four,
   },
-  retryButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  retryButtonText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 14, fontWeight: '700' },
   cancelSection: {
     marginTop: Spacing.four,
     paddingTop: Spacing.four,
@@ -191,8 +193,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
+    color: theme.surface,
+    fontFamily: Fonts.sans, fontSize: 14,
     fontWeight: '700',
   },
   confirmBox: {
@@ -205,12 +207,12 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   confirmTitle: {
-    fontSize: 15,
+    fontFamily: Fonts.sans, fontSize: 15,
     fontWeight: '700',
     color: '#cf1322',
   },
   confirmDescription: {
-    fontSize: 13,
+    fontFamily: Fonts.sans, fontSize: 13,
     color: '#4a5568',
     lineHeight: 18,
   },
@@ -227,8 +229,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backButtonText: {
-    color: '#33404f',
-    fontSize: 14,
+    color: theme.text,
+    fontFamily: Fonts.sans, fontSize: 14,
     fontWeight: '600',
   },
   confirmCancelButton: {
@@ -239,19 +241,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmCancelButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
+    color: theme.surface,
+    fontFamily: Fonts.sans, fontSize: 14,
     fontWeight: '700',
   },
   cancelErrorText: {
     color: '#d9534f',
-    fontSize: 14,
+    fontFamily: Fonts.sans, fontSize: 14,
     marginBottom: Spacing.two,
     textAlign: 'center',
   },
   cancelSuccessText: {
     color: '#52c41a',
-    fontSize: 14,
+    fontFamily: Fonts.sans, fontSize: 14,
     marginTop: Spacing.three,
     textAlign: 'center',
     fontWeight: '600',

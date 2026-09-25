@@ -3,12 +3,13 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
 
 export const orderStatusColors: Record<OrderStatus, string> = {
-  WAITING_PAYMENT: '#B7791F',
-  WAITING_SELLER_SHIP: '#2F855A',
+  WAITING_PAYMENT: Colors.light.warning,
+  WAITING_SELLER_SHIP: Colors.light.success,
 };
 
 export const orderErrorMessages: Record<OrderErrorKind, string> = {
@@ -47,7 +48,8 @@ export function Screen({ children }: PropsWithChildren) {
 }
 
 export function Card({ children }: PropsWithChildren) {
-  return <ThemedView type="backgroundElement" style={styles.card}>{children}</ThemedView>;
+  const theme = useTheme();
+  return <ThemedView style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</ThemedView>;
 }
 
 export function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
@@ -78,12 +80,14 @@ export function Button({
   variant?: 'primary' | 'secondary' | 'danger';
   accessibilityLabel?: string;
 }) {
+  const theme = useTheme();
   const inactive = disabled || busy;
   return (
     <Pressable
-      style={[
+      style={({ pressed }) => [
+        { minHeight: 46, opacity: pressed ? 0.75 : 1 },
         variant === 'secondary' ? styles.secondaryButton : styles.primaryButton,
-        variant === 'danger' && styles.dangerButton,
+        { borderColor: variant === 'danger' ? theme.danger : theme.primary, backgroundColor: variant === 'secondary' ? theme.surface : variant === 'danger' ? theme.danger : theme.primary },
         inactive && styles.buttonDisabled,
       ]}
       disabled={inactive}
@@ -92,7 +96,7 @@ export function Button({
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       onPress={onPress}>
       {busy ? <ActivityIndicator color={variant === 'secondary' ? undefined : '#ffffff'} /> : null}
-      <ThemedText type="smallBold" style={variant === 'secondary' ? undefined : styles.primaryButtonText}>
+      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.primary : theme.onPrimary }}>
         {label}
       </ThemedText>
     </Pressable>
@@ -100,10 +104,12 @@ export function Button({
 }
 
 export function StatusBadge({ status, label }: { status: OrderStatus; label: string }) {
+  const theme = useTheme();
+  const color = status === 'WAITING_PAYMENT' ? theme.warning : theme.success;
   return (
-    <View style={styles.statusRow}>
-      <View style={[styles.statusDot, { backgroundColor: orderStatusColors[status] }]} />
-      <ThemedText type="smallBold" accessibilityLiveRegion="polite">{label}</ThemedText>
+    <View style={[styles.statusRow, { backgroundColor: status === 'WAITING_PAYMENT' ? theme.warningSoft : theme.successSoft }]}>
+      <View style={[styles.statusDot, { backgroundColor: color }]} />
+      <ThemedText type="small" style={{ color, flexShrink: 1 }} accessibilityLiveRegion="polite">{label}</ThemedText>
     </View>
   );
 }
@@ -113,33 +119,32 @@ export const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', padding: Spacing.three },
   content: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
   center: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four },
-  card: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.two },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  card: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.two, paddingVertical: 7 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 6, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
   field: { gap: Spacing.one },
   input: {
     borderWidth: 1,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    fontSize: 16,
+    fontSize: 15, fontFamily: Fonts.sans, color: Colors.light.text, backgroundColor: Colors.light.backgroundElement, borderColor: Colors.light.border,
   },
-  errorText: { color: '#C53030' },
+  errorText: { color: Colors.light.danger },
   noticeBox: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.one },
-  buttonRow: { flexDirection: 'row', gap: Spacing.two },
+  buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   primaryButton: {
-    flex: 1,
     flexDirection: 'row',
     gap: Spacing.two,
-    backgroundColor: '#243a73',
+    backgroundColor: Colors.light.primary,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dangerButton: { backgroundColor: '#9B2C2C' },
+  dangerButton: { backgroundColor: Colors.light.danger },
   primaryButtonText: { color: '#ffffff' },
   secondaryButton: {
     flexDirection: 'row',
@@ -150,7 +155,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#243a73',
+    borderColor: Colors.light.primary,
   },
   buttonDisabled: { opacity: 0.5 },
 });

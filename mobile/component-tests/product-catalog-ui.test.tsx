@@ -5,12 +5,12 @@ import { ProductImage } from '@/components/product-catalog-ui';
 describe('ProductImage', () => {
   test('renders placeholder when uri is not provided', () => {
     render(<ProductImage uri={null} accessibilityLabel="ไม่มีรูปสินค้า" />);
-    expect(screen.getByText('🖼')).toBeTruthy();
+    expect(screen.getByRole('image')).toBeTruthy();
     expect(screen.getByLabelText('ไม่มีรูปสินค้า')).toBeTruthy();
   });
 
   test('renders image and switches to placeholder when image fails to load', () => {
-    const { UNSAFE_getByType } = render(
+    render(
       <ProductImage uri="https://example.com/item.jpg" accessibilityLabel="รูปสินค้า" />,
     );
 
@@ -24,7 +24,7 @@ describe('ProductImage', () => {
     });
 
     // Placeholder icon should now be visible
-    expect(screen.getByText('🖼')).toBeTruthy();
+    expect(screen.getByRole('image')).toBeTruthy();
   });
 
   test('resets failed state when uri changes after an image failure', () => {
@@ -40,7 +40,7 @@ describe('ProductImage', () => {
       fireEvent(image, 'error', { nativeEvent: { error: 'Expired URL' } });
     });
 
-    expect(screen.getByText('🖼')).toBeTruthy();
+    expect(screen.getByRole('image')).toBeTruthy();
 
     // Component receives a new refreshed URL
     view.rerender(
@@ -48,7 +48,7 @@ describe('ProductImage', () => {
     );
 
     // Placeholder icon should no longer be displayed; new Image component should render
-    expect(screen.queryByText('🖼')).toBeNull();
+    expect(screen.getByLabelText('รูปสินค้า').props.source).toBeTruthy();
     const newImage = screen.getByLabelText('รูปสินค้า');
     expect(newImage.props.source).toEqual([{ uri: 'https://example.com/new-signed-url.jpg' }]);
   });
