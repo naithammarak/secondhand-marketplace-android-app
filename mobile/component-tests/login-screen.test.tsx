@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { LoginScreen } from '@/components/login-screen';
 import { marketplaceReturn } from '@/auth/marketplace-return-instance';
@@ -43,6 +44,8 @@ beforeEach(async () => {
   mockVerification = { state: { record: null } };
 });
 
+afterEach(() => jest.restoreAllMocks());
+
 test('returns to checkout after backend role verification, never while checking', async () => {
   await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
   mockAuth = newUserAuth({ accountChecking: true });
@@ -51,6 +54,34 @@ test('returns to checkout after backend role verification, never while checking'
   mockAuth = newUserAuth({ account: { fullName: null, role: 'BUYER', source: 'backend' } });
   view.rerender(<LoginScreen />);
   await waitFor(() => expect(mockReplace).toHaveBeenCalledWith({ pathname: '/checkout/[productId]', params: { productId: '42' } }));
+  expect(await marketplaceReturn.consume()).toBeNull();
+});
+
+test('keeps checkout destination when the same user session refreshes during storage read', async () => {
+  await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
+  mockAuth = newUserAuth({ account: { fullName: null, role: 'BUYER', source: 'backend' } });
+  const saved = await AsyncStorage.getItem('marketplace.return.v1');
+  let release!: (value: string | null) => void;
+  const getItem = jest.spyOn(AsyncStorage, 'getItem');
+  getItem.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const view = render(<LoginScreen />);
+  await waitFor(() => expect(release).toBeDefined());
+  mockAuth = { ...mockAuth, session: { user: { id: 'user-1' }, access_token: 'refreshed' } };
+  view.rerender(<LoginScreen />);
+  await act(async () => { release(saved); await marketplaceReturn.consume(); });
+  expect(mockReplace).toHaveBeenCalledWith({ pathname: '/checkout/[productId]', params: { productId: '42' } });
+});
+
+test('cancelled Google login clears the saved checkout destination', async () => {
+  await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
+  mockAuth = newUserAuth({
+    session: null,
+    account: null,
+    loginAdapter: { run: async () => 'cancelled' },
+  });
+  render(<LoginScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' }));
+  await waitFor(() => expect(screen.getByText(/ยกเลิกการเข้าสู่ระบบแล้ว/)).toBeTruthy());
   expect(await marketplaceReturn.consume()).toBeNull();
 });
 

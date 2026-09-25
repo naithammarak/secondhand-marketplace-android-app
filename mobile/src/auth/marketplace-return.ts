@@ -16,21 +16,26 @@ export function createMarketplaceReturn(storage: Storage, now = Date.now) {
     queue = result.catch(() => undefined);
     return result;
   }
+  async function read(): Promise<MarketplaceDestination | null> {
+    const raw = await storage.getItem(KEY);
+    if (!raw) return null;
+    try {
+      const data = JSON.parse(raw);
+      return validDestination(data.destination) && typeof data.expiresAt === 'number'
+        && data.expiresAt > now() && data.expiresAt <= now() + TTL ? data.destination : null;
+    } catch { return null; }
+  }
   return {
     save(destination: MarketplaceDestination) {
       if (!validDestination(destination)) return Promise.reject(new Error('Invalid destination'));
       return enqueue(() => storage.setItem(KEY, JSON.stringify({ destination, expiresAt: now() + TTL })));
     },
     clear: () => enqueue(() => storage.removeItem(KEY)),
+    peek: () => enqueue(read),
     consume: () => enqueue(async (): Promise<MarketplaceDestination | null> => {
-      const raw = await storage.getItem(KEY);
+      const destination = await read();
       await storage.removeItem(KEY);
-      if (!raw) return null;
-      try {
-        const data = JSON.parse(raw);
-        return validDestination(data.destination) && typeof data.expiresAt === 'number'
-          && data.expiresAt > now() && data.expiresAt <= now() + TTL ? data.destination : null;
-      } catch { return null; }
+      return destination;
     }),
   };
 }

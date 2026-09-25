@@ -200,28 +200,36 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const [roleChoice, setRoleChoice] = useState<{ userId: string; role: SelectableRole } | null>(null);
   const hadSession = useRef(false);
+  const redirected = useRef(false);
   const [actionError, setActionError] = useState(false);
   useEffect(() => () => controller.cancel(), [controller]);
+  useEffect(() => {
+    if (state === 'cancelled') void marketplaceReturn.clear().catch(() => undefined);
+  }, [state]);
   useEffect(() => {
     if (auth.session) {
       hadSession.current = true;
     } else if (hadSession.current) {
       // ออกจากระบบแล้วรีเซ็ตสถานะ เพื่อให้ปุ่ม Google กลับมาและล็อกอินซ้ำได้
       hadSession.current = false;
+      redirected.current = false;
       controller.reset();
     }
   }, [auth.session, controller]);
   useEffect(() => {
     if (!auth.session || auth.initializing || auth.accountChecking || auth.accountError
-      || auth.account?.source !== 'backend' || !auth.account.role) return;
+      || auth.account?.source !== 'backend' || !auth.account.role || state === 'cancelled'
+      || redirected.current) return;
     let active = true;
-    void marketplaceReturn.consume().then(destination => {
+    void marketplaceReturn.peek().then(destination => {
       if (!active || !destination) return;
+      redirected.current = true;
       if (destination.kind === 'checkout') router.replace({ pathname: '/checkout/[productId]', params: { productId: String(destination.productId) } });
       else router.replace(destination.kind === 'orders' ? '/orders' : '/sell');
-    }).catch(() => undefined);
+      void marketplaceReturn.clear().catch(() => undefined);
+    }).catch(() => { redirected.current = false; });
     return () => { active = false; };
-  }, [auth.session, auth.initializing, auth.accountChecking, auth.accountError, auth.account]);
+  }, [auth.session, auth.initializing, auth.accountChecking, auth.accountError, auth.account, state]);
   const selectedRole = auth.account?.role === null && roleChoice && roleChoice.userId === auth.session?.user.id
     ? roleChoice.role
     : null;

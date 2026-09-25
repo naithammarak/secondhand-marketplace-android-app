@@ -11,7 +11,10 @@ function setup() {
 test('login returns to the chosen product once', async () => {
   const { store } = setup();
   await store.save({ kind: 'checkout', productId: 42 });
+  assert.deepEqual(await store.peek(), { kind: 'checkout', productId: 42 });
+  assert.deepEqual(await store.peek(), { kind: 'checkout', productId: 42 });
   assert.deepEqual(await store.consume(), { kind: 'checkout', productId: 42 });
+  assert.equal(await store.peek(), null);
   assert.equal(await store.consume(), null);
 });
 test('cancel clears a pending write and expiry prevents a later unrelated checkout', async () => {
@@ -22,6 +25,7 @@ test('cancel clears a pending write and expiry prevents a later unrelated checko
   assert.equal(await store.consume(), null);
   await store.save({ kind: 'checkout', productId: 42 });
   advance();
+  assert.equal(await store.peek(), null);
   assert.equal(await store.consume(), null);
 });
 test('storage cannot redirect to arbitrary URLs or invalid product IDs', async () => {
@@ -29,6 +33,7 @@ test('storage cannot redirect to arbitrary URLs or invalid product IDs', async (
   for (const destination of [{ kind: 'https://example.invalid' }, { kind: 'checkout', productId: -1 }, { kind: 'checkout', productId: '42' }]) {
     await assert.rejects(store.save(destination));
     corrupt(JSON.stringify({ destination, expiresAt: 5000 }));
+    assert.equal(await store.peek(), null);
     assert.equal(await store.consume(), null);
   }
   corrupt('broken JSON');
