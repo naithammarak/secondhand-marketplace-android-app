@@ -72,6 +72,19 @@ def courier_only(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def _fresh_actor(db: Session, actor: User, role: UserRole, error_code: str) -> User:
+    """Refresh the authenticated row after locking the Order, before a write.
+
+    The auth dependency has already loaded this User into SQLAlchemy's identity
+    map. A plain SELECT FOR UPDATE can therefore return the stale Python object
+    when another transaction suspends the account between auth and the write.
+    """
+    fresh = db.scalar(select(User).where(User.id == actor.id).with_for_update().execution_options(populate_existing=True))
+    if fresh is None or fresh.status != UserStatus.ACTIVE or fresh.role != role:
+        raise api_error(403, error_code, "Account is no longer authorized for this action")
+    return fresh
+
+
 def _order(db: Session, order_id: int) -> Order:
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
@@ -84,6 +97,7 @@ def _work(db: Session, inspection_id: int, inspector: User) -> tuple[Order, Insp
     if order_id is None:
         raise api_error(404, "inspection_not_found", "Inspection not found")
     order = _order(db, order_id)
+    _fresh_actor(db, inspector, UserRole.INSPECTOR, "inspector_role_required")
     work = db.get(Inspection, inspection_id)
     if work is None or (work.inspector_id is not None and work.inspector_id != inspector.id):
         raise api_error(404, "inspection_not_found", "Inspection not found")
@@ -211,6 +225,7 @@ def _detail(db: Session, order: Order, work: Inspection) -> dict:
 @router.post("/orders/{order_id}/ship-to-center")
 def ship_to_center(order_id: int, body: ShipRequest, response: Response, actor: User = Depends(get_current_user), key: str = Depends(require_idempotency_key), db: Session = Depends(get_db)):
     order, role = load_order_for(db, order_id, actor, lock=True)
+    _fresh_actor(db, actor, UserRole.SELLER, "seller_role_required")
     if role.value != "seller" or actor.role != UserRole.SELLER:
         raise api_error(403, "seller_role_required", "Order seller required")
     if actor.status != UserStatus.ACTIVE:

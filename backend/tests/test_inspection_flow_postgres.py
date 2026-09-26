@@ -213,6 +213,52 @@ def test_result_rejects_evidence_from_another_inspection(world):
         assert session.query(Certificate).filter_by(order_id=second_order).count() == 0
 
 
+def test_seller_revoked_after_auth_cannot_ship(world, monkeypatch):
+    client, engine, buyer, seller, _, _, product, _, _, _ = world
+    created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
+    order_id = created.json()["id"]
+    assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+    with Session(engine) as session:
+        seller_id = session.get(Order, order_id).seller_id
+    original = inspect_api.load_order_for
+
+    def revoke_after_order_lock(*args, **kwargs):
+        result = original(*args, **kwargs)
+        with Session(engine) as session:
+            session.get(User, seller_id).status = UserStatus.SUSPENDED
+            session.commit()
+        return result
+
+    monkeypatch.setattr(inspect_api, "load_order_for", revoke_after_order_lock)
+    denied = client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo", "tracking_number": "T-1"}, headers=request_headers(seller))
+    assert denied.status_code == 403, denied.text
+    with Session(engine) as session:
+        assert session.query(Shipment).filter_by(order_id=order_id).count() == 0
+        assert session.get(Order, order_id).status == "WAITING_SELLER_SHIP"
+
+
+def test_inspector_revoked_after_auth_cannot_upload(world, monkeypatch):
+    client, engine, _, _, inspector, _, _, _, _, _ = world
+    order_id, work_id = started_work(world)
+    with Session(engine) as session:
+        inspector_id = session.get(Inspection, work_id).inspector_id
+    original = inspect_api._order
+
+    def revoke_after_order_lock(db, locked_order_id):
+        order = original(db, locked_order_id)
+        with Session(engine) as session:
+            session.get(User, inspector_id).status = UserStatus.SUSPENDED
+            session.commit()
+        return order
+
+    monkeypatch.setattr(inspect_api, "_order", revoke_after_order_lock)
+    denied = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    assert denied.status_code == 403, denied.text
+    with Session(engine) as session:
+        assert session.query(InspectionEvidence).filter_by(inspection_id=work_id).count() == 0
+        assert session.get(Order, order_id).status == "INSPECTING"
+
+
 def test_concurrent_ship_creates_one_shipment(world):
     client, engine, buyer, seller, _, _, product, _, _, _ = world
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
