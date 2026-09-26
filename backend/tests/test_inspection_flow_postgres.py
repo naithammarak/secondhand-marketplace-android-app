@@ -108,6 +108,7 @@ def started_work(world):
     assert queue.status_code == 200, queue.text
     work_id = next(item["id"] for item in queue.json()["items"] if item["order_id"] == order_id)
     assert client.get(f"/inspections/{work_id}", headers=other).status_code == 403
+    assert client.post(f"/inspections/{work_id}/start", headers=request_headers(inspector)).status_code == 409
     with Session(world[1]) as session:
         shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
     assert client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector)).status_code == 409
@@ -125,6 +126,8 @@ def started_work(world):
     assert confirmed.status_code == 200, confirmed.text
     received = client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector))
     assert received.status_code == 200 and received.json()["order_status"] == "RECEIVED_AT_CENTER", received.text
+    assert client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector)).status_code == 403
+    assert client.post(f"/inspections/{work_id}/result", json={"result": "PASS", "summary": "Valid but too early result", "evidence_ids": [1]}, headers=request_headers(inspector)).status_code == 403
     started = client.post(f"/inspections/{work_id}/start", json={}, headers=request_headers(inspector))
     assert started.status_code == 200 and started.json()["order_status"] == "INSPECTING", started.text
     return order_id, work_id
@@ -190,6 +193,24 @@ def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatc
     monkeypatch.setattr(inspect_api, "issue_certificate", original)
     retried = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
     assert retried.status_code == 200 and retried.json()["certificate"] is not None, retried.text
+
+
+def test_result_rejects_evidence_from_another_inspection(world):
+    client, engine, buyer, seller, inspector, _, _, _, _, _ = world
+    first_order, first_work = started_work(world)
+    uploaded = client.post(f"/inspections/{first_work}/evidence", files={"file": ("first.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    assert uploaded.status_code == 201, uploaded.text
+    foreign_evidence_id = uploaded.json()["evidence"]["id"]
+    with Session(engine) as session:
+        other_product = create_product(session, session.get(Order, first_order).seller_id)
+    second_world = (*world[:6], other_product, *world[7:])
+    second_order, second_work = started_work(second_world)
+    submitted = client.post(f"/inspections/{second_work}/result", json={"result": "PASS", "summary": "This image belongs to another inspection.", "evidence_ids": [foreign_evidence_id]}, headers=request_headers(inspector))
+    assert submitted.status_code == 422, submitted.text
+    with Session(engine) as session:
+        assert session.get(Inspection, second_work).result is None
+        assert session.get(Order, second_order).status == "INSPECTING"
+        assert session.query(Certificate).filter_by(order_id=second_order).count() == 0
 
 
 def test_concurrent_ship_creates_one_shipment(world):
