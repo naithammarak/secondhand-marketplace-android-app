@@ -109,12 +109,15 @@ def started_work(world):
     work_id = next(item["id"] for item in queue.json()["items"] if item["order_id"] == order_id)
     assert client.get(f"/inspections/{work_id}", headers=other).status_code == 403
     assert client.post(f"/inspections/{work_id}/start", headers=request_headers(inspector)).status_code == 409
-    with Session(world[1]) as session:
-        shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
+    admin_queue = client.get("/admin/orders?status=SHIPPING_TO_CENTER", headers=admin)
+    assert admin_queue.status_code == 200, admin_queue.text
+    assert any(item["id"] == order_id for item in admin_queue.json()["items"])
     assert client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector)).status_code == 409
-    assert client.post(f"/admin/shipments/{shipment_id}/assign-courier", json={"courier_id": courier_id}, headers=request_headers(seller)).status_code == 403
-    assigned = client.post(f"/admin/shipments/{shipment_id}/assign-courier", json={"courier_id": courier_id}, headers=request_headers(admin))
+    assign_url = f"/admin/orders/{order_id}/assign-courier"
+    assert client.post(assign_url, json={"courier_id": courier_id}, headers=request_headers(seller)).status_code == 403
+    assigned = client.post(assign_url, json={"courier_id": courier_id}, headers=request_headers(admin))
     assert assigned.status_code == 200, assigned.text
+    shipment_id = assigned.json()["shipment_id"]
     assert client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", headers=request_headers(courier)).status_code == 409
     assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(other)).status_code == 403
     uploaded = client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(courier))
@@ -165,7 +168,10 @@ def test_seller_inspector_buyer_flow(world, result):
     assert buyer_view.json()["next_action"] == ("WAIT_BUYER_DECISION" if positive else "RETURN_TO_SELLER")
     if positive:
         token = buyer_view.json()["certificate"]["public_url"].rsplit("/", 1)[-1]
-        assert client.get(f"/certificates/{token}").json()["result"] == result
+        public = client.get(f"/certificates/{token}")
+        assert public.status_code == 200
+        assert set(public.json()) == {"certificate_no", "result", "issued_at"}
+        assert public.json()["result"] == result
     with Session(engine) as session:
         assert session.scalar(select(Order).where(Order.id == order_id)).status == "RESULT_NOTIFIED"
         assert session.scalar(select(Inspection).where(Inspection.id == work_id)).result == result
@@ -257,6 +263,43 @@ def test_inspector_revoked_after_auth_cannot_upload(world, monkeypatch):
     with Session(engine) as session:
         assert session.query(InspectionEvidence).filter_by(inspection_id=work_id).count() == 0
         assert session.get(Order, order_id).status == "INSPECTING"
+
+
+def test_other_inspector_cannot_read_assigned_courier_proof(world):
+    client, engine, _, _, assigned_inspector, _, _, _, _, _ = world
+    order_id, work_id = started_work(world)
+    with Session(engine) as session:
+        shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
+        proof_id = session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment_id).one().id
+        _, other_inspector = create_user(session, UserRole.INSPECTOR)
+    assert client.get(f"/inspections/{work_id}", headers=other_inspector).status_code == 404
+    assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=other_inspector).status_code == 404
+    assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=assigned_inspector).status_code == 200
+
+
+def test_admin_revoked_after_auth_cannot_assign_courier(world, monkeypatch):
+    client, engine, buyer, seller, _, _, product, courier_id, _, admin = world
+    created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
+    order_id = created.json()["id"]
+    assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+    assert client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo", "tracking_number": "ADMIN-1"}, headers=request_headers(seller)).status_code == 200
+    with Session(engine) as session:
+        admin_id = session.query(User).filter_by(role=UserRole.ADMIN).order_by(User.id.desc()).first().id
+    original = inspect_api._order
+
+    def revoke_after_order_lock(db, locked_order_id):
+        order = original(db, locked_order_id)
+        with Session(engine) as session:
+            session.get(User, admin_id).status = UserStatus.SUSPENDED
+            session.commit()
+        return order
+
+    monkeypatch.setattr(inspect_api, "_order", revoke_after_order_lock)
+    denied = client.post(f"/admin/orders/{order_id}/assign-courier", json={"courier_id": courier_id}, headers=request_headers(admin))
+    assert denied.status_code == 403, denied.text
+    with Session(engine) as session:
+        shipment = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one()
+        assert shipment.courier_id is None
 
 
 def test_concurrent_ship_creates_one_shipment(world):

@@ -270,6 +270,25 @@ def assign_courier(shipment_id: int, body: CourierAssignment, response: Response
         raise api_error(404, "shipment_not_found", "Shipment not found")
     order = _order(db, order_id)
     shipment = db.scalar(select(Shipment).where(Shipment.id == shipment_id).with_for_update().execution_options(populate_existing=True))
+    return _assign_courier(db, order, shipment, body, response, actor, key)
+
+
+@router.post("/admin/orders/{order_id}/assign-courier")
+def assign_courier_for_order(order_id: int, body: CourierAssignment, response: Response,
+                             actor: User = Depends(require_admin), key: str = Depends(require_idempotency_key),
+                             db: Session = Depends(get_db)):
+    """Admin can find order_id via GET /admin/orders?status=SHIPPING_TO_CENTER."""
+    order = _order(db, order_id)
+    shipment = db.scalar(select(Shipment).where(Shipment.order_id == order.id, Shipment.leg == "TO_CENTER")
+                         .with_for_update().execution_options(populate_existing=True))
+    if shipment is None:
+        raise api_error(404, "shipment_not_found", "Shipment not found")
+    return _assign_courier(db, order, shipment, body, response, actor, key)
+
+
+def _assign_courier(db: Session, order: Order, shipment: Shipment, body: CourierAssignment,
+                    response: Response, actor: User, key: str):
+    _fresh_actor(db, actor, UserRole.ADMIN, "admin_role_required")
     fingerprint = request_fingerprint({"courier_id": body.courier_id})
     replay = _replay(db, order.id, actor.id, "assign_courier", key, fingerprint, response)
     if replay is not None:
@@ -379,10 +398,12 @@ def read_delivery_proof(proof_id: int, actor: User = Depends(get_current_user), 
         raise api_error(404, "proof_not_found", "Delivery photo not found")
     shipment = db.get(Shipment, proof.shipment_id)
     order = db.get(Order, shipment.order_id)
+    work = _inspection(db, order.id)
     allowed = actor.status == UserStatus.ACTIVE and (
         (actor.role == UserRole.COURIER and shipment.courier_id == actor.id) or
         (actor.role == UserRole.BUYER and order.buyer_id == actor.id) or
-        (actor.role == UserRole.INSPECTOR and _inspection(db, order.id) is not None)
+        (actor.role == UserRole.INSPECTOR and work is not None and
+         (work.inspector_id is None or work.inspector_id == actor.id))
     )
     if not allowed:
         raise api_error(404, "proof_not_found", "Delivery photo not found")
@@ -576,5 +597,4 @@ def public_certificate(token: str, db: Session = Depends(get_db)):
     cert = db.scalar(select(Certificate).where(Certificate.public_token == token))
     if cert is None:
         raise api_error(404, "certificate_not_found", "Certificate not found")
-    order = db.get(Order, cert.order_id)
-    return {"certificate_no": cert.certificate_no, "result": cert.result, "product_name": order.product_name, "issued_at": cert.issued_at}
+    return {"certificate_no": cert.certificate_no, "result": cert.result, "issued_at": cert.issued_at}

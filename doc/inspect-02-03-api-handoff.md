@@ -8,21 +8,21 @@ This backend branch implements Seller → Courier → Inspector → Buyer agains
 |---|---|---|
 | Seller | `POST /orders/{id}/ship-to-center` | Creates one inbound shipment and inspection work, moves Order to `SHIPPING_TO_CENTER` |
 | Buyer/Seller | `GET /orders/{id}/inspection-progress` | Reads only the caller's Order progress |
-| Admin | `POST /admin/shipments/{id}/assign-courier` | Assigns an active Courier before any proof is uploaded; request `{ "courier_id": 12 }`; previous/new assignee and actor are recorded with the idempotency event |
+| Admin | `GET /admin/orders?status=SHIPPING_TO_CENTER`, then `POST /admin/orders/{order_id}/assign-courier` | Finds the Order ID and assigns an active Courier before any proof is uploaded; request `{ "courier_id": 12 }`; response includes `shipment_id`. The existing `POST /admin/shipments/{shipment_id}/assign-courier` also works when the shipment ID is known |
 | Courier | `GET /courier/shipments` | Lists up to 100 assigned inbound shipments and proof metadata |
 | Courier | `POST /courier/shipments/{id}/proofs` | Uploads one genuine JPEG/PNG file per request, max 5 MiB and 3 proofs |
 | Courier | `POST /courier/shipments/{id}/confirm-delivery` | Verifies 1–3 stored proofs and confirms arrival at the center |
-| Buyer/Courier/Inspector | `GET /shipment-delivery-proofs/{id}` | Authorized private read; returns image bytes with `Cache-Control: no-store` |
+| Buyer/assigned Courier/Inspector with access to the work | `GET /shipment-delivery-proofs/{id}` | Authorized private read; an Inspector assigned to a different work receives 404. Image response has `Cache-Control: no-store` |
 | Inspector | `GET /inspections`, `GET /inspections/{id}` | Authorized queue and work detail |
 | Inspector | `POST /inspections/{id}/receive`, `/start` | Receives only after Courier confirmation and 1–3 proofs, then starts inspection |
 | Inspector | `POST /inspections/{id}/evidence` | Validates and stores a private JPEG/PNG/WebP image, max 5 MiB and 5 images |
 | Inspector | `POST /inspections/{id}/result` | One final result; 1–5 selected images; `PASS`/`MINOR_ISSUE` issue a Certificate in the same transaction, or roll back with `503 certificate_unavailable` |
 | Buyer | `GET /orders/{id}/inspection`, `GET /inspection-evidence/{id}` | Reads own final result and selected image bytes only; image response has `Cache-Control: no-store` |
-| Public | `GET /certificates/{token}` | Minimal verification record for a random public token; no buyer identity or private image |
+| Public | `GET /certificates/{token}` | Only `certificate_no`, `result` and `issued_at` for a random public token; no buyer identity, private image or user-entered product name |
 
 Mutations require the Order-style `Idempotency-Key`. PostgreSQL row locks serialize transitions and proof quota; an identical key/payload replays the saved response, a changed payload returns `409`, and a new key after completion cannot create a second shipment/result/Certificate. Courier proof keys use the `courier/{shipment_id}/` prefix in the same private bucket, separate from `inspections/{inspection_id}/` evidence. The database enforces proof ownership and prevents changing assignment or proofs after confirmation. Inspector work detail hides buyer identity/address. Seller cannot read Buyer-only final evidence. The Certificate table is a narrow implementation of the atomic gate in #54; its public presentation and QR experience still need the separately approved CERT contract.
 
-Example inbound handoff after the Seller ships (all POST requests carry `Authorization: Bearer …` and `Idempotency-Key: <new UUID>`): Admin sends `{ "courier_id": 12 }` to `/admin/shipments/7/assign-courier`; Courier sends multipart `file=@arrival.png` to `/courier/shipments/7/proofs` and receives `{ "proof": { "id": 4, "sort_order": 0, "mime_type": "image/png", "size_bytes": 1234, "url": "/shipment-delivery-proofs/4" } }`; Courier confirms at `/courier/shipments/7/confirm-delivery`; Inspector can then call `/inspections/9/receive`. Before confirmation, receive returns `409 courier_delivery_required`. Missing or corrupted private image returns `503 storage_unavailable` without confirming delivery. No object key or storage secret is returned.
+Example inbound handoff after the Seller ships (all POST requests carry `Authorization: Bearer …` and `Idempotency-Key: <new UUID>`): Admin finds Order 42 via `GET /admin/orders?status=SHIPPING_TO_CENTER`, then sends `{ "courier_id": 12 }` to `/admin/orders/42/assign-courier` and receives `shipment_id: 7`; Courier sends multipart `file=@arrival.png` to `/courier/shipments/7/proofs` and receives `{ "proof": { "id": 4, "sort_order": 0, "mime_type": "image/png", "size_bytes": 1234, "url": "/shipment-delivery-proofs/4" } }`; Courier confirms at `/courier/shipments/7/confirm-delivery`; Inspector can then call `/inspections/9/receive`. Before confirmation, receive returns `409 courier_delivery_required`. Missing or corrupted private image returns `503 storage_unavailable` without confirming delivery. No object key or storage secret is returned.
 
 ## Configuration and deployment prerequisites
 
