@@ -3,6 +3,7 @@
 import os
 import secrets
 import logging
+import hashlib
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -13,12 +14,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
+from app.api.admin_verifications import require_admin
 from app.api.orders import api_error, key_reused, load_order_for, request_fingerprint, require_idempotency_key, validation_error
 from app.database import get_db
 from app.models.certificate import Certificate
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment
-from app.models.shipment import Shipment
+from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from app.services import inspection_storage
 
@@ -47,6 +49,11 @@ class ResultRequest(BaseModel):
     evidence_ids: list[int]
 
 
+class CourierAssignment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    courier_id: int
+
+
 def now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -56,6 +63,12 @@ def inspector_only(user: User = Depends(get_current_user)) -> User:
         raise api_error(403, "inspector_role_required", "Inspector account required")
     if user.status != UserStatus.ACTIVE:
         raise api_error(403, "account_inactive", "Account inactive")
+    return user
+
+
+def courier_only(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.COURIER or user.status != UserStatus.ACTIVE:
+        raise api_error(403, "courier_role_required", "Active Courier account required")
     return user
 
 
@@ -114,7 +127,31 @@ def _inspection(db: Session, order_id: int) -> Inspection | None:
 def _shipment_view(row: Shipment | None):
     if row is None:
         return None
-    return {"carrier": row.carrier, "tracking_number": row.tracking_number, "shipped_at": row.shipped_at, "received_at": row.received_at}
+    return {"carrier": row.carrier, "tracking_number": row.tracking_number, "shipped_at": row.shipped_at,
+            "courier_delivered_at": row.courier_delivered_at, "received_at": row.received_at}
+
+
+def _courier_shipment(db: Session, shipment_id: int, actor: User) -> tuple[Order, Shipment]:
+    order_id = db.scalar(select(Shipment.order_id).where(Shipment.id == shipment_id, Shipment.leg == "TO_CENTER"))
+    if order_id is None:
+        raise api_error(404, "shipment_not_found", "Shipment not found")
+    order = _order(db, order_id)
+    shipment = db.scalar(select(Shipment).where(Shipment.id == shipment_id).with_for_update().execution_options(populate_existing=True))
+    fresh_actor = db.scalar(select(User).where(User.id == actor.id).with_for_update().execution_options(populate_existing=True))
+    if fresh_actor is None or fresh_actor.role != UserRole.COURIER or fresh_actor.status != UserStatus.ACTIVE:
+        raise api_error(403, "courier_role_required", "Active Courier account required")
+    if shipment is None or shipment.courier_id != actor.id:
+        raise api_error(404, "shipment_not_found", "Shipment not found")
+    return order, shipment
+
+
+def _proofs(db: Session, shipment_id: int) -> list[ShipmentDeliveryProof]:
+    return list(db.scalars(select(ShipmentDeliveryProof).where(ShipmentDeliveryProof.shipment_id == shipment_id).order_by(ShipmentDeliveryProof.sort_order)))
+
+
+def _proof_view(row: ShipmentDeliveryProof) -> dict:
+    return {"id": row.id, "sort_order": row.sort_order, "mime_type": row.mime_type,
+            "size_bytes": row.size_bytes, "url": f"/shipment-delivery-proofs/{row.id}"}
 
 
 def _progress(db: Session, order: Order) -> dict:
@@ -209,6 +246,135 @@ def inspection_progress(order_id: int, actor: User = Depends(get_current_user), 
     return _progress(db, order)
 
 
+@router.post("/admin/shipments/{shipment_id}/assign-courier")
+def assign_courier(shipment_id: int, body: CourierAssignment, response: Response,
+                   actor: User = Depends(require_admin), key: str = Depends(require_idempotency_key),
+                   db: Session = Depends(get_db)):
+    order_id = db.scalar(select(Shipment.order_id).where(Shipment.id == shipment_id, Shipment.leg == "TO_CENTER"))
+    if order_id is None:
+        raise api_error(404, "shipment_not_found", "Shipment not found")
+    order = _order(db, order_id)
+    shipment = db.scalar(select(Shipment).where(Shipment.id == shipment_id).with_for_update().execution_options(populate_existing=True))
+    fingerprint = request_fingerprint({"courier_id": body.courier_id})
+    replay = _replay(db, order.id, actor.id, "assign_courier", key, fingerprint, response)
+    if replay is not None:
+        return replay
+    if order.status != "SHIPPING_TO_CENTER" or shipment.status != "IN_TRANSIT" or shipment.courier_delivered_at is not None or _proofs(db, shipment.id):
+        raise api_error(409, "assignment_locked", "Courier assignment can no longer change")
+    courier = db.scalar(select(User).where(User.id == body.courier_id).with_for_update().execution_options(populate_existing=True))
+    if courier is None or courier.role != UserRole.COURIER or courier.status != UserStatus.ACTIVE:
+        raise api_error(422, "invalid_courier", "An active Courier is required")
+    previous_id = shipment.courier_id
+    shipment.courier_id = courier.id
+    db.flush()
+    # Persist the assignment event with actor, previous/new assignee and time
+    # in the idempotency ledger, so reassignments remain traceable.
+    return _commit(db, order.id, actor.id, "assign_courier", key, fingerprint,
+                   {"shipment_id": shipment.id, "previous_courier_id": previous_id,
+                    "courier_id": courier.id, "assigned_by": actor.id})
+
+
+@router.get("/courier/shipments")
+def courier_queue(actor: User = Depends(courier_only), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Shipment).where(Shipment.courier_id == actor.id, Shipment.leg == "TO_CENTER")
+                      .order_by(Shipment.id.desc()).limit(100)).all()
+    return {"items": [{"id": row.id, "order_id": row.order_id, "status": row.status,
+                       "courier_delivered_at": row.courier_delivered_at,
+                       "proofs": [_proof_view(item) for item in _proofs(db, row.id)]} for row in rows]}
+
+
+@router.post("/courier/shipments/{shipment_id}/proofs", status_code=201)
+def upload_delivery_proof(shipment_id: int, response: Response, file: UploadFile = File(...),
+                          actor: User = Depends(courier_only), key: str = Depends(require_idempotency_key),
+                          db: Session = Depends(get_db)):
+    try:
+        if (file.content_type or "").lower() not in {"image/jpeg", "image/png"}:
+            raise api_error(415, "unsupported_media_type", "JPEG or PNG required")
+        content, mime, extension, digest = inspection_storage.validate_image(file)
+        order, shipment = _courier_shipment(db, shipment_id, actor)
+        fingerprint = request_fingerprint({"sha256": digest, "mime_type": mime})
+        replay = _replay(db, order.id, actor.id, "courier_proof", key, fingerprint, response)
+        if replay is not None:
+            response.status_code = 201
+            return replay
+        if order.status != "SHIPPING_TO_CENTER" or shipment.status != "IN_TRANSIT" or shipment.courier_delivered_at is not None:
+            raise api_error(409, "delivery_locked", "Delivery proof can no longer change")
+        proof_rows = _proofs(db, shipment.id)
+        if len(proof_rows) >= 3:
+            raise api_error(409, "proof_limit", "At most three delivery photos")
+        path = f"courier/{shipment.id}/{uuid4().hex}{extension}"
+        uploaded = False
+        commit_attempted = False
+        try:
+            inspection_storage.upload_object(path, content, mime)
+            uploaded = True
+            proof = ShipmentDeliveryProof(shipment_id=shipment.id, sort_order=len(proof_rows),
+                                          object_key=path, mime_type=mime, size_bytes=len(content),
+                                          sha256=digest, uploaded_by=actor.id, uploaded_at=now())
+            db.add(proof)
+            db.flush()
+            result = jsonable_encoder({"proof": _proof_view(proof)})
+            db.add(InspectionIdempotency(order_id=order.id, actor_id=actor.id, operation="courier_proof",
+                                         idempotency_key=key, request_hash=fingerprint,
+                                         response_status=201, response_body=result))
+            db.flush()
+            commit_attempted = True
+            db.commit()
+            return result
+        except Exception:
+            db.rollback()
+            if uploaded and not commit_attempted:
+                inspection_storage.cleanup_object(path)
+            elif commit_attempted:
+                logger.exception("Courier proof commit outcome uncertain: shipment_id=%s object_key=%s", shipment_id, path)
+            raise
+    finally:
+        file.file.close()
+
+
+@router.post("/courier/shipments/{shipment_id}/confirm-delivery")
+def confirm_courier_delivery(shipment_id: int, response: Response,
+                             actor: User = Depends(courier_only), key: str = Depends(require_idempotency_key),
+                             db: Session = Depends(get_db)):
+    order, shipment = _courier_shipment(db, shipment_id, actor)
+    fingerprint = request_fingerprint({})
+    replay = _replay(db, order.id, actor.id, "courier_confirm", key, fingerprint, response)
+    if replay is not None:
+        return replay
+    if order.status != "SHIPPING_TO_CENTER" or shipment.status != "IN_TRANSIT" or shipment.courier_delivered_at is not None:
+        raise api_error(409, "delivery_locked", "Delivery cannot be confirmed now")
+    proofs = _proofs(db, shipment.id)
+    if not 1 <= len(proofs) <= 3:
+        raise api_error(409, "proof_required", "One to three delivery photos required")
+    for proof in proofs:
+        content = inspection_storage.download_object(proof.object_key)
+        if len(content) != proof.size_bytes or hashlib.sha256(content).hexdigest() != proof.sha256:
+            raise api_error(503, "storage_unavailable", "Delivery photo could not be verified")
+    shipment.courier_delivered_at = now()
+    db.flush()
+    return _commit(db, order.id, actor.id, "courier_confirm", key, fingerprint,
+                   {"shipment_id": shipment.id, "courier_delivered_at": shipment.courier_delivered_at,
+                    "proofs": [_proof_view(item) for item in proofs]})
+
+
+@router.get("/shipment-delivery-proofs/{proof_id}")
+def read_delivery_proof(proof_id: int, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    proof = db.get(ShipmentDeliveryProof, proof_id)
+    if proof is None:
+        raise api_error(404, "proof_not_found", "Delivery photo not found")
+    shipment = db.get(Shipment, proof.shipment_id)
+    order = db.get(Order, shipment.order_id)
+    allowed = actor.status == UserStatus.ACTIVE and (
+        (actor.role == UserRole.COURIER and shipment.courier_id == actor.id) or
+        (actor.role == UserRole.BUYER and order.buyer_id == actor.id) or
+        (actor.role == UserRole.INSPECTOR and _inspection(db, order.id) is not None)
+    )
+    if not allowed:
+        raise api_error(404, "proof_not_found", "Delivery photo not found")
+    return Response(content=inspection_storage.download_object(proof.object_key), media_type=proof.mime_type,
+                    headers={"Cache-Control": "no-store"})
+
+
 @router.get("/inspections")
 def inspection_queue(status: str | None = None, limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), actor: User = Depends(inspector_only), db: Session = Depends(get_db)):
     query = select(Inspection, Order).join(Order, Inspection.order_id == Order.id).where(
@@ -245,6 +411,8 @@ def receive_inspection(inspection_id: int, body: ReceiveRequest, response: Respo
     shipment = _shipment(db, order.id)
     if shipment is None or shipment.status != "IN_TRANSIT":
         raise api_error(409, "invalid_state", "Inbound shipment unavailable")
+    if shipment.courier_delivered_at is None or not 1 <= len(_proofs(db, shipment.id)) <= 3:
+        raise api_error(409, "courier_delivery_required", "Courier delivery and photos required before receipt")
     shipment.status, shipment.received_by, shipment.received_at, shipment.received_note = "DELIVERED", actor.id, now(), note
     order.status = "RECEIVED_AT_CENTER"
     db.flush()

@@ -28,8 +28,10 @@ config.set_main_option(
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
+# disable_existing_loggers=False: ตอนรัน alembic จาก test ในโปรเซสเดียวกัน การปิด logger เดิม
+# ทำให้ตัวจับ log ของ pytest (caplog) ตายไปด้วย แล้ว test ที่ตรวจข้อความ log จะล้มแบบไม่เกี่ยวกับของจริง
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

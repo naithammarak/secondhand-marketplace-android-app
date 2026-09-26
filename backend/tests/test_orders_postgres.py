@@ -10,6 +10,7 @@
 ห้ามชี้ไปที่ฐานข้อมูลกลาง (Supabase)
 """
 
+from datetime import datetime, timezone
 import os
 import threading
 import time
@@ -26,9 +27,11 @@ from sqlalchemy.orm import sessionmaker
 import app.api.orders as orders_module
 from app.database import get_db
 from app.main import app
+from app.models.audit import AdminAccessLog
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import UserRole
+from app.services.order_pricing import payment_deadline, utcnow
 from tests.order_helpers import (
     VALID_ADDRESS,
     create_product,
@@ -41,6 +44,8 @@ from tests.order_helpers import (
 PG_URL = os.getenv("ORDER_TEST_DATABASE_URL")
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 BASE_REVISION = "d5c9e2a71b40"
+# revision ก่อน ORDER-08 ใช้จำลอง "ฐานข้อมูลที่มี Order อยู่ก่อนแล้ว" ตอนตรวจ backfill
+PRE_EXPIRY_REVISION = "9446ec1a2c5d"
 ORDER_TABLES = ("orders", "payment_attempts", "payments", "escrows", "receipts")
 
 pytestmark = pytest.mark.skipif(
@@ -94,8 +99,8 @@ def Session(pg_engine, monkeypatch):
     with pg_engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE receipts, escrows, payments, payment_attempts, orders, products, "
-                "brands, categories, verifications, users RESTART IDENTITY CASCADE"
+                "TRUNCATE admin_access_logs, receipts, escrows, payments, payment_attempts, orders, "
+                "products, brands, categories, verifications, users RESTART IDENTITY CASCADE"
             )
         )
     factory = sessionmaker(bind=pg_engine, autoflush=False, autocommit=False)
@@ -153,6 +158,11 @@ def pay(order_id, headers, outcome="SUCCESS", key=None):
         )
 
 
+def cancel(order_id, headers):
+    with TestClient(app) as client:
+        return client.post(f"/orders/{order_id}/cancel", headers=headers)
+
+
 def run_parallel(calls):
     """ปล่อยทุกคำขอพร้อมกันด้วย barrier แล้วคืนผลตามลำดับ"""
     barrier = threading.Barrier(len(calls))
@@ -186,6 +196,7 @@ def insert_order(db, world, product_id=None, key="manual-key-0001", total=Decima
         commission_fee=Decimal("60.00"),
         total_amount=total,
         seller_payout=Decimal("1140.00"),
+        expires_at=payment_deadline(utcnow()),
         **{f"ship_{k}": v for k, v in {**VALID_ADDRESS, "phone": "0812345678"}.items()},
         idempotency_key=key,
         request_hash="0" * 64,
@@ -208,6 +219,14 @@ def test_migration_downgrade_and_upgrade_round_trip(pg_engine):
             )
 
     assert set(ORDER_TABLES) <= tables()
+    # downgrade ปฏิเสธการทำงานเมื่อมี Order สถานะ CANCELLED อยู่ จึงล้างข้อมูลก่อนตรวจ schema
+    with pg_engine.begin() as connection:
+        connection.execute(
+            text(
+                "TRUNCATE receipts, escrows, payments, payment_attempts, orders "
+                "RESTART IDENTITY CASCADE"
+            )
+        )
     run_alembic("downgrade", BASE_REVISION)
     remaining = tables()
     assert not (set(ORDER_TABLES) & remaining)
@@ -488,3 +507,226 @@ def test_parallel_payment_stress(world, db):
         assert count(db, Escrow, order_id=order_id) == 1
         assert count(db, Receipt, order_id=order_id) == 1
         assert count(db, PaymentAttempt, order_id=order_id, outcome="SUCCEEDED") == 1
+
+
+# ------------------------------------------------------------------ ยกเลิก/หมดเวลา (ORDER-08)
+
+
+def set_cancelled(db, order_id, reason="EXPIRED"):
+    db.execute(
+        text(
+            "UPDATE orders SET status = 'CANCELLED', cancel_reason = :reason, "
+            "cancelled_at = now() WHERE id = :id"
+        ),
+        {"id": order_id, "reason": reason},
+    )
+    db.commit()
+
+
+def test_cancelled_order_frees_the_product_slot(db, world):
+    first = insert_order(db, world, key="manual-key-0001")
+    set_cancelled(db, first.id)
+
+    # partial unique index ใช้เงื่อนไข status <> 'CANCELLED' สินค้าจึงว่างให้ Order ใหม่ได้
+    second = insert_order(db, world, key="manual-key-0002")
+    assert second.id != first.id
+    assert count(db, Order) == 2
+
+
+def test_cancel_fields_must_match_status(db, world):
+    order = insert_order(db, world, key="manual-key-0003")
+
+    with pytest.raises(IntegrityError):
+        # ยกเลิกโดยไม่มีเหตุผลและเวลา ถูกปฏิเสธที่ฐานข้อมูล
+        db.execute(text("UPDATE orders SET status = 'CANCELLED' WHERE id = :id"), {"id": order.id})
+        db.commit()
+    db.rollback()
+
+    with pytest.raises(IntegrityError):
+        # เหตุผลนอกรายการที่ตกลงไว้
+        set_cancelled(db, order.id, reason="SOMETHING_ELSE")
+    db.rollback()
+
+    with pytest.raises(IntegrityError):
+        # ยังไม่ยกเลิกแต่มีเหตุผลติดมา
+        db.execute(
+            text("UPDATE orders SET cancel_reason = 'BUYER' WHERE id = :id"), {"id": order.id}
+        )
+        db.commit()
+    db.rollback()
+
+    db.expire_all()
+    assert db.get(Order, order.id).status == "WAITING_PAYMENT"
+
+
+def test_paid_order_cannot_be_marked_cancelled(db, world):
+    order = insert_order(db, world, key="manual-key-0004")
+    db.execute(text("UPDATE orders SET paid_at = now() WHERE id = :id"), {"id": order.id})
+    db.commit()
+
+    with pytest.raises(IntegrityError):
+        set_cancelled(db, order.id, reason="BUYER")
+    db.rollback()
+
+
+def test_racing_cancel_never_beats_successful_payment(world, db, monkeypatch):
+    order_id = create_order(world)
+    locked, release = block_first_success(monkeypatch)
+    results = {}
+    payer = threading.Thread(target=lambda: results.__setitem__("pay", pay(order_id, world["a"])))
+    payer.start()
+    assert locked.wait(timeout=30)
+    canceller = threading.Thread(
+        target=lambda: results.__setitem__("cancel", cancel(order_id, world["a"]))
+    )
+    canceller.start()
+    time.sleep(1.0)
+    assert canceller.is_alive(), "cancel request must wait for the order row lock"
+    release.set()
+    payer.join(timeout=30)
+    canceller.join(timeout=30)
+
+    assert results["pay"].status_code == 200
+    assert results["cancel"].status_code == 409
+    assert results["cancel"].json()["detail"]["code"] == "order_already_paid"
+
+    db.expire_all()
+    assert db.get(Order, order_id).status == "WAITING_SELLER_SHIP"
+    assert count(db, Payment, order_id=order_id) == 1
+    assert count(db, Escrow, order_id=order_id) == 1
+    assert count(db, Receipt, order_id=order_id) == 1
+    # สินค้าที่จ่ายเงินแล้วต้องไม่ถูกปล่อยคืน
+    assert db.get(Product, world["product_id"]).status == "RESERVED"
+
+
+# ------------------------------------------------------------------ audit log (ORDER-09)
+
+
+def test_admin_access_log_table_is_created_with_rls(pg_engine):
+    """ตาราง Audit ต้องมาพร้อม migration และเปิด RLS เหมือนตารางอื่นใน public schema"""
+    with pg_engine.connect() as connection:
+        rls = connection.execute(
+            text(
+                "SELECT relrowsecurity FROM pg_class WHERE relname = 'admin_access_logs' "
+                "AND relkind = 'r'"
+            )
+        ).scalar_one()
+        indexes = set(
+            connection.execute(
+                text("SELECT indexname FROM pg_indexes WHERE tablename = 'admin_access_logs'")
+            ).scalars()
+        )
+    assert rls is True
+    assert {"ix_admin_access_logs_target", "ix_admin_access_logs_admin"} <= indexes
+
+
+def admin_log(db, world, **overrides):
+    fields = {
+        "admin_id": world["admin"],
+        "action": "ORDER_CONTACT_REVEAL",
+        "target_type": "ORDER",
+        "target_id": 1,
+        "reason": "ตรวจสอบข้อพิพาทการจัดส่งตามคำร้องของผู้ซื้อ",
+    }
+    fields.update(overrides)
+    return AdminAccessLog(**fields)
+
+
+@pytest.fixture
+def admin_world(db, world):
+    admin_id, _ = create_user(db, UserRole.ADMIN, name="Admin One")
+    return {**world, "admin": admin_id}
+
+
+def test_admin_access_log_checks_reject_incomplete_rows(db, admin_world):
+    """เหตุผลสั้นหรือค่านอกรายการต้องถูกปฏิเสธที่ฐานข้อมูล ไม่ใช่แค่ใน API"""
+    db.add(admin_log(db, admin_world))
+    db.commit()
+    assert count(db, AdminAccessLog) == 1
+
+    for row in (
+        admin_log(db, admin_world, reason="สั้นไป"),
+        admin_log(db, admin_world, reason="          "),
+        admin_log(db, admin_world, action="SOMETHING_ELSE"),
+        admin_log(db, admin_world, target_type="USER"),
+        admin_log(db, admin_world, admin_id=999999),
+    ):
+        db.add(row)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    assert count(db, AdminAccessLog) == 1
+
+
+def test_migration_backfills_deadlines_for_pre_existing_orders(db, world):
+    """Order ที่มีอยู่ก่อน ORDER-08 ต้องได้เส้นตาย = created_at + 30 นาที
+
+    ทดสอบเส้นทางจริงของการอัปเกรดบนฐานข้อมูลที่มีข้อมูลอยู่แล้ว ไม่ใช่ฐานข้อมูลเปล่า
+    เพราะแถวเดิมไม่มีคอลัมน์เส้นตาย และถ้า backfill ผิดไปใช้เวลาที่รัน migration
+    Order เก่าทั้งหมดจะได้เวลาอีก 30 นาทีนับจากวันติดตั้ง แทนที่จะหมดอายุไปนานแล้ว
+    """
+    db.execute(
+        text("TRUNCATE receipts, escrows, payments, payment_attempts, orders RESTART IDENTITY CASCADE")
+    )
+    db.commit()
+    run_alembic("downgrade", PRE_EXPIRY_REVISION)
+
+    legacy_created_at = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
+    db.execute(
+        text(
+            """
+            INSERT INTO orders (
+                buyer_id, seller_id, product_id, status,
+                product_name, product_condition, product_size, currency,
+                item_price, shipping_fee, inspection_fee, commission_fee,
+                total_amount, seller_payout,
+                ship_recipient_name, ship_phone, ship_address_line, ship_subdistrict,
+                ship_district, ship_province, ship_postal_code,
+                idempotency_key, request_hash, created_at, updated_at
+            ) VALUES (
+                :buyer_id, :seller_id, :product_id, 'WAITING_PAYMENT',
+                'สินค้าเก่า', 'GOOD', 'M', 'THB',
+                1200.00, 50.00, 100.00, 60.00,
+                1350.00, 1140.00,
+                'ผู้ซื้อ เก่า', '0812345678', '1 ถนนเก่า', 'แขวงเก่า',
+                'เขตเก่า', 'กรุงเทพมหานคร', '10110',
+                'legacy-key-0001', :request_hash, :created_at, :created_at
+            )
+            """
+        ),
+        {
+            "buyer_id": world["buyer_a"],
+            "seller_id": world["seller"],
+            "product_id": world["product_id"],
+            "request_hash": "0" * 64,
+            "created_at": legacy_created_at,
+        },
+    )
+    db.commit()
+
+    run_alembic("upgrade", "head")
+
+    row = db.execute(text("SELECT created_at, expires_at, cancelled_at, cancel_reason FROM orders")).one()
+    assert row.expires_at == payment_deadline(row.created_at)
+    assert row.expires_at == payment_deadline(legacy_created_at)
+    # แถวเดิมยังไม่ถูกยกเลิก คอลัมน์ใหม่ที่เหลือต้องว่าง
+    assert (row.cancelled_at, row.cancel_reason) == (None, None)
+
+    with pytest.raises(IntegrityError):
+        # NOT NULL ของ expires_at ต้องมีผลกับแถวใหม่หลัง backfill ด้วย
+        db.execute(text("INSERT INTO orders (buyer_id) VALUES (:id)"), {"id": world["buyer_a"]})
+        db.commit()
+    db.rollback()
+
+
+def test_expiry_lookup_index_exists_after_migration(pg_engine):
+    """ด่านตรวจ Order หมดเวลาที่แคตตาล็อกเรียกทุกครั้งต้องมี index บางส่วนรองรับ (D-05)"""
+    with pg_engine.connect() as connection:
+        definition = connection.execute(
+            text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_orders_waiting_expires_at'")
+        ).scalar_one()
+    assert "expires_at" in definition
+    # index บางส่วน: ต้องแตะเฉพาะแถวที่ยังรอชำระเงิน ไม่ใช่ทั้งตาราง
+    assert "WHERE" in definition
+    assert "status" in definition and "WAITING_PAYMENT" in definition

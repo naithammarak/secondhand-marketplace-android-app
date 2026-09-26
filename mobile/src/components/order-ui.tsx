@@ -9,7 +9,11 @@ import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
 export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: '#B7791F',
   WAITING_SELLER_SHIP: '#2F855A',
+  CANCELLED: '#718096',
+  UNKNOWN: '#718096',
 };
+
+export const unknownStatusColor = '#718096';
 
 export const orderErrorMessages: Record<OrderErrorKind, string> = {
   unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
@@ -36,6 +40,8 @@ export const orderCodeMessages: Record<string, string> = {
   payment_simulation_disabled: 'ระบบจ่ายเงินจำลองปิดอยู่ในสภาพแวดล้อมนี้',
   receipt_not_found: 'ยังไม่มีใบเสร็จสำหรับคำสั่งซื้อนี้',
   not_order_buyer: 'เฉพาะผู้ซื้อของคำสั่งซื้อนี้เท่านั้น',
+  order_cancelled: 'คำสั่งซื้อนี้ถูกยกเลิกแล้ว',
+  order_expired: 'หมดเวลาชำระเงิน คำสั่งซื้อนี้ถูกยกเลิกอัตโนมัติและสินค้าถูกปล่อยให้ผู้อื่นซื้อได้',
 };
 
 export function errorText(kind: OrderErrorKind, code?: string | null): string {
@@ -102,7 +108,7 @@ export function Button({
 export function StatusBadge({ status, label }: { status: OrderStatus; label: string }) {
   return (
     <View style={styles.statusRow}>
-      <View style={[styles.statusDot, { backgroundColor: orderStatusColors[status] }]} />
+      <View style={[styles.statusDot, { backgroundColor: orderStatusColors[status] ?? unknownStatusColor }]} />
       <ThemedText type="smallBold" accessibilityLiveRegion="polite">{label}</ThemedText>
     </View>
   );

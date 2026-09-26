@@ -20,8 +20,8 @@ from app.main import app
 from app.models.certificate import Certificate
 from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
 from app.models.order import Order
-from app.models.shipment import Shipment
-from app.models.user import UserRole
+from app.models.shipment import Shipment, ShipmentDeliveryProof
+from app.models.user import User, UserRole, UserStatus
 from tests.order_helpers import create_product, create_user, new_key, order_body, patch_auth
 
 
@@ -70,10 +70,12 @@ def world(pg_engine, monkeypatch, tmp_path):
         buyer, buyer_h = create_user(session, UserRole.BUYER)
         seller, seller_h = create_user(session, UserRole.SELLER)
         _, inspector_h = create_user(session, UserRole.INSPECTOR)
+        courier_id, courier_h = create_user(session, UserRole.COURIER)
+        _, admin_h = create_user(session, UserRole.ADMIN)
         _, other_h = create_user(session, UserRole.BUYER)
         product_id = create_product(session, seller)
     with TestClient(app) as client:
-        yield client, pg_engine, buyer_h, seller_h, inspector_h, other_h, product_id
+        yield client, pg_engine, buyer_h, seller_h, inspector_h, other_h, product_id, courier_id, courier_h, admin_h
     app.dependency_overrides.pop(get_db, None)
 
 
@@ -88,7 +90,7 @@ def image_bytes():
 
 
 def started_work(world):
-    client, _, buyer, seller, inspector, other, product = world
+    client, _, buyer, seller, inspector, other, product, courier_id, courier, admin = world
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
     assert created.status_code == 201, created.text
     order_id = created.json()["id"]
@@ -106,6 +108,21 @@ def started_work(world):
     assert queue.status_code == 200, queue.text
     work_id = next(item["id"] for item in queue.json()["items"] if item["order_id"] == order_id)
     assert client.get(f"/inspections/{work_id}", headers=other).status_code == 403
+    with Session(world[1]) as session:
+        shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
+    assert client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector)).status_code == 409
+    assert client.post(f"/admin/shipments/{shipment_id}/assign-courier", json={"courier_id": courier_id}, headers=request_headers(seller)).status_code == 403
+    assigned = client.post(f"/admin/shipments/{shipment_id}/assign-courier", json={"courier_id": courier_id}, headers=request_headers(admin))
+    assert assigned.status_code == 200, assigned.text
+    assert client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", headers=request_headers(courier)).status_code == 409
+    assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(other)).status_code == 403
+    uploaded = client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(courier))
+    assert uploaded.status_code == 201, uploaded.text
+    proof_id = uploaded.json()["proof"]["id"]
+    assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=other).status_code == 404
+    assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=buyer).status_code == 200
+    confirmed = client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", headers=request_headers(courier))
+    assert confirmed.status_code == 200, confirmed.text
     received = client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector))
     assert received.status_code == 200 and received.json()["order_status"] == "RECEIVED_AT_CENTER", received.text
     started = client.post(f"/inspections/{work_id}/start", json={}, headers=request_headers(inspector))
@@ -115,7 +132,7 @@ def started_work(world):
 
 @pytest.mark.parametrize("result", ["PASS", "MINOR_ISSUE", "NOT_AS_DESCRIBED", "FAKE"])
 def test_seller_inspector_buyer_flow(world, result):
-    client, engine, buyer, seller, inspector, other, _ = world
+    client, engine, buyer, seller, inspector, other, _, _, _, _ = world
     order_id, work_id = started_work(world)
     image_key = new_key()
     uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers={**inspector, "Idempotency-Key": image_key})
@@ -155,7 +172,7 @@ def test_seller_inspector_buyer_flow(world, result):
 
 
 def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatch):
-    client, engine, buyer, _, inspector, _, _ = world
+    client, engine, buyer, _, inspector, _, _, _, _, _ = world
     order_id, work_id = started_work(world)
     uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
     photo_id = uploaded.json()["evidence"]["id"]
@@ -176,7 +193,7 @@ def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatc
 
 
 def test_concurrent_ship_creates_one_shipment(world):
-    client, engine, buyer, seller, _, _, product = world
+    client, engine, buyer, seller, _, _, product, _, _, _ = world
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
     order_id = created.json()["id"]
     assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
@@ -192,7 +209,7 @@ def test_concurrent_ship_creates_one_shipment(world):
 
 
 def test_concurrent_result_replay_has_one_certificate(world):
-    client, engine, _, _, inspector, _, _ = world
+    client, engine, _, _, inspector, _, _, _, _, _ = world
     order_id, work_id = started_work(world)
     uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
     photo_id = uploaded.json()["evidence"]["id"]
@@ -209,3 +226,61 @@ def test_concurrent_result_replay_has_one_certificate(world):
     with Session(engine) as session:
         assert session.query(Certificate).filter_by(order_id=order_id).count() == 1
         assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 1
+
+
+def test_courier_proof_limits_replay_and_storage_failure(world, tmp_path):
+    client, engine, buyer, seller, inspector, other, product, courier_id, courier, admin = world
+    created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
+    order_id = created.json()["id"]
+    assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+    assert client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo", "tracking_number": "C-123"}, headers=request_headers(seller)).status_code == 200
+    with Session(engine) as session:
+        shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
+        work_id = session.query(Inspection).filter_by(order_id=order_id).one().id
+    assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("p.png", image_bytes(), "image/png")}, headers=request_headers(courier)).status_code == 404
+    assign_key = new_key()
+    assign_url = f"/admin/shipments/{shipment_id}/assign-courier"
+    assigned = client.post(assign_url, json={"courier_id": courier_id}, headers={**admin, "Idempotency-Key": assign_key})
+    assert assigned.status_code == 200, assigned.text
+    repeated = client.post(assign_url, json={"courier_id": courier_id}, headers={**admin, "Idempotency-Key": assign_key})
+    assert repeated.status_code == 200 and repeated.headers["Idempotent-Replayed"] == "true"
+    with Session(engine) as session:
+        session.get(User, courier_id).status = UserStatus.SUSPENDED
+        session.commit()
+    assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("p.png", image_bytes(), "image/png")}, headers=request_headers(courier)).status_code == 403
+    with Session(engine) as session:
+        session.get(User, courier_id).status = UserStatus.ACTIVE
+        session.commit()
+    assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("p.webp", b"fake", "image/webp")}, headers=request_headers(courier)).status_code == 415
+    proof_ids = []
+    for index in range(2):
+        key = new_key()
+        url = f"/courier/shipments/{shipment_id}/proofs"
+        proof = client.post(url, files={"file": ("p.png", image_bytes(), "image/png")}, headers={**courier, "Idempotency-Key": key})
+        assert proof.status_code == 201, proof.text
+        proof_ids.append(proof.json()["proof"]["id"])
+        replay = client.post(url, files={"file": ("p.png", image_bytes(), "image/png")}, headers={**courier, "Idempotency-Key": key})
+        assert replay.status_code == 201 and replay.headers["Idempotent-Replayed"] == "true"
+    def race_upload(_):
+        return client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("p.png", image_bytes(), "image/png")}, headers=request_headers(courier))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        raced = list(pool.map(race_upload, range(2)))
+    assert sorted(item.status_code for item in raced) == [201, 409], [item.text for item in raced]
+    proof_ids.append(next(item for item in raced if item.status_code == 201).json()["proof"]["id"])
+    assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("p.png", image_bytes(), "image/png")}, headers=request_headers(courier)).status_code == 409
+    assert client.post(assign_url, json={"courier_id": courier_id}, headers=request_headers(admin)).status_code == 409
+    with Session(engine) as session:
+        proof = session.get(ShipmentDeliveryProof, proof_ids[0])
+        stored_path = tmp_path / "private-inspection-images" / proof.object_key
+    original = stored_path.read_bytes()
+    stored_path.write_bytes(b"corrupted")
+    confirm_url = f"/courier/shipments/{shipment_id}/confirm-delivery"
+    assert client.post(confirm_url, headers=request_headers(courier)).status_code == 503
+    assert client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector)).status_code == 409
+    stored_path.write_bytes(original)
+    confirmed = client.post(confirm_url, headers=request_headers(courier))
+    assert confirmed.status_code == 200, confirmed.text
+    assert client.post(confirm_url, headers=request_headers(courier)).status_code == 409
+    with Session(engine) as session:
+        assert session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment_id).count() == 3
+        assert session.get(Shipment, shipment_id).courier_delivered_at is not None

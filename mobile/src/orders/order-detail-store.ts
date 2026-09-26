@@ -23,6 +23,9 @@ export type OrderDetailState = {
   lastResult: PaymentResultKind | null;
   /** คำขอจ่ายหมดเวลาและตรวจสถานะแล้วยังไม่รู้ผล ปุ่มลองใหม่จะใช้ key เดิม */
   uncertain: boolean;
+  cancelling: boolean;
+  cancelError: OrderErrorKind | null;
+  cancelCode: string | null;
   receipt: Receipt | null;
   receiptLoading: boolean;
   receiptError: OrderErrorKind | null;
@@ -40,6 +43,9 @@ export const initialOrderDetailState: OrderDetailState = {
   payCode: null,
   lastResult: null,
   uncertain: false,
+  cancelling: false,
+  cancelError: null,
+  cancelCode: null,
   receipt: null,
   receiptLoading: false,
   receiptError: null,
@@ -55,6 +61,13 @@ type PendingPayment = { key: string; outcome: PaymentOutcome };
 export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
   let state: OrderDetailState = initialOrderDetailState;
   let generation = 0;
+  /**
+   * นับครั้งที่ได้ "คำตอบที่เชื่อถือกว่าการอ่าน" (ผลการจ่ายและผลการยกเลิก)
+   * การอ่านที่ออกไปก่อนหน้านั้นอาจกลับมาทีหลังและทับสถานะใหม่ได้ เช่น กดรีเฟรชแล้วกดยกเลิก
+   * คำตอบของรีเฟรชที่มาช้าจะพา Order กลับไปเป็น WAITING_PAYMENT ทั้งที่ยกเลิกสำเร็จแล้ว
+   * จึงต้องทิ้งผลการอ่านที่ออกไปก่อนคำตอบล่าสุดเสมอ
+   */
+  let orderEpoch = 0;
   let pending: PendingPayment | null = null;
   let controllers = new Set<AbortController>();
   const listeners = new Set<() => void>();
@@ -87,11 +100,17 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
     const { owner, orderId } = state;
     if (!owner || orderId === null) return null;
     const current = generation;
+    const epoch = orderEpoch;
     const { signal, done } = track();
     set(mode === 'load' ? { loading: true, loadError: null } : { refreshing: true, loadError: null });
     try {
       const order = await withToken(deps, token => deps.service.getOrder(token, orderId, signal), signal);
       if (current !== generation) return null;
+      if (epoch !== orderEpoch) {
+        // มีผลการจ่ายหรือการยกเลิกเข้ามาหลังจากคำขออ่านนี้ออกไป ผลที่อ่านมาถือว่าเก่ากว่า
+        set({ loading: false, refreshing: false });
+        return null;
+      }
       set({ order, loading: false, refreshing: false });
       return order;
     } catch (error) {
@@ -126,6 +145,7 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
       }, signal), signal);
       if (current !== generation) return;
       pending = null;
+      orderEpoch += 1;
       set({
         paying: null,
         uncertain: false,
@@ -150,6 +170,42 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
       pending = null;
       set({ paying: null, uncertain: false, payError: kind, payCode: code });
       // จ่ายไปแล้วจากคำขออื่น หรือ key ถูกใช้ไปแล้ว ให้ดึงสถานะล่าสุดมาแสดง
+      if (kind === 'conflict') await fetchOrder('refresh');
+    } finally {
+      done();
+    }
+  };
+
+  const cancel = async () => {
+    const { owner, orderId, order } = state;
+    if (!owner || orderId === null || !order) return;
+    if (state.cancelling || state.paying) return;
+    // สิทธิ์ยกเลิกตัดสินที่ server เสมอ หน้าจอไม่คิดเงื่อนไขเอง
+    if (!order.canCancel) return;
+
+    const current = generation;
+    const { signal, done } = track();
+    set({ cancelling: true, cancelError: null, cancelCode: null });
+    try {
+      const updated = await withToken(deps, token => deps.service.cancelOrder(token, orderId, signal), signal);
+      if (current !== generation) return;
+      // ยกเลิกแล้วคำขอจ่ายที่ค้างอยู่ใช้ไม่ได้อีก ล้างทิ้งพร้อมกัน
+      pending = null;
+      // การอ่านที่ยังค้างอยู่ต้องทับผลการยกเลิกนี้ไม่ได้
+      orderEpoch += 1;
+      set({
+        cancelling: false,
+        order: updated,
+        payError: null,
+        payCode: null,
+        lastResult: null,
+        uncertain: false,
+      });
+    } catch (error) {
+      if (current !== generation || signal.aborted) return;
+      const kind = errorKind(error);
+      set({ cancelling: false, cancelError: kind, cancelCode: errorCode(error) });
+      // สถานะเปลี่ยนไปก่อนแล้ว (เช่น จ่ายเงินสำเร็จพอดี) ให้ดึงของจริงมาแสดง
       if (kind === 'conflict') await fetchOrder('refresh');
     } finally {
       done();
@@ -183,6 +239,8 @@ export function createOrderDetailStore(deps: OrderDetailStoreDeps) {
     },
 
     pay,
+
+    cancel,
 
     /** ลองส่งคำขอที่ไม่รู้ผลอีกครั้งด้วย key เดิม */
     retryUncertain() {

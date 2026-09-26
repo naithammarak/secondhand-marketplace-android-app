@@ -18,6 +18,12 @@ class OrderStatus(str, Enum):
     RECEIVED_AT_CENTER = "RECEIVED_AT_CENTER"
     INSPECTING = "INSPECTING"
     RESULT_NOTIFIED = "RESULT_NOTIFIED"
+    CANCELLED = "CANCELLED"
+
+
+class CancelReason(str, Enum):
+    BUYER = "BUYER"
+    EXPIRED = "EXPIRED"
 
 
 class PaymentStatus(str, Enum):
@@ -109,6 +115,11 @@ class OrderDetail(BaseModel):
     paid_at: datetime | None
     receipt_no: str | None
     can_pay: bool
+    can_cancel: bool
+    # เส้นตายการจ่ายเงินจาก server หน้าจอนับถอยหลังตามค่านี้ ห้ามคำนวณเส้นตายเอง
+    expires_at: datetime | None
+    cancelled_at: datetime | None
+    cancel_reason: CancelReason | None
     created_at: datetime | None
     updated_at: datetime | None
 
@@ -122,6 +133,8 @@ class OrderListItem(BaseModel):
     total_amount: Decimal | None
     seller_payout: Decimal | None
     currency: str
+    expires_at: datetime | None
+    cancel_reason: CancelReason | None
     created_at: datetime | None
     paid_at: datetime | None
 

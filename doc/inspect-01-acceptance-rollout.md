@@ -1,5 +1,15 @@
 # INSPECT-01: contract comparison and rollout evidence
 
+## Current contract update — 26 September 2026
+
+The team confirms the Lead's [latest #54 decision](https://github.com/naithammarak/secondhand-marketplace-android-app/issues/54#issuecomment-5846253245) as final for this implementation. The issue body below that comment still describes the older draft. PR #93 now stacks on ORDER-08/09 PR #92: revision `f3c1a09d8b56` follows `c93b7e5a1d84`, and the Order CHECK preserves `CANCELLED` plus all four Inspect states.
+
+The new storage contract adds an assigned `COURIER` user and private `shipment_delivery_proofs` (JPEG/PNG, 1–3 per confirmed leg, 5 MiB per image, hash and server metadata). `TO_CENTER` Inspector receipt requires a separate Courier confirmation. `TO_BUYER` and `TO_SELLER` are represented for FINISH without conflating Buyer receipt with inspection decision. Active role/assignment checks, actual object and image verification, protected read, audit, and upload/confirm HTTP endpoints remain COURIER-02/INSPECT-02 work; the database guards ownership metadata and confirmation order.
+
+On an isolated PostgreSQL 18 database, INSPECT-01 migration tests passed 12/12 after this update, including preserved paid/CANCELLED Orders, proof/assignment constraints and final-result race checks. No migration was run on the shared Supabase database. Its untracked Alembic revision `ab2409240001` must be reconciled before any shared deployment. The 23 September notes below are retained as historical review context; their statements that #54 is still a draft and that the migration follows `9446ec1a2c5d` no longer describe this PR.
+
+## Historical review worksheet — 23 September 2026
+
 Prepared for [PR #93](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/93) and [issue #56](https://github.com/naithammarak/secondhand-marketplace-android-app/issues/56), 2026-09-23. This is an evidence worksheet, **not DB1/DB2 or Lead sign-off**. Keep both remaining #56 criteria open and PR #93 in draft until the named reviewers record their answers.
 
 ## 1. INSPECT-00 comparison
@@ -10,8 +20,8 @@ Source checked: [issue #54](https://github.com/naithammarak/secondhand-marketpla
 |---|---|---|
 | Order has one product; keep two existing statuses and add `SHIPPING_TO_CENTER`, `RECEIVED_AT_CENTER`, `INSPECTING`, `RESULT_NOTIFIED` | `backend/migrations/versions/f3c1a09d8b56_inspect_01_storage.py` expands `ck_orders_status`; `backend/app/models/order.py` and `backend/app/schemas/order.py` accept all six; `backend/tests/test_orders_api.py` reads each new state through list/detail | Matches DB and Order-read scope; FE mobile decoder remains follow-up |
 | One inbound `TO_CENTER` shipment per Order; carrier/tracking, delivery time and recipient | `backend/app/models/shipment.py` and migration: FK, unique `(order_id,leg)`, status/receipt/length CHECKs | Matches DB scope |
-| One inspection per Order; nullable assignment until start; final result, summary and timestamp together | `backend/app/models/inspection.py` and migration: FK, unique `order_id` and `(id,order_id)`, assignment/final-result CHECKs; trigger freezes final fields | Matches DB scope |
-| Evidence is private metadata tied to one inspection; selected result images cannot cross inspections or change after finalization | `inspection_evidence` and `inspection_result_evidence` have private object-key metadata, unique key and composite FK; triggers prevent late inserts, selected-image mutation and moves into finalized work | Matches DB scope; actual private storage and authorized image endpoint belong to BE |
+| One inspection per Order; nullable assignment until start; final result, summary and timestamp together | `backend/app/models/inspection.py` and migration: FK, unique `order_id` and `(id,order_id)`, assignment/final-result CHECKs; trigger freezes final fields and `order_id` | Matches DB scope |
+| Evidence is private metadata tied to one inspection; selected result images cannot cross inspections or change after finalization | `inspection_evidence` and `inspection_result_evidence` have private object-key metadata, unique key and composite FK; triggers prevent late inserts and all evidence updates, moves or deletes after finalization | Matches DB scope; actual private storage and authorized image endpoint belong to BE |
 | New public tables have RLS with no direct anon/authenticated access | Migration enables RLS on five tables; `backend/tests/test_inspection_postgres.py` checks direct access | Matches DB scope |
 | Result submission selects 1–5 unique images from the same inspection and issues an eligible Certificate atomically | Composite FK and result-evidence association support this. Count, permissions, actual upload bytes, Certificate and atomic result endpoint are service/CERT work, not implemented in INSPECT-01 | Pending BE/CERT end-to-end evidence; do not claim full #54 behavior |
 

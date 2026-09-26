@@ -406,6 +406,15 @@ def test_migration_graph_unifies_to_single_head():
     image_revision = script.get_revision("9446ec1a2c5d")
     assert image_revision.down_revision == "daf675afc8fc"
 
+    order_cancel_revision = script.get_revision("b41d7ce09f35")
+    assert order_cancel_revision.down_revision == "9446ec1a2c5d"
+
+    audit_revision = script.get_revision("a5f1c9d2e7b3")
+    assert audit_revision.down_revision == "b41d7ce09f35"
+
+    expiry_index_revision = script.get_revision("c93b7e5a1d84")
+    assert expiry_index_revision.down_revision == "a5f1c9d2e7b3"
+
 
 def _alembic_config() -> Config:
     backend_dir = Path(__file__).resolve().parents[1]

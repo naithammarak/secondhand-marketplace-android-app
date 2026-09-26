@@ -19,7 +19,14 @@ from app.models.product_image import ProductImage
 from app.models.product_upload import ProductUpload
 from app.models.user import User, UserRole, UserStatus
 from app.models.verification import Verification
-from tests.order_helpers import create_user, patch_auth
+from app.models.order import Order
+from app.services.order_pricing import utcnow
+from tests.order_helpers import (
+    VALID_ADDRESS,
+    create_user,
+    new_key,
+    patch_auth,
+)
 
 
 engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
@@ -314,7 +321,9 @@ def test_list_query_count_does_not_grow_with_products(db):
         event.remove(engine, "before_cursor_execute", track)
     assert response.status_code == 200
     assert response.json()["meta"]["total"] == 10
-    assert len(statements) == 4  # approval integrity, count, page, batch images
+    # จำนวนคำสั่งต้องคงที่ไม่ว่าจะมีสินค้ากี่ชิ้น: ด่านตรวจ Order หมดเวลา (D-05), approval integrity,
+    # count, page, batch images — ด่านตรวจหมดเวลาเป็นคำสั่งอ่าน LIMIT 1 และไม่เขียนอะไรเมื่อไม่มีของค้าง
+    assert len(statements) == 5
 
 
 def test_malformed_approval_returns_503_for_public_reads(db):
@@ -377,3 +386,117 @@ def test_options_connection_failure_returns_safe_error(db, monkeypatch, path, fa
     assert error["request_id"].startswith("req-")
     assert response.headers["cache-control"] == "no-store"
     assert "private" not in response.text
+
+
+# ---------------------------------------------------------------- การจองที่หมดเวลา (D-05)
+
+
+def reserve_product(db, buyer_headers, product_id):
+    """สั่งซื้อจริงผ่าน API เพื่อให้สินค้าเปลี่ยนเป็น RESERVED ตามเส้นทางจริง"""
+    response = client.post(
+        "/orders",
+        json={"product_id": product_id, "shipping_address": VALID_ADDRESS},
+        headers={**buyer_headers, "Idempotency-Key": new_key()},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def move_deadline_into_the_past(db, order_id):
+    db.expire_all()
+    order = db.get(Order, order_id)
+    order.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()
+
+
+def status_of(db, product_id):
+    db.expire_all()
+    return db.get(Product, product_id).status
+
+
+@pytest.fixture
+def reserved_world(db):
+    """ผู้ขายที่ผ่านการอนุมัติ สินค้าหนึ่งชิ้น และ Order ที่จองสินค้าชิ้นนั้นไว้"""
+    seller_id, seller_headers = create_user(db, UserRole.SELLER, name="ผู้ขาย ทดสอบ")
+    approve(db, seller_id)
+    buyer_id, buyer_headers = create_user(db, UserRole.BUYER, name="ผู้ซื้อ ทดสอบ")
+    category_id, brand_id = catalog(db)
+    product_id = product(db, seller_id, category_id, brand_id, name="เสื้อแจ็กเก็ตมือสอง")
+    order_id = reserve_product(db, buyer_headers, product_id)
+    assert status_of(db, product_id) == "RESERVED"
+    return {
+        "seller_id": seller_id,
+        "seller": seller_headers,
+        "buyer": buyer_headers,
+        "product_id": product_id,
+        "order_id": order_id,
+    }
+
+
+def test_reserved_product_stays_hidden_while_the_deadline_has_not_passed(reserved_world, db):
+    """ยังไม่หมดเวลา = ยังจองอยู่จริง ต้องไม่ถูกปล่อยเพราะแค่มีคนเปิดดูแคตตาล็อก"""
+    listing = client.get("/products")
+    assert [item["id"] for item in listing.json()["data"]] == []
+    assert client.get(f"/products/{reserved_world['product_id']}").status_code == 404
+    assert status_of(db, reserved_world["product_id"]) == "RESERVED"
+
+
+def test_expired_reservation_reappears_in_the_public_list(reserved_world, db):
+    """ผู้ซื้อที่เดินดูแคตตาล็อกตามปกติต้องเจอสินค้าที่การจองหมดเวลาแล้ว"""
+    move_deadline_into_the_past(db, reserved_world["order_id"])
+
+    listing = client.get("/products")
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()["data"]] == [reserved_world["product_id"]]
+    assert listing.json()["meta"]["total"] == 1
+
+    assert status_of(db, reserved_world["product_id"]) == "AVAILABLE"
+    db.expire_all()
+    order = db.get(Order, reserved_world["order_id"])
+    assert (order.status, order.cancel_reason) == ("CANCELLED", "EXPIRED")
+
+
+def test_expired_reservation_reappears_in_the_public_detail(reserved_world, db):
+    """เปิดจากลิงก์ตรงก็ต้องปล่อยสินค้าเหมือนกัน ไม่ต้องรอให้ใครเปิดหน้ารายการก่อน"""
+    move_deadline_into_the_past(db, reserved_world["order_id"])
+
+    response = client.get(f"/products/{reserved_world['product_id']}")
+    assert response.status_code == 200
+    assert response.json()["data"]["id"] == reserved_world["product_id"]
+    assert status_of(db, reserved_world["product_id"]) == "AVAILABLE"
+
+
+def test_expired_reservation_returns_to_the_seller_own_list(reserved_world, db):
+    """ผู้ขายเปิดรายการสินค้าของตัวเองก็ต้องเห็นสถานะจริง ไม่ใช่ RESERVED ค้างจากการจองที่ตายแล้ว"""
+    move_deadline_into_the_past(db, reserved_world["order_id"])
+
+    response = client.get("/products/me", headers=reserved_world["seller"])
+    assert response.status_code == 200
+    statuses = {item["id"]: item["status"] for item in response.json()["data"]}
+    assert statuses[reserved_world["product_id"]] == "AVAILABLE"
+    assert status_of(db, reserved_world["product_id"]) == "AVAILABLE"
+
+
+def test_paid_product_is_never_released_by_browsing(reserved_world, db, monkeypatch):
+    """สินค้าที่จ่ายเงินแล้วต้องไม่กลับมาขายได้ ไม่ว่าจะมีใครเปิดแคตตาล็อกกี่ครั้ง"""
+    monkeypatch.setenv("PAYMENT_SIMULATION_ENABLED", "true")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    paid = client.post(
+        f"/orders/{reserved_world['order_id']}/payments/simulate",
+        json={"outcome": "SUCCESS"},
+        headers={**reserved_world["buyer"], "Idempotency-Key": new_key()},
+    )
+    assert paid.status_code == 200
+    move_deadline_into_the_past_for_paid_order(db, reserved_world["order_id"])
+
+    assert client.get("/products").json()["data"] == []
+    assert client.get(f"/products/{reserved_world['product_id']}").status_code == 404
+    assert status_of(db, reserved_world["product_id"]) == "RESERVED"
+
+
+def move_deadline_into_the_past_for_paid_order(db, order_id):
+    """Order ที่จ่ายแล้วก็มี expires_at ในอดีตได้ แต่ห้ามถูกกวาด"""
+    db.expire_all()
+    order = db.get(Order, order_id)
+    order.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()

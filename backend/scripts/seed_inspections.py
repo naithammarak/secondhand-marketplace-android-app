@@ -19,7 +19,7 @@ from app.models.category import Category
 from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
-from app.models.shipment import Shipment
+from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole
 
 
@@ -83,12 +83,18 @@ def _scenario_matches(session, order, namespace, key, status, result):
         return True
     expected_received = status in {"RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED"}
     expected_started = status in {"INSPECTING", "RESULT_NOTIFIED"}
+    courier = session.scalar(select(User).where(User.supabase_user_id == _uuid(namespace, "courier")))
+    proofs = session.scalars(select(ShipmentDeliveryProof).where(ShipmentDeliveryProof.shipment_id == shipment.id)).all()
     if (
         inspection.result != result or (inspection.started_at is not None) != expected_started
         or (inspection.inspector_id is not None) != expected_started
         or (inspection.inspected_at is not None) != (result is not None)
         or shipment.status != ("DELIVERED" if expected_received else "IN_TRANSIT")
         or (shipment.received_at is not None) != expected_received
+        or shipment.courier_id != courier.id
+        or (shipment.courier_delivered_at is not None) != expected_received
+        or len(proofs) != (1 if expected_received else 0)
+        or (proofs and proofs[0].uploaded_by != courier.id)
         or shipment.carrier != "Synthetic Carrier"
         or shipment.tracking_number != f"I01-{_uuid(namespace, key).hex[:16]}"
     ):
@@ -109,6 +115,7 @@ def seed(session, namespace):
     buyer = _user(session, namespace, "BUYER")
     seller = _user(session, namespace, "SELLER")
     inspector = _user(session, namespace, "INSPECTOR")
+    courier = _user(session, namespace, "COURIER")
     category = _one(session, Category, category_name=f"INSPECT-01 {namespace}")
     brand = _one(session, Brand, brand_name=f"INSPECT-01 {namespace}")
     report = []
@@ -144,6 +151,7 @@ def seed(session, namespace):
             ship_district="Synthetic district", ship_province="Synthetic province",
             ship_postal_code="10110", idempotency_key=fixture_key,
             request_hash="0" * 64, paid_at=BASE_TIME,
+            expires_at=BASE_TIME + timedelta(minutes=30),
         )
         session.add(order)
         session.flush()
@@ -167,11 +175,10 @@ def seed(session, namespace):
             received = status in {"RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED"}
             started = status in {"INSPECTING", "RESULT_NOTIFIED"}
             shipment = Shipment(
-                order_id=order.id, leg="TO_CENTER", status="DELIVERED" if received else "IN_TRANSIT",
+                order_id=order.id, leg="TO_CENTER", status="IN_TRANSIT",
                 carrier="Synthetic Carrier", tracking_number=f"I01-{_uuid(namespace, key).hex[:16]}",
                 shipped_at=BASE_TIME,
-                received_at=BASE_TIME + timedelta(hours=1) if received else None,
-                received_by=inspector.id if received else None,
+                courier_id=courier.id,
             )
             inspection = Inspection(
                 order_id=order.id, inspector_id=inspector.id if started else None,
@@ -179,6 +186,20 @@ def seed(session, namespace):
             )
             session.add_all([shipment, inspection])
             session.flush()
+            if received:
+                session.add(ShipmentDeliveryProof(
+                    shipment_id=shipment.id, sort_order=0,
+                    object_key=f"fixtures/inspect01/{namespace}/{key}/courier.jpg",
+                    mime_type="image/jpeg", size_bytes=1, sha256="b" * 64,
+                    uploaded_by=courier.id, uploaded_at=BASE_TIME + timedelta(minutes=30),
+                ))
+                session.flush()
+                shipment.courier_delivered_at = BASE_TIME + timedelta(minutes=45)
+                session.flush()
+                shipment.status = "DELIVERED"
+                shipment.received_at = BASE_TIME + timedelta(hours=1)
+                shipment.received_by = inspector.id
+                session.flush()
             if result:
                 evidence = InspectionEvidence(
                     inspection_id=inspection.id,

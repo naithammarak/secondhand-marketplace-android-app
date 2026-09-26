@@ -125,3 +125,31 @@ test('does not show "ลงขายสินค้า" button when seller is no
   expect(screen.queryByRole('button', { name: 'ลงขายสินค้า' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'สินค้าของฉัน' })).toBeNull();
 });
+
+
+describe('ทางเข้าซื้อด้วยรหัสสินค้า (ORDER-04, D-16)', () => {
+  const buyerAuth = () =>
+    newUserAuth({ account: { fullName: 'สมใจ ซื้อดี', role: 'BUYER', source: 'backend' } });
+
+  test('ซ่อนไว้เป็นค่าตั้งต้น แม้ผู้ใช้จะเป็นผู้ซื้อ', async () => {
+    mockAuth = buyerAuth();
+    await render(<LoginScreen />);
+
+    expect(screen.getByLabelText('ไปหน้าคำสั่งซื้อ')).toBeTruthy();
+    expect(screen.queryByLabelText('ซื้อสินค้าด้วยรหัสสินค้า')).toBeNull();
+  });
+
+  test('แสดงเฉพาะ build พัฒนาที่เปิด flag ไว้', async () => {
+    const previous = process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY;
+    process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY = 'true';
+    mockAuth = buyerAuth();
+    try {
+      await render(<LoginScreen />);
+      await fireEvent.press(screen.getByLabelText('ซื้อสินค้าด้วยรหัสสินค้า'));
+      expect(mockPush).toHaveBeenCalledWith('/buy-by-product-id');
+    } finally {
+      if (previous === undefined) delete process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY;
+      else process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY = previous;
+    }
+  });
+});
