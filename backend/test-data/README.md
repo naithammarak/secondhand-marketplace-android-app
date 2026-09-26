@@ -24,7 +24,7 @@ This directory contains a synthetic roster showing the shape of role assignments
 6. DB2 repeats the preview to verify `already-set`, then checks that `public.users` contains exactly one row for that UUID.
 7. QA keeps the alias-to-real-email mapping in the team's approved private channel. It is never copied into GitHub Issues, screenshots, logs, or repository files.
 
-Equivalent role values for the same preview/apply commands are `BUYER`, `SELLER`, and `INSPECTOR` (in addition to `ADMIN`).
+Equivalent role values for the same preview/apply commands are `BUYER`, `SELLER`, `INSPECTOR`, and `COURIER` (in addition to `ADMIN`). Courier accounts are assigned by staff; login role selection remains limited to Buyer/Seller.
 
 ## Recovery and safety
 
@@ -37,7 +37,7 @@ The command enforces fail-closed execution: applying changes (`--apply`) require
 Do not place credentials, access or refresh tokens, database URLs, service-role keys, real names, personal emails, or private mappings in this repository.
 # INSPECT-01 synthetic fixtures
 
-`scripts.seed_inspections` creates eight deterministic scenarios on a **dedicated local PostgreSQL test database**: paid Order awaiting Seller shipment, shipping, received, inspecting, and final results `PASS`, `MINOR_ISSUE`, `NOT_AS_DESCRIBED`, `FAKE`. It also creates synthetic Buyer/Seller/Inspector users, products, payment/escrow/receipt rows, private object-key placeholders and one selected evidence image per final result. It never writes a storage object or issues a certificate.
+`scripts.seed_inspections` creates eight deterministic scenarios on a **dedicated local PostgreSQL test database**: paid Order awaiting Seller shipment, shipping, received, inspecting, and final results `PASS`, `MINOR_ISSUE`, `NOT_AS_DESCRIBED`, `FAKE`. It also creates synthetic Buyer/Seller/Inspector/Courier users, products, payment/escrow/receipt rows, private object-key placeholders, a Courier proof before each Inspector receipt, and one selected inspection image per final result. It never writes a storage object or issues a certificate.
 
 Prepare an empty local database whose name includes `test`, then migrate it to the INSPECT-01 head. Supply its URL explicitly; the command refuses a non-local host or the application's `DATABASE_URL`.
 

@@ -2,7 +2,7 @@
 
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from threading import Event
@@ -19,16 +19,16 @@ from sqlalchemy.orm import Session
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.user import UserRole
-from app.models.shipment import Shipment
+from app.models.shipment import Shipment, ShipmentDeliveryProof
 from scripts.seed_inspections import SCENARIOS, seed
 from tests.order_helpers import VALID_ADDRESS, create_product, create_user
 
 
 PG_URL = os.getenv("INSPECT_TEST_DATABASE_URL")
 BACKEND = Path(__file__).resolve().parents[1]
-PRE_INSPECT = "9446ec1a2c5d"
+PRE_INSPECT = "c93b7e5a1d84"
 INSPECT_HEAD = "f3c1a09d8b56"
-NEW_TABLES = {"shipments", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"}
+NEW_TABLES = {"shipments", "shipment_delivery_proofs", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"}
 pytestmark = pytest.mark.skipif(not PG_URL, reason="INSPECT_TEST_DATABASE_URL is not set")
 
 
@@ -88,6 +88,7 @@ def pg_engine():
                 ship_postal_code=VALID_ADDRESS["postal_code"],
                 idempotency_key="preinspect_order_001", request_hash="0" * 64,
                 paid_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
             )
             session.add(old_order)
             session.flush()
@@ -108,8 +109,21 @@ def pg_engine():
                 inspection_fee=old_order.inspection_fee, total_amount=old_order.total_amount,
             )
             session.add_all([escrow, receipt])
+            cancelled_product_id = create_product(session, seller_id)
+            cancelled_values = {
+                column.name: getattr(old_order, column.name)
+                for column in Order.__table__.columns if column.name != "id"
+            }
+            cancelled_values.update(
+                product_id=cancelled_product_id, status="CANCELLED",
+                paid_at=None, cancelled_at=datetime.now(timezone.utc),
+                cancel_reason="BUYER", idempotency_key="preinspect_cancelled_001",
+            )
+            cancelled_order = Order(**cancelled_values)
+            session.add(cancelled_order)
             session.commit()
             legacy_ids = (old_order.id, attempt.id, payment.id, escrow.id, receipt.id)
+            cancelled_id = cancelled_order.id
 
         def assert_legacy_payment_preserved():
             order_id, attempt_id, payment_id, escrow_id, receipt_id = legacy_ids
@@ -125,9 +139,15 @@ def pg_engine():
                 assert escrow.payment_id == receipt.payment_id == payment_id
                 assert escrow.status == "HELD"
                 assert payment.amount == escrow.amount == receipt.total_amount == order.total_amount
+                cancelled = session.get(Order, cancelled_id)
+                assert cancelled.status == "CANCELLED" and cancelled.cancel_reason == "BUYER"
+                assert cancelled.paid_at is None and cancelled.cancelled_at is not None
 
         _migrate("upgrade", INSPECT_HEAD)
         assert_legacy_payment_preserved()
+        with engine.connect() as connection:
+            status_check = connection.execute(text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid='orders'::regclass AND conname='ck_orders_status'")).scalar_one()
+            assert "CANCELLED" in status_check and "RESULT_NOTIFIED" in status_check
         _migrate("downgrade", PRE_INSPECT)
         assert_legacy_payment_preserved()
         _migrate("upgrade", INSPECT_HEAD)
@@ -170,6 +190,7 @@ def test_data_api_roles_cannot_read_or_write_directly(pg_engine, seeded):
         # Give the roles table privileges so a denial proves RLS, not a missing GRANT.
         connection.execute(text("GRANT USAGE ON SCHEMA public TO anon, authenticated"))
         connection.execute(text("GRANT SELECT ON public.inspections TO anon, authenticated"))
+        connection.execute(text("GRANT SELECT ON public.shipment_delivery_proofs TO anon, authenticated"))
         connection.execute(text("GRANT INSERT ON public.inspection_idempotency TO anon, authenticated"))
 
     for index, role in enumerate(sorted(roles)):
@@ -184,6 +205,7 @@ def test_data_api_roles_cannot_read_or_write_directly(pg_engine, seeded):
                     "SELECT has_table_privilege(current_user, 'public.inspection_idempotency', 'INSERT')"
                 )).scalar_one()
                 assert connection.execute(text("SELECT count(*) FROM public.inspections")).scalar_one() == 0
+                assert connection.execute(text("SELECT count(*) FROM public.shipment_delivery_proofs")).scalar_one() == 0
                 with pytest.raises(DBAPIError, match="row-level security"):
                     connection.execute(
                         text("INSERT INTO public.inspection_idempotency (id, order_id, actor_id, operation, idempotency_key, request_hash, response_status, response_body) VALUES (:id, :order_id, :actor_id, 'probe', 'probe_key_123', :hash, 200, '{}')"),
@@ -258,6 +280,44 @@ def test_constraints_and_cross_inspection_evidence(pg_engine, seeded):
             request_hash="a" * 64, response_status=200, response_body={"ok": True},
         ))
         session.flush()
+        session.rollback()
+
+
+def test_courier_proof_and_inspector_receipt_gate(pg_engine, seeded):
+    with Session(pg_engine) as session:
+        shipment = session.scalar(select(Shipment).where(Shipment.order_id == seeded[1][1]))
+        courier_id = shipment.courier_id
+        inspector_id = session.scalar(select(Inspection.inspector_id).where(Inspection.order_id == seeded[3][1]))
+        assert courier_id != inspector_id
+
+        def rejects(statement, message=None):
+            savepoint = session.begin_nested()
+            with pytest.raises(DBAPIError, match=message):
+                session.execute(statement)
+            savepoint.rollback()
+
+        rejects(text("UPDATE shipments SET courier_delivered_at = shipped_at + interval '1 hour' WHERE id = :id").bindparams(id=shipment.id), "1 to 3 proofs")
+        rejects(text("UPDATE shipments SET status = 'DELIVERED', received_at = shipped_at + interval '2 hours', received_by = :u WHERE id = :id").bindparams(id=shipment.id, u=inspector_id))
+        insert_proof = text("INSERT INTO shipment_delivery_proofs (shipment_id, sort_order, object_key, mime_type, size_bytes, sha256, uploaded_by) VALUES (:id, :position, :key, :mime, :size, :hash, :u)")
+        base = {"id": shipment.id, "position": 0, "key": "fixtures/inspect01/new-courier.jpg", "mime": "image/jpeg", "size": 100, "hash": "a" * 64, "u": courier_id}
+        rejects(insert_proof.bindparams(**(base | {"u": inspector_id})), "assigned courier")
+        rejects(insert_proof.bindparams(**(base | {"mime": "image/webp"})))
+        rejects(insert_proof.bindparams(**(base | {"size": 5242881})))
+        session.execute(insert_proof, base)
+        rejects(text("UPDATE shipments SET courier_id = :u WHERE id = :id").bindparams(id=shipment.id, u=inspector_id), "assignment has delivery proofs")
+        session.execute(text("UPDATE shipments SET courier_delivered_at = shipped_at + interval '1 hour' WHERE id = :id"), {"id": shipment.id})
+        rejects(text("DELETE FROM shipment_delivery_proofs WHERE shipment_id = :id").bindparams(id=shipment.id), "confirmed delivery proofs")
+        rejects(text("UPDATE shipments SET courier_id = :u WHERE id = :id").bindparams(id=shipment.id, u=inspector_id), "immutable")
+        session.execute(text("UPDATE shipments SET status = 'DELIVERED', received_at = shipped_at + interval '2 hours', received_by = :u WHERE id = :id"), {"id": shipment.id, "u": inspector_id})
+        outbound = Shipment(
+            order_id=seeded[4][1], leg="TO_BUYER", status="IN_TRANSIT",
+            carrier="Test courier", tracking_number="OUT-001", courier_id=courier_id,
+        )
+        session.add(outbound)
+        session.flush()
+        session.execute(insert_proof, base | {"id": outbound.id, "key": "fixtures/inspect01/outbound-courier.jpg"})
+        session.execute(text("UPDATE shipments SET courier_delivered_at = shipped_at + interval '1 hour', status = 'DELIVERED' WHERE id = :id"), {"id": outbound.id})
+        assert session.get(Shipment, outbound.id).received_at is None
         session.rollback()
 
 

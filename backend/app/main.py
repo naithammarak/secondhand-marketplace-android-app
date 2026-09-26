@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.admin_orders import router as admin_orders_router
 from app.api.admin_verifications import router as admin_verifications_router
 from app.api.auth import router as auth_router
 from app.api.product_uploads import router as product_uploads_router
@@ -35,6 +36,8 @@ app.include_router(product_reads_router)
 app.include_router(verifications_router)
 app.include_router(admin_verifications_router)
 app.include_router(orders_router)
+# ORDER-09: มุมมอง Order ของผู้ดูแล (ปิดบังข้อมูลส่วนบุคคลเป็นค่าตั้งต้น)
+app.include_router(admin_orders_router)
 
 
 @app.get("/health")

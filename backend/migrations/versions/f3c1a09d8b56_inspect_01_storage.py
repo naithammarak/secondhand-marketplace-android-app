@@ -1,7 +1,7 @@
 """INSPECT-01 shipment, inspection and private evidence storage.
 
 Revision ID: f3c1a09d8b56
-Revises: 9446ec1a2c5d
+Revises: c93b7e5a1d84
 """
 
 from alembic import op
@@ -9,13 +9,13 @@ import sqlalchemy as sa
 
 
 revision = "f3c1a09d8b56"
-down_revision = "9446ec1a2c5d"
+down_revision = "c93b7e5a1d84"
 branch_labels = None
 depends_on = None
 
-OLD_ORDER_STATUS = "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP')"
+OLD_ORDER_STATUS = "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED')"
 NEW_ORDER_STATUS = (
-    "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'SHIPPING_TO_CENTER', "
+    "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED', 'SHIPPING_TO_CENTER', "
     "'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED')"
 )
 
@@ -28,6 +28,11 @@ def _timestamp(name, nullable=False):
 
 
 def upgrade():
+    op.drop_constraint("ck_users_role", "users", type_="check")
+    op.create_check_constraint(
+        "ck_users_role", "users",
+        "role IS NULL OR role IN ('BUYER', 'SELLER', 'ADMIN', 'INSPECTOR', 'COURIER')",
+    )
     op.drop_constraint("ck_orders_status", "orders", type_="check")
     op.create_check_constraint("ck_orders_status", "orders", NEW_ORDER_STATUS)
     op.create_index("ix_orders_inspection_queue", "orders", ["status", "created_at", "id"])
@@ -41,17 +46,41 @@ def upgrade():
         sa.Column("carrier", sa.String(100), nullable=False),
         sa.Column("tracking_number", sa.String(100), nullable=False),
         _timestamp("shipped_at"),
+        sa.Column("courier_id", sa.Integer, sa.ForeignKey("users.id", ondelete="RESTRICT")),
+        _timestamp("courier_delivered_at", True),
         _timestamp("received_at", True),
         sa.Column("received_by", sa.Integer, sa.ForeignKey("users.id", ondelete="RESTRICT")),
         sa.Column("received_note", sa.String(1000)),
         sa.UniqueConstraint("order_id", "leg", name="uq_shipments_order_leg"),
-        sa.CheckConstraint("leg = 'TO_CENTER'", name="ck_shipments_leg"),
+        sa.CheckConstraint("leg IN ('TO_CENTER', 'TO_BUYER', 'TO_SELLER')", name="ck_shipments_leg"),
         sa.CheckConstraint("status IN ('IN_TRANSIT', 'DELIVERED')", name="ck_shipments_status"),
         sa.CheckConstraint("length(carrier) BETWEEN 1 AND 100 AND carrier = trim(carrier)", name="ck_shipments_carrier"),
         sa.CheckConstraint("length(tracking_number) BETWEEN 1 AND 100 AND tracking_number = trim(tracking_number)", name="ck_shipments_tracking_number"),
         sa.CheckConstraint("received_note IS NULL OR (length(received_note) <= 1000 AND received_note = trim(received_note))", name="ck_shipments_received_note"),
-        sa.CheckConstraint("(status = 'IN_TRANSIT' AND received_at IS NULL AND received_by IS NULL) OR (status = 'DELIVERED' AND received_at IS NOT NULL AND received_by IS NOT NULL AND received_at >= shipped_at)", name="ck_shipments_receipt"),
+        sa.CheckConstraint("courier_delivered_at IS NULL OR (courier_id IS NOT NULL AND courier_delivered_at >= shipped_at)", name="ck_shipments_courier_delivery"),
+        sa.CheckConstraint("(leg = 'TO_CENTER' AND ((status = 'IN_TRANSIT' AND received_at IS NULL AND received_by IS NULL) OR (status = 'DELIVERED' AND received_at IS NOT NULL AND received_by IS NOT NULL AND courier_delivered_at IS NOT NULL AND received_at >= courier_delivered_at))) OR (leg IN ('TO_BUYER', 'TO_SELLER') AND received_at IS NULL AND received_by IS NULL AND ((status = 'IN_TRANSIT' AND courier_delivered_at IS NULL) OR (status = 'DELIVERED' AND courier_delivered_at IS NOT NULL)))", name="ck_shipments_receipt"),
     )
+
+    op.create_table(
+        "shipment_delivery_proofs",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("shipment_id", sa.Integer, sa.ForeignKey("shipments.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("sort_order", sa.Integer, nullable=False),
+        sa.Column("object_key", sa.String(500), nullable=False),
+        sa.Column("mime_type", sa.String(32), nullable=False),
+        sa.Column("size_bytes", sa.Integer, nullable=False),
+        sa.Column("sha256", sa.String(64), nullable=False),
+        sa.Column("uploaded_by", sa.Integer, sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
+        _timestamp("uploaded_at"),
+        sa.UniqueConstraint("object_key", name="uq_shipment_delivery_proofs_object_key"),
+        sa.UniqueConstraint("shipment_id", "sort_order", name="uq_shipment_delivery_proofs_order"),
+        sa.CheckConstraint("sort_order BETWEEN 0 AND 2", name="ck_shipment_delivery_proofs_sort_order"),
+        sa.CheckConstraint("mime_type IN ('image/jpeg', 'image/png')", name="ck_shipment_delivery_proofs_mime_type"),
+        sa.CheckConstraint("size_bytes BETWEEN 1 AND 5242880", name="ck_shipment_delivery_proofs_size_bytes"),
+        sa.CheckConstraint("length(sha256) = 64 AND sha256 !~ '[^0-9a-f]'", name="ck_shipment_delivery_proofs_sha256"),
+        sa.CheckConstraint("length(object_key) BETWEEN 1 AND 500 AND object_key = trim(object_key)", name="ck_shipment_delivery_proofs_object_key"),
+    )
+    op.create_index("ix_shipment_delivery_proofs_shipment_id", "shipment_delivery_proofs", ["shipment_id"])
 
     op.create_table(
         "inspections",
@@ -117,8 +146,82 @@ def upgrade():
         sa.CheckConstraint("length(operation) BETWEEN 1 AND 50 AND operation = trim(operation)", name="ck_inspection_idempotency_operation"),
     )
 
-    for table in ("shipments", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"):
+    for table in ("shipments", "shipment_delivery_proofs", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"):
         op.execute(f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY")
+
+    op.execute("""
+        CREATE FUNCTION public.shipment_guard_courier_delivery() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        DECLARE proof_count integer;
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF OLD.courier_delivered_at IS NOT NULL THEN
+                    RAISE EXCEPTION 'confirmed courier delivery is immutable';
+                END IF;
+                RETURN OLD;
+            END IF;
+            IF TG_OP = 'UPDATE' AND OLD.courier_delivered_at IS NOT NULL AND (
+                NEW.courier_delivered_at IS DISTINCT FROM OLD.courier_delivered_at OR
+                NEW.courier_id IS DISTINCT FROM OLD.courier_id OR
+                NEW.order_id IS DISTINCT FROM OLD.order_id OR
+                NEW.leg IS DISTINCT FROM OLD.leg
+            ) THEN
+                RAISE EXCEPTION 'confirmed courier delivery is immutable';
+            END IF;
+            IF TG_OP = 'UPDATE' AND NEW.courier_id IS DISTINCT FROM OLD.courier_id THEN
+                SELECT count(*) INTO proof_count FROM public.shipment_delivery_proofs
+                WHERE shipment_id = OLD.id;
+                IF proof_count > 0 THEN
+                    RAISE EXCEPTION 'courier assignment has delivery proofs';
+                END IF;
+            END IF;
+            IF NEW.courier_delivered_at IS NOT NULL AND
+                (TG_OP = 'INSERT' OR OLD.courier_delivered_at IS NULL) THEN
+                IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = NEW.courier_id
+                    AND role = 'COURIER' AND status = 'ACTIVE') THEN
+                    RAISE EXCEPTION 'active courier assignment required';
+                END IF;
+                SELECT count(*) INTO proof_count FROM public.shipment_delivery_proofs
+                WHERE shipment_id = NEW.id;
+                IF proof_count NOT BETWEEN 1 AND 3 THEN
+                    RAISE EXCEPTION 'courier delivery requires 1 to 3 proofs';
+                END IF;
+            END IF;
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER trg_shipments_guard_courier_delivery
+        BEFORE INSERT OR UPDATE OR DELETE ON public.shipments
+        FOR EACH ROW EXECUTE FUNCTION public.shipment_guard_courier_delivery()
+    """)
+    op.execute("""
+        CREATE FUNCTION public.shipment_guard_delivery_proof() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        DECLARE assigned_courier integer; confirmed_at timestamptz;
+        BEGIN
+            IF TG_OP = 'UPDATE' THEN
+                RAISE EXCEPTION 'delivery proof metadata is immutable';
+            END IF;
+            SELECT courier_id, courier_delivered_at INTO assigned_courier, confirmed_at
+            FROM public.shipments
+            WHERE id = CASE WHEN TG_OP = 'INSERT' THEN NEW.shipment_id ELSE OLD.shipment_id END
+            FOR UPDATE;
+            IF confirmed_at IS NOT NULL THEN
+                RAISE EXCEPTION 'confirmed delivery proofs are immutable';
+            END IF;
+            IF TG_OP = 'INSERT' AND (assigned_courier IS NULL OR NEW.uploaded_by != assigned_courier) THEN
+                RAISE EXCEPTION 'proof must belong to assigned courier';
+            END IF;
+            IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+            RETURN NEW;
+        END $$
+    """)
+    op.execute("""
+        CREATE TRIGGER trg_shipment_delivery_proofs_guard
+        BEFORE INSERT OR UPDATE OR DELETE ON public.shipment_delivery_proofs
+        FOR EACH ROW EXECUTE FUNCTION public.shipment_guard_delivery_proof()
+    """)
 
     # A final result is one-shot even if two writers bypass the API row lock.
     # Lock the inspection row when attaching evidence so finalization and
@@ -228,11 +331,13 @@ def upgrade():
 
 def downgrade():
     connection = op.get_bind()
-    for table in ("shipments", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"):
+    for table in ("shipments", "shipment_delivery_proofs", "inspections", "inspection_evidence", "inspection_result_evidence", "inspection_idempotency"):
         if connection.execute(sa.text(f"SELECT EXISTS (SELECT 1 FROM public.{table} LIMIT 1)")).scalar_one():
             raise RuntimeError(f"INSPECT-01 downgrade refused: {table} contains data; back up or migrate it first")
     if connection.execute(sa.text("SELECT EXISTS (SELECT 1 FROM public.orders WHERE status IN ('SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED') LIMIT 1)")).scalar_one():
         raise RuntimeError("INSPECT-01 downgrade refused: orders use Inspect statuses; back up or migrate them first")
+    if connection.execute(sa.text("SELECT EXISTS (SELECT 1 FROM public.users WHERE role = 'COURIER' LIMIT 1)")).scalar_one():
+        raise RuntimeError("INSPECT-01 downgrade refused: Courier accounts exist; migrate them first")
 
     op.drop_table("inspection_idempotency")
     op.drop_table("inspection_result_evidence")
@@ -240,10 +345,16 @@ def downgrade():
     op.drop_table("inspection_evidence")
     op.drop_index("ix_inspections_inspector_created", table_name="inspections")
     op.drop_table("inspections")
+    op.drop_index("ix_shipment_delivery_proofs_shipment_id", table_name="shipment_delivery_proofs")
+    op.drop_table("shipment_delivery_proofs")
     op.drop_table("shipments")
+    op.execute("DROP FUNCTION public.shipment_guard_delivery_proof()")
+    op.execute("DROP FUNCTION public.shipment_guard_courier_delivery()")
     op.execute("DROP FUNCTION public.inspection_guard_evidence()")
     op.execute("DROP FUNCTION public.inspection_guard_result_evidence()")
     op.execute("DROP FUNCTION public.inspection_guard_final_result()")
     op.drop_index("ix_orders_inspection_queue", table_name="orders")
     op.drop_constraint("ck_orders_status", "orders", type_="check")
     op.create_check_constraint("ck_orders_status", "orders", OLD_ORDER_STATUS)
+    op.drop_constraint("ck_users_role", "users", type_="check")
+    op.create_check_constraint("ck_users_role", "users", "role IS NULL OR role IN ('BUYER', 'SELLER', 'ADMIN', 'INSPECTOR')")

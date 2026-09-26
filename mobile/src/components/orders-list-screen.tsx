@@ -7,7 +7,7 @@ import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
 import { Spacing } from '@/constants/theme';
-import { formatBaht, formatDateTime, orderStatusLabels } from '@/orders/order-format';
+import { formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
 import type { OrderListItem } from '@/services/order-service';
 
@@ -22,7 +22,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
       onPress={onPress}>
       <Card>
         <ThemedText type="smallBold">#{item.id} {item.product.name}</ThemedText>
-        <StatusBadge status={item.status} label={orderStatusLabels[item.status]} />
+        <StatusBadge status={item.status} label={orderStatusLabel(item.status)} />
         <Row label={item.viewerRole === 'buyer' ? 'ยอดชำระ' : 'ยอดที่จะได้รับ'} value={formatBaht(amount)} />
         {createdAt ? <ThemedText type="small" themeColor="textSecondary">สั่งซื้อเมื่อ {createdAt}</ThemedText> : null}
       </Card>
