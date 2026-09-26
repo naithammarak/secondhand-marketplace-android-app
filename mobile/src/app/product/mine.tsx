@@ -1,10 +1,11 @@
+import { useTheme } from '@/hooks/use-theme';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/constants/theme';
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createProductService, type MyProductSummary } from '@/services/product-service';
 
@@ -17,6 +18,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function MyProductsScreen() {
+  const styles = makeStyles(useTheme());
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const [items, setItems] = useState<MyProductSummary[]>([]);
@@ -103,17 +105,17 @@ export default function MyProductsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#eaf3fb' },
+const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
+  page: { flex: 1, backgroundColor: theme.background },
   scroll: { flexGrow: 1, alignItems: 'center' },
-  content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.four, gap: Spacing.three },
-  title: { fontSize: 22, fontWeight: '700', color: '#1a1f27' },
-  button: { backgroundColor: '#96bde9', borderRadius: 8, padding: Spacing.three, alignItems: 'center' },
-  buttonText: { color: '#1a1f27', fontWeight: '700' },
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: Spacing.three, flexDirection: 'row', gap: Spacing.three },
+  content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.three, gap: Spacing.three },
+  title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text },
+  button: { backgroundColor: theme.primary, borderRadius: 8, padding: Spacing.three, alignItems: 'center' },
+  buttonText: { color: theme.onPrimary, fontWeight: '700' },
+  card: { backgroundColor: theme.surface, borderRadius: 12, padding: Spacing.three, flexDirection: 'row', gap: Spacing.three },
   image: { width: 72, height: 72, borderRadius: 8 },
   details: { flex: 1, gap: Spacing.one },
-  name: { fontSize: 16, fontWeight: '700' },
-  action: { color: '#2563eb', fontWeight: '700' },
+  name: { fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
+  action: { color: theme.primary, fontWeight: '700' },
   errorBox: { gap: Spacing.two },
 });

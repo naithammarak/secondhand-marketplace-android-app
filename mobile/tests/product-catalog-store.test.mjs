@@ -35,6 +35,33 @@ function setup(respond) {
   return { calls, service };
 }
 
+test('category changes discard old pages and ignore stale responses', async () => {
+  const old = deferred();
+  const calls = [];
+  const store = createProductCatalogStore({ service: {
+    listProducts: params => { calls.push(params); return params.categoryId === 7 ? Promise.resolve(page([item(7)])) : old.promise; },
+  } });
+  const loading = store.load();
+  await store.setCategory(7);
+  old.resolve(page([item(1)]));
+  await loading;
+  assert.deepEqual(store.getSnapshot().items.map(p => p.id), [7]);
+  assert.equal(calls[1].page, 1);
+  assert.equal(calls[1].categoryId, 7);
+});
+
+test('an old request cannot appear under a newly typed search during debounce', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const old = deferred();
+  const store = createProductCatalogStore({ service: { listProducts: () => old.promise } });
+  const loading = store.load();
+  store.setQuery('new query');
+  old.resolve(page([item(1)]));
+  await loading;
+  assert.deepEqual(store.getSnapshot().items, []);
+  assert.equal(store.getSnapshot().loaded, false);
+});
+
 test('initial load fetches page 1 with the current query', async () => {
   const { calls, service } = setup(() => page([item(1), item(2)], { page: 1, total: 2, hasNext: false }));
   const store = createProductCatalogStore({ service });

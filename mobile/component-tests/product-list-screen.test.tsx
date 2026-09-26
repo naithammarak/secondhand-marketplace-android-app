@@ -4,6 +4,7 @@ import { ProductListScreen } from '@/components/product-list-screen';
 import type { ProductCatalogState } from '@/products/product-catalog-store';
 import type { ProductListItem } from '@/services/product-catalog-service';
 
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: null }) }));
 const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
@@ -37,6 +38,8 @@ let mockStore: {
   retry: jest.Mock;
   loadMore: jest.Mock;
   hasMore: jest.Mock;
+  loadCategories: jest.Mock;
+  setCategory: jest.Mock;
 };
 
 const sampleItem1: ProductListItem = {
@@ -59,6 +62,7 @@ const sampleItem2: ProductListItem = {
 
 function defaultState(overrides: Partial<ProductCatalogState> = {}): ProductCatalogState {
   return {
+    categoryId: null, categories: [], categoriesLoading: false, categoriesError: null,
     query: '',
     page: 1,
     pageSize: 20,
@@ -76,6 +80,8 @@ function defaultState(overrides: Partial<ProductCatalogState> = {}): ProductCata
 jest.mock('@/products/product-catalog-instance', () => ({
   productCatalogStore: {
     getSnapshot: () => mockStore.getSnapshot(),
+    loadCategories: () => mockStore.loadCategories(),
+    setCategory: (id: number | null) => mockStore.setCategory(id),
     subscribe: (listener: () => void) => mockStore.subscribe(listener),
     load: () => mockStore.load(),
     setQuery: (q: string) => mockStore.setQuery(q),
@@ -93,6 +99,8 @@ beforeEach(() => {
   mockState = defaultState();
   listeners = new Set();
   mockStore = {
+    loadCategories: jest.fn(),
+    setCategory: jest.fn(),
     getSnapshot: jest.fn(() => mockState),
     subscribe: jest.fn((listener: () => void) => {
       listeners.add(listener);
@@ -108,6 +116,19 @@ beforeEach(() => {
 });
 
 describe('ProductListScreen', () => {
+  test('category controls use API identifiers and permanent tabs navigate', () => {
+    mockState = defaultState({ categories: [{ id: 42, categoryName: 'หมวดจาก API', parentCategoryId: null }] });
+    render(<ProductListScreen />);
+    fireEvent.press(screen.getByRole('button', { name: 'หมวดจาก API' }));
+    expect(mockStore.setCategory).toHaveBeenCalledWith(42);
+    fireEvent.press(screen.getByRole('tab', { name: 'คำสั่งซื้อ' }));
+    expect(mockReplace).toHaveBeenCalledWith('/orders');
+    fireEvent.press(screen.getByRole('tab', { name: 'ขายของ' }));
+    expect(mockReplace).toHaveBeenCalledWith('/sell');
+    fireEvent.press(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
+    expect(mockPush).toHaveBeenCalledWith('/login');
+  });
+
   test('calls store.load() on initial mount when loaded is false', () => {
     mockState = defaultState({ loaded: false });
     render(<ProductListScreen />);
@@ -192,7 +213,8 @@ describe('ProductListScreen', () => {
   test('shows empty catalog message when loaded without query and no items', () => {
     mockState = defaultState({
       loaded: true,
-      query: '',
+      categoryId: null, categories: [], categoriesLoading: false, categoriesError: null,
+    query: '',
       items: [],
       meta: { page: 1, pageSize: 20, total: 0, totalPages: 0, hasNext: false },
     });

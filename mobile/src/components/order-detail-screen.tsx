@@ -80,7 +80,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     void store.refresh();
   }, [deadlinePassed, now, store]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   return (
     <Screen>

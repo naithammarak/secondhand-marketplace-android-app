@@ -181,6 +181,33 @@ def test_public_list_only_currently_approved_available_sellers(db):
         assert client.get(f"/products/{product_id}").status_code == 404
 
 
+def test_category_filter_combines_search_pagination_and_visibility(db):
+    seller_id, _ = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    other = Category(category_name="กระเป๋า")
+    db.add(other)
+    db.commit()
+    expected = [product(db, seller_id, category_id, brand_id, name="Blue Shirt") for _ in range(3)]
+    product(db, seller_id, other.id, brand_id, name="Blue Bag")
+    product(db, seller_id, category_id, brand_id, name="Blue Hidden", status="SOLD")
+    product(db, seller_id, category_id, brand_id, name="Red Shirt")
+    first = client.get("/products", params={"category_id": category_id, "q": "Blue", "page_size": 2})
+    assert first.status_code == 200
+    assert first.json()["meta"]["total"] == 3
+    assert first.json()["meta"]["has_next"] is True
+    second = client.get("/products", params={"category_id": category_id, "q": "Blue", "page_size": 2, "page": 2})
+    assert {row["id"] for row in first.json()["data"] + second.json()["data"]} == set(expected)
+    assert second.json()["meta"]["has_next"] is False
+    assert client.get("/products", params={"category_id": 999999}).json()["meta"]["total"] == 0
+
+
+@pytest.mark.parametrize("query", ["category_id=0", "category_id=-1", "category_id=abc", "category_id=1&category_id=2"])
+def test_category_filter_rejects_invalid_or_duplicate_ids(query):
+    response = client.get(f"/products?{query}")
+    assert response.status_code == 422
+
+
 def test_search_literals_trim_and_case_insensitive(db):
     seller_id, _ = create_user(db, UserRole.SELLER)
     approve(db, seller_id)
@@ -464,6 +491,25 @@ def test_expired_reservation_reappears_in_the_public_detail(reserved_world, db):
     assert response.status_code == 200
     assert response.json()["data"]["id"] == reserved_world["product_id"]
     assert status_of(db, reserved_world["product_id"]) == "AVAILABLE"
+
+
+def test_category_filter_and_pagination_include_released_reservation(reserved_world, db):
+    """Expiry and main's category filter must both run before counting/pagination."""
+    reserved = db.get(Product, reserved_world["product_id"])
+    category_id, brand_id = reserved.category_id, reserved.brand_id
+    other_category = Category(category_name="รองเท้า")
+    db.add(other_category)
+    db.commit()
+    product(db, reserved_world["seller_id"], other_category.id, brand_id)
+    move_deadline_into_the_past(db, reserved_world["order_id"])
+
+    response = client.get("/products", params={"category_id": category_id, "page_size": 1})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["data"]] == [reserved_world["product_id"]]
+    assert response.json()["meta"]["total"] == 1
+    assert status_of(db, reserved_world["product_id"]) == "AVAILABLE"
+    expired = db.get(Order, reserved_world["order_id"])
+    assert (expired.status, expired.cancel_reason) == ("CANCELLED", "EXPIRED")
 
 
 def test_expired_reservation_returns_to_the_seller_own_list(reserved_world, db):
