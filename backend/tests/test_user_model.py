@@ -56,6 +56,7 @@ def test_user_model_defines_allowed_role_and_status_values():
         "SELLER",
         "ADMIN",
         "INSPECTOR",
+        "COURIER",
     }
     assert {status.value for status in UserStatus} == {
         "ACTIVE",

@@ -27,16 +27,10 @@ ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
 ORDER_CANCELLED = "CANCELLED"
 
-# สถานะที่ยังไม่รับในรอบนี้ แต่ SRS กำหนดไว้แล้ว (FR-15 ถึง FR-18 และกระบวนการหลักขั้นที่ 6-8)
-# สี่ค่าแรกใช้ชื่อตามสัญญา INSPECT-00 (GitHub issue #54) เพื่อไม่ให้มีชื่อสองชุดในโปรเจกต์เดียว
-# ที่เหลือเป็นชื่อชั่วคราวของงาน CERT/FINISH ซึ่งจะสรุปในรอบของมันเอง
+# สถานะ CERT/FINISH ที่ยังไม่รับ; สี่สถานะ INSPECT-00 อยู่ใน Order model แล้ว
 # เก็บไว้เป็นข้อมูลอ้างอิงเท่านั้น ห้ามเขียนค่าเหล่านี้ลงฐานข้อมูลจนกว่าจะมี Feature รองรับ
 # (ดู doc/orders/contract.md หัวข้อ 2 และ doc/orders/next-round-inspector.md)
 ORDER_STATUSES_RESERVED = (
-    "SHIPPING_TO_CENTER",
-    "RECEIVED_AT_CENTER",
-    "INSPECTING",
-    "RESULT_NOTIFIED",
     "SHIPPING_TO_BUYER",
     "COMPLETED",
     "RETURNED_TO_SELLER",
