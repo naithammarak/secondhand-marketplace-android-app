@@ -26,6 +26,21 @@ test('paid orders have no payment action', () => {
   expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
   expect(screen.getByRole('button', { name: 'ดูรายละเอียด' })).toBeTruthy();
 });
+test.each(['CANCELLED', 'UNKNOWN'])('%s unpaid orders open details without offering payment', (status) => {
+  mockState.items[0].status = status;
+  render(<OrdersListScreen />);
+  expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
+  expect(screen.getByText(status === 'CANCELLED' ? 'ยกเลิกแล้ว' : 'สถานะอื่น ๆ กรุณาอัปเดตแอปเพื่อดูรายละเอียด')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'ดูรายละเอียด' }));
+  expect(mockPush).toHaveBeenCalledWith({ pathname: '/orders/[orderId]', params: { orderId: '42' } });
+});
+test('sellers cannot see a payment action on unpaid orders', () => {
+  mockState.items[0].viewerRole = 'seller';
+  mockState.items[0].sellerPayout = '190.00';
+  render(<OrdersListScreen />);
+  expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'ดูรายละเอียด' })).toBeTruthy();
+});
 test('does not render another account orders during an account transition', () => {
   mockState.owner = 'another-account';
   render(<OrdersListScreen />);

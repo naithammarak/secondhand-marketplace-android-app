@@ -10,7 +10,11 @@ import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
 export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: Colors.light.warning,
   WAITING_SELLER_SHIP: Colors.light.success,
+  CANCELLED: Colors.light.textSecondary,
+  UNKNOWN: Colors.light.textSecondary,
 };
+
+export const unknownStatusColor = Colors.light.textSecondary;
 
 export const orderErrorMessages: Record<OrderErrorKind, string> = {
   unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
@@ -37,6 +41,8 @@ export const orderCodeMessages: Record<string, string> = {
   payment_simulation_disabled: 'ระบบจ่ายเงินจำลองปิดอยู่ในสภาพแวดล้อมนี้',
   receipt_not_found: 'ยังไม่มีใบเสร็จสำหรับคำสั่งซื้อนี้',
   not_order_buyer: 'เฉพาะผู้ซื้อของคำสั่งซื้อนี้เท่านั้น',
+  order_cancelled: 'คำสั่งซื้อนี้ถูกยกเลิกแล้ว',
+  order_expired: 'หมดเวลาชำระเงิน คำสั่งซื้อนี้ถูกยกเลิกอัตโนมัติและสินค้าถูกปล่อยให้ผู้อื่นซื้อได้',
 };
 
 export function errorText(kind: OrderErrorKind, code?: string | null): string {
@@ -105,9 +111,12 @@ export function Button({
 
 export function StatusBadge({ status, label }: { status: OrderStatus; label: string }) {
   const theme = useTheme();
-  const color = status === 'WAITING_PAYMENT' ? theme.warning : theme.success;
+  const color = status === 'WAITING_PAYMENT' ? theme.warning
+    : status === 'WAITING_SELLER_SHIP' ? theme.success : theme.textSecondary;
+  const backgroundColor = status === 'WAITING_PAYMENT' ? theme.warningSoft
+    : status === 'WAITING_SELLER_SHIP' ? theme.successSoft : theme.backgroundElement;
   return (
-    <View style={[styles.statusRow, { backgroundColor: status === 'WAITING_PAYMENT' ? theme.warningSoft : theme.successSoft }]}>
+    <View style={[styles.statusRow, { backgroundColor }]}>
       <View style={[styles.statusDot, { backgroundColor: color }]} />
       <ThemedText type="small" style={{ color, flexShrink: 1 }} accessibilityLiveRegion="polite">{label}</ThemedText>
     </View>

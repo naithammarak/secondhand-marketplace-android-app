@@ -3,6 +3,7 @@
 กรณีแข่งกันจริง (row lock) และ constraint ระดับฐานข้อมูลอยู่ใน test_orders_postgres.py
 """
 
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -11,13 +12,15 @@ from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.api.admin_orders as admin_orders_module
 import app.api.orders as orders_module
 from app.database import Base, get_db
 from app.main import app
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import UserRole, UserStatus
-from app.services.order_pricing import calculate_amounts
+from app.schemas.order import PaymentStatus
+from app.services.order_pricing import calculate_amounts, payment_deadline, utcnow
 from tests.order_helpers import (
     VALID_ADDRESS,
     create_product,
@@ -122,6 +125,18 @@ def create_paid_order(world):
     response = pay(order["id"], world["a"])
     assert response.status_code == 200
     return order["id"]
+
+
+def cancel(order_id, headers):
+    return client.post(f"/orders/{order_id}/cancel", headers=headers)
+
+
+def age_order(db, order_id, minutes_past=1):
+    """ย้ายเส้นตายของ Order ไปในอดีต แทนการรอเวลาจริงใน test"""
+    db.expire_all()
+    order = db.get(Order, order_id)
+    order.expires_at = utcnow() - timedelta(minutes=minutes_past)
+    db.commit()
 
 
 # ------------------------------------------------------------------ pricing
@@ -272,6 +287,25 @@ def test_cannot_buy_own_product(world, db):
     assert product_status(db, own_product) == "AVAILABLE"
 
 
+def test_only_fixed_price_products_can_be_ordered(world, db, monkeypatch):
+    """สินค้าประมูลต้องถูกปฏิเสธก่อนคิดราคา (D-20)
+
+    ตาราง products มี CHECK ที่ยอมให้มีแต่ `FIXED_PRICE` อยู่แล้ว จึงสร้างแถวประมูลมาทดสอบไม่ได้
+    ที่นี่จึงสลับค่าที่ระบบยอมรับแทน เพื่อพิสูจน์ว่าด่านนี้ทำงานจริงถ้าวันหนึ่งมีค่าอื่นเข้ามา
+    """
+    monkeypatch.setattr(orders_module, "SALE_TYPE_FIXED_PRICE", "AUCTION")
+
+    response = post_order(world["a"], order_body(world["product_id"]))
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "sale_type_unsupported"
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+    assert count(db, Order) == 0
+
+    quote = client.get(f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["a"])
+    assert quote.status_code == 409
+    assert quote.json()["detail"]["code"] == "sale_type_unsupported"
+
+
 def test_missing_or_soft_deleted_product_is_not_found(world, db):
     deleted = create_product(db, world["seller"], deleted=True)
     for product_id in (deleted, 999999):
@@ -369,6 +403,7 @@ def test_create_rolls_back_reservation_on_database_constraint(world, db):
         commission_fee=Decimal("60.00"),
         total_amount=Decimal("1350.00"),
         seller_payout=Decimal("1140.00"),
+        expires_at=payment_deadline(utcnow()),
         **{f"ship_{k}": v for k, v in {**VALID_ADDRESS, "phone": "0812345678"}.items()},
         idempotency_key="stale-order-key",
         request_hash="0" * 64,
@@ -699,3 +734,357 @@ def test_receipt_access(world, db):
     for stranger in (world["b"], world["other_seller_h"]):
         assert client.get(f"/orders/{order['id']}/receipt", headers=stranger).status_code == 404
     assert client.get(f"/orders/{order['id']}/receipt").status_code in (401, 403)
+
+
+# ------------------------------------------------------------------ ยกเลิก Order (ORDER-08)
+
+
+def test_buyer_cancel_releases_product_and_records_reason(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert order["can_cancel"] is True
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "CANCELLED"
+    assert data["cancel_reason"] == "BUYER"
+    assert data["cancelled_at"] is not None
+    assert data["can_pay"] is False
+    assert data["can_cancel"] is False
+    assert data["payment_status"] == "UNPAID"
+    # สินค้ากลับไปขายได้ และไม่มีเงินเกิดขึ้นเลย
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+    assert count(db, PaymentAttempt) == 0
+    assert count(db, Payment) == 0
+    assert count(db, Escrow) == 0
+    assert count(db, Receipt) == 0
+
+
+def test_cancel_twice_returns_same_result(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    first = cancel(order["id"], world["a"])
+    second = cancel(order["id"], world["a"])
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["cancelled_at"] == second.json()["cancelled_at"]
+    assert count(db, Order) == 1
+
+
+def test_other_buyer_can_buy_after_cancel(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert cancel(order["id"], world["a"]).status_code == 200
+
+    response = post_order(world["b"], order_body(world["product_id"]))
+    assert response.status_code == 201
+    assert product_status(db, world["product_id"]) == "RESERVED"
+    assert count(db, Order) == 2
+
+
+def test_same_buyer_can_order_again_after_cancel(world):
+    first = post_order(world["a"], order_body(world["product_id"])).json()
+    assert cancel(first["id"], world["a"]).status_code == 200
+
+    # Order ที่ยกเลิกแล้วต้องไม่ทำให้ได้ already_ordered อีก
+    response = post_order(world["a"], order_body(world["product_id"]))
+    assert response.status_code == 201
+    assert response.json()["id"] != first["id"]
+
+
+def test_cannot_cancel_after_payment(world, db):
+    order_id = create_paid_order(world)
+    response = cancel(order_id, world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_already_paid"
+
+    db.expire_all()
+    assert db.get(Order, order_id).status == "WAITING_SELLER_SHIP"
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_cancelled_order_cannot_be_paid(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert cancel(order["id"], world["a"]).status_code == 200
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_cancelled"
+    assert count(db, PaymentAttempt) == 0
+
+
+def test_only_buyer_of_order_can_cancel(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+
+    seller_response = cancel(order["id"], world["seller_h"])
+    assert seller_response.status_code == 403
+    assert seller_response.json()["detail"]["code"] == "not_order_buyer"
+    # คนนอกต้องไม่รู้ด้วยซ้ำว่ามี Order นี้อยู่
+    assert cancel(order["id"], world["b"]).status_code == 404
+
+    db.expire_all()
+    assert db.get(Order, order["id"]).status == "WAITING_PAYMENT"
+
+
+def test_suspended_buyer_cannot_cancel(world, db):
+    from app.models.user import User
+
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    buyer = db.get(User, world["buyer_a"])
+    buyer.status = UserStatus.SUSPENDED
+    db.commit()
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "account_inactive"
+
+
+# ------------------------------------------------------------------ หมดเวลาจ่ายเงิน (ORDER-08)
+
+
+def test_detail_exposes_payment_deadline(world):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert order["expires_at"] is not None
+    assert order["cancel_reason"] is None
+    assert order["cancelled_at"] is None
+    assert order["can_pay"] is True
+
+
+def test_expired_order_is_rejected_at_payment(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_expired"
+
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert row.status == "CANCELLED"
+    assert row.cancel_reason == "EXPIRED"
+    # ไม่มีการบันทึกความพยายามจ่ายเงิน และสินค้ากลับไปขายต่อได้
+    assert count(db, PaymentAttempt) == 0
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+
+
+def test_expired_order_is_swept_when_detail_is_read(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = client.get(f"/orders/{order['id']}", headers=world["a"])
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "CANCELLED"
+    assert data["cancel_reason"] == "EXPIRED"
+    assert data["can_pay"] is False
+    assert data["can_cancel"] is False
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+
+
+def test_expired_order_is_swept_in_list(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = client.get("/orders", headers=world["a"])
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["status"] == "CANCELLED"
+    assert item["cancel_reason"] == "EXPIRED"
+    assert item["expires_at"] is not None
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+
+
+def test_expired_hold_does_not_block_other_buyer(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    # ผู้ซื้อรายอื่นเข้ามาโดยที่ยังไม่มีใครเปิดดู Order เดิมเลย
+    quote = client.get(f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["b"])
+    assert quote.status_code == 200
+
+    response = post_order(world["b"], order_body(world["product_id"]))
+    assert response.status_code == 201
+
+    db.expire_all()
+    assert db.get(Order, order["id"]).status == "CANCELLED"
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_paid_order_is_never_expired(world, db):
+    order_id = create_paid_order(world)
+    age_order(db, order_id)
+
+    response = client.get(f"/orders/{order_id}", headers=world["a"])
+    assert response.status_code == 200
+    assert response.json()["status"] == "WAITING_SELLER_SHIP"
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_cancel_after_deadline_records_expired_reason(world, db):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 200
+    assert response.json()["cancel_reason"] == "EXPIRED"
+
+
+# ------------------------------------------------------- สถานะที่จะเพิ่มในรอบถัดไป (ORDER-00)
+
+
+def future_order(**overrides):
+    """Order ในหน่วยความจำที่มีสถานะของรอบถัดไป ไม่บันทึกลงฐานข้อมูลเพราะ CHECK ยังไม่รับค่านี้"""
+    fields = {
+        "status": "SHIPPING_TO_INSPECTION",
+        "paid_at": utcnow(),
+        "expires_at": utcnow() - timedelta(minutes=5),
+        "cancel_reason": None,
+        "cancelled_at": None,
+    }
+    fields.update(overrides)
+    return Order(**fields)
+
+
+def test_paid_is_decided_by_paid_at_not_by_the_status_name():
+    """สถานะหลังการจัดส่งต้องยังนับว่าจ่ายแล้ว ไม่งั้นใบเสร็จหายและผู้ขายจะไม่เห็นที่อยู่"""
+    moved_on = future_order()
+    assert orders_module.is_paid(moved_on) is True
+    assert admin_orders_module.payment_status_of(moved_on) == PaymentStatus.PAID
+
+    waiting = Order(status="WAITING_PAYMENT", paid_at=None, expires_at=utcnow())
+    assert orders_module.is_paid(waiting) is False
+    assert admin_orders_module.payment_status_of(waiting) == PaymentStatus.UNPAID
+
+
+def test_actions_are_closed_for_statuses_that_are_not_in_the_allowed_set():
+    """เงื่อนไขต้องเป็น "สถานะอยู่ในชุดที่ทำได้ไหม" ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิกไหม" """
+    moved_on = future_order()
+    assert orders_module.is_payable(moved_on) is False
+    assert orders_module.is_cancellable(moved_on) is False
+    # เลยเส้นตายไปแล้วก็ต้องไม่ถูกกวาด เพราะไม่ได้อยู่ในสถานะรอชำระเงินแล้ว
+    assert orders_module.payment_window_passed(moved_on, utcnow()) is False
+
+
+def test_payment_is_refused_when_the_status_is_not_payable(world, db, monkeypatch):
+    """จำลองสถานะของรอบถัดไปด้วยการเปลี่ยนชุดสถานะที่จ่ายได้ ไม่มีทางหลุดไปสร้าง attempt"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "PAYABLE_ORDER_STATUSES", frozenset())
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_payable"
+    assert count(db, PaymentAttempt) == 0
+    assert count(db, Payment) == 0
+    db.expire_all()
+    assert db.get(Order, order["id"]).status == "WAITING_PAYMENT"
+
+
+def test_cancel_is_refused_when_the_status_is_not_cancellable(world, db, monkeypatch):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "CANCELLABLE_ORDER_STATUSES", frozenset())
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_cancellable"
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancelled_at) == ("WAITING_PAYMENT", None)
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_buttons_close_when_the_status_leaves_the_payable_set(world, monkeypatch):
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    assert (order["can_pay"], order["can_cancel"]) == (True, True)
+
+    monkeypatch.setattr(orders_module, "PAYABLE_ORDER_STATUSES", frozenset())
+    detail = client.get(f"/orders/{order['id']}", headers=world["a"]).json()
+    # ยังอยู่ในชุดที่ยกเลิกได้ ปุ่มยกเลิกต้องไม่ปิดตามปุ่มจ่าย
+    assert (detail["can_pay"], detail["can_cancel"]) == (False, True)
+
+
+def test_cancel_button_follows_the_cancellable_set_not_the_payable_set(world, db, monkeypatch):
+    """สถานะที่จ่ายได้แต่ยกเลิกไม่ได้ หน้าจอต้องไม่เปิดปุ่มยกเลิกที่กดแล้วได้ 409"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    monkeypatch.setattr(orders_module, "CANCELLABLE_ORDER_STATUSES", frozenset())
+    assert "WAITING_PAYMENT" in orders_module.PAYABLE_ORDER_STATUSES
+
+    detail = client.get(f"/orders/{order['id']}", headers=world["a"])
+    assert detail.status_code == 200
+    assert (detail.json()["can_pay"], detail.json()["can_cancel"]) == (True, False)
+
+    response = cancel(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_not_cancellable"
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancelled_at, row.cancel_reason) == ("WAITING_PAYMENT", None, None)
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_reserved_statuses_are_documented_and_fit_the_column():
+    """ชื่อสถานะของรอบถัดไปต้องยาวไม่เกินคอลัมน์ และต้องไม่ทับค่าที่ใช้อยู่แล้ว"""
+    from app.models.order import ORDER_STATUSES
+    from app.services.order_pricing import ORDER_STATUSES_RESERVED
+
+    assert set(ORDER_STATUSES_RESERVED).isdisjoint(ORDER_STATUSES)
+    assert max(len(value) for value in ORDER_STATUSES_RESERVED) <= 32
+
+
+def test_replaying_a_failed_attempt_after_the_deadline_applies_the_expiry(world, db):
+    """ส่งซ้ำด้วย key เดิมหลังหมดเวลา ต้องไม่ตอบว่ายังรอชำระเงินและต้องปล่อยสินค้าคืน
+
+    เดิม replay ตอบกลับก่อนที่จะตรวจเส้นตาย ผู้ซื้อจึงเห็น WAITING_PAYMENT ต่อไป
+    และสินค้าค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด (พบจากการรีวิว PR #92)
+    """
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    key = new_key()
+    first = pay(order["id"], world["a"], outcome="FAILED", key=key)
+    assert first.status_code == 200
+    assert first.json()["order"]["status"] == "WAITING_PAYMENT"
+
+    age_order(db, order["id"])
+    replay = pay(order["id"], world["a"], outcome="FAILED", key=key)
+
+    assert replay.status_code == 200
+    assert replay.headers.get("Idempotent-Replayed") == "true"
+    # attempt เดิมต้องเป็นตัวเดิมจริง ๆ และต้องไม่มี attempt ใหม่เกิดขึ้น
+    assert replay.json()["attempt"]["id"] == first.json()["attempt"]["id"]
+    assert count(db, PaymentAttempt, order_id=order["id"]) == 1
+    # แต่สถานะ Order ที่แนบกลับต้องเป็นของจริงหลังหมดเวลา
+    assert replay.json()["order"]["status"] == "CANCELLED"
+    assert replay.json()["order"]["cancel_reason"] == "EXPIRED"
+    assert replay.json()["order"]["can_pay"] is False
+
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    assert (row.status, row.cancel_reason) == ("CANCELLED", "EXPIRED")
+    assert product_status(db, world["product_id"]) == "AVAILABLE"
+    assert count(db, Payment, order_id=order["id"]) == 0
+
+
+def test_replaying_a_paid_attempt_is_untouched_by_a_deadline_in_the_past(world, db):
+    """Order ที่จ่ายแล้วต้องไม่ถูกกวาด แม้เส้นตายจะอยู่ในอดีต"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    key = new_key()
+    paid = pay(order["id"], world["a"], key=key)
+    assert paid.json()["order"]["status"] == "WAITING_SELLER_SHIP"
+
+    db.expire_all()
+    row = db.get(Order, order["id"])
+    row.expires_at = utcnow() - timedelta(minutes=1)
+    db.commit()
+
+    replay = pay(order["id"], world["a"], key=key)
+    assert replay.status_code == 200
+    assert replay.json()["order"]["status"] == "WAITING_SELLER_SHIP"
+    assert replay.json()["order"]["payment_status"] == "PAID"
+    assert product_status(db, world["product_id"]) == "RESERVED"
+
+
+def test_a_new_key_after_the_deadline_still_reports_order_expired(world, db):
+    """code เดิมต้องไม่เปลี่ยนไปเป็น order_cancelled หลังจัดลำดับการตรวจใหม่"""
+    order = post_order(world["a"], order_body(world["product_id"])).json()
+    age_order(db, order["id"])
+
+    response = pay(order["id"], world["a"])
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "order_expired"
+    assert count(db, PaymentAttempt, order_id=order["id"]) == 0

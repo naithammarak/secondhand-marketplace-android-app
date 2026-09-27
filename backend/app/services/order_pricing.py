@@ -4,6 +4,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 CURRENCY = "THB"
@@ -13,12 +14,46 @@ SHIPPING_FEE = Decimal("50.00")
 INSPECTION_FEE = Decimal("100.00")
 COMMISSION_RATE = Decimal("0.05")
 
-# สถานะสินค้าที่งานสั่งซื้อใช้ (PRODUCT ยังไม่มีค่าที่ตกลงกัน ดู Decision Log D-01)
+# สถานะสินค้าที่งานสั่งซื้อใช้ ตรงกับ ck_products_status ใน app/models/product.py (ดู D-01)
 PRODUCT_AVAILABLE = "AVAILABLE"
 PRODUCT_RESERVED = "RESERVED"
 
+# รอบนี้ซื้อได้เฉพาะสินค้าราคาปกติ การประมูลอยู่นอกขอบเขต Prototype (ดู D-20)
+# ปัจจุบัน ck_products_sale_type ยอมรับค่านี้ค่าเดียวอยู่แล้ว ฝั่ง Order จึงเป็นด่านที่สอง
+# ที่ทำให้ระบบยังปฏิเสธการประมูลได้เอง ถ้าวันหนึ่งมีการผ่อนเงื่อนไขที่ตารางสินค้า
+SALE_TYPE_FIXED_PRICE = "FIXED_PRICE"
+
 ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
+ORDER_CANCELLED = "CANCELLED"
+
+# สถานะที่ยังไม่รับในรอบนี้ แต่ SRS กำหนดไว้แล้ว (FR-15 ถึง FR-18 และกระบวนการหลักขั้นที่ 6-8)
+# สี่ค่าแรกใช้ชื่อตามสัญญา INSPECT-00 (GitHub issue #54) เพื่อไม่ให้มีชื่อสองชุดในโปรเจกต์เดียว
+# ที่เหลือเป็นชื่อชั่วคราวของงาน CERT/FINISH ซึ่งจะสรุปในรอบของมันเอง
+# เก็บไว้เป็นข้อมูลอ้างอิงเท่านั้น ห้ามเขียนค่าเหล่านี้ลงฐานข้อมูลจนกว่าจะมี Feature รองรับ
+# (ดู doc/orders/contract.md หัวข้อ 2 และ doc/orders/next-round-inspector.md)
+ORDER_STATUSES_RESERVED = (
+    "SHIPPING_TO_CENTER",
+    "RECEIVED_AT_CENTER",
+    "INSPECTING",
+    "RESULT_NOTIFIED",
+    "SHIPPING_TO_BUYER",
+    "COMPLETED",
+    "RETURNED_TO_SELLER",
+    "REFUNDED",
+)
+
+# ชุดสถานะที่อนุญาตให้ทำสิ่งนั้นได้ ระบุเป็น "ชุดของสถานะ" ไม่ใช่เงื่อนไขสองทาง
+# เพราะการเพิ่มสถานะหลังการจัดส่งต้องไม่ทำให้ Order กลับมาจ่ายหรือยกเลิกได้อีก
+PAYABLE_ORDER_STATUSES = frozenset({ORDER_WAITING_PAYMENT})
+CANCELLABLE_ORDER_STATUSES = frozenset({ORDER_WAITING_PAYMENT})
+
+# เหตุผลที่ Order ถูกยกเลิก เก็บแยกจากสถานะเพื่อให้หน้าจอบอกผู้ใช้ได้ว่าใครเป็นคนยกเลิก
+CANCEL_REASON_BUYER = "BUYER"
+CANCEL_REASON_EXPIRED = "EXPIRED"
+
+# ผู้ซื้อมีเวลาจ่าย 30 นาทีนับจากสร้าง Order หมดแล้วสินค้าต้องกลับไปขายต่อได้ (D-05)
+PAYMENT_WINDOW = timedelta(minutes=30)
 
 ATTEMPT_SUCCEEDED = "SUCCEEDED"
 ATTEMPT_FAILED = "FAILED"
@@ -60,3 +95,18 @@ def calculate_amounts(item_price: Decimal) -> OrderAmounts:
 
 def receipt_number(order_id: int) -> str:
     return f"RC-{order_id:06d}"
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    """ฐานข้อมูลบางตัว (เช่น SQLite) คืนเวลาแบบไม่มี timezone ให้ถือว่าเป็น UTC เสมอ"""
+    if value is None:
+        return None
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
+
+def payment_deadline(created_at: datetime) -> datetime:
+    return created_at + PAYMENT_WINDOW

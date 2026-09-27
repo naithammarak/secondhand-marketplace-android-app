@@ -12,24 +12,25 @@ import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
 import { CONDITION_LABELS } from '@/services/product-service';
 import { Spacing } from '@/constants/theme';
-import { formatBaht, formatDateTime, orderStatusLabels } from '@/orders/order-format';
+import { formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
 import type { OrderListItem } from '@/services/order-service';
 
 function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   // หน้ารายการไม่แสดงที่อยู่ แสดงเฉพาะข้อมูลที่ใช้เลือก Order
+  const canPay = item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
   const createdAt = formatDateTime(item.createdAt);
   return (
     <View>
       <Card>
         <ThemedText type="small" themeColor="textSecondary">#{item.id}{createdAt ? ` · ${createdAt}` : ''}</ThemedText>
-        <StatusBadge status={item.status} label={orderStatusLabels[item.status]} />
+        <StatusBadge status={item.status} label={orderStatusLabel(item.status)} />
         <ThemedText type="smallBold">{item.product.name}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[item.product.condition] ?? item.product.condition} · {item.product.size}</ThemedText>
         <Row label={item.viewerRole === 'buyer' ? 'ยอดชำระ' : 'ยอดที่จะได้รับ'} value={formatBaht(amount)} />
-        <Button label={item.viewerRole === 'buyer' && item.paymentStatus === 'UNPAID' ? 'ชำระเงิน' : 'ดูรายละเอียด'}
-          variant={item.paymentStatus === 'UNPAID' ? 'primary' : 'secondary'} onPress={onPress} />
+        <Button label={canPay ? 'ชำระเงิน' : 'ดูรายละเอียด'}
+          variant={canPay ? 'primary' : 'secondary'} onPress={onPress} />
       </Card>
     </View>
   );

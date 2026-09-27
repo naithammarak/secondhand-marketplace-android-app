@@ -141,10 +141,18 @@ def create_user(session: Session, role: UserRole = UserRole.SELLER, status: User
 
 
 def test_migration_upgrades_to_verification_head(postgres_engine):
+    """ต้องอยู่ที่ head ล่าสุดของ repo และ revision ของงานยืนยันตัวตนต้องถูกใช้ไปแล้ว
+
+    ห้ามผูกกับเลข revision ตายตัว เพราะงานอื่นเพิ่ม migration ต่อท้ายได้เรื่อย ๆ
+    """
+    script = ScriptDirectory.from_config(_alembic_config())
     with postgres_engine.connect() as connection:
         context = MigrationContext.configure(connection)
         current = context.get_current_revision()
-        assert current == LATEST_REVISION
+
+    assert current == script.get_current_head()
+    applied = {revision.revision for revision in script.iterate_revisions(current, "base")}
+    assert LATEST_REVISION in applied
 
 
 def test_verifications_table_has_rls_enabled_and_no_direct_api_access(postgres_engine):

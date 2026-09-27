@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOrderService, OrderServiceError } from '../src/services/order-service.ts';
-import { formatBaht } from '../src/orders/order-format.ts';
+import { deadlineAt, formatBaht, formatRemaining, orderStatusLabel, orderStatusLabels } from '../src/orders/order-format.ts';
 import { validateAddress, normalizeAddress } from '../src/orders/checkout-form.ts';
 import { parseRouteId } from '../src/orders/route-params.ts';
 
@@ -23,6 +23,10 @@ const detail = (extra = {}) => ({
   paid_at: null,
   receipt_no: null,
   can_pay: true,
+  can_cancel: true,
+  expires_at: '2026-09-18T10:30:00Z',
+  cancelled_at: null,
+  cancel_reason: null,
   created_at: '2026-09-18T10:00:00Z',
   updated_at: '2026-09-18T10:00:00Z',
   ...extra,
@@ -202,4 +206,134 @@ test('caller abort while reading the body rejects without waiting for the timeou
     new Promise(resolve => setTimeout(() => resolve('hung'), 1000)),
   ]);
   assert.equal(outcome, 'aborted');
+});
+
+
+// ------------------------------------------------------------------ ยกเลิก/หมดเวลา (ORDER-08)
+
+test('cancel posts to the order without an idempotency key and returns the new status', async () => {
+  const cancelled = detail({
+    status: 'CANCELLED',
+    can_pay: false,
+    can_cancel: false,
+    cancelled_at: '2026-09-18T10:05:00Z',
+    cancel_reason: 'BUYER',
+  });
+  const { calls, fetch } = recorder(() => json(200, cancelled));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  const order = await service.cancelOrder('tok', 41);
+
+  assert.equal(calls[0].url, 'https://api.test/orders/41/cancel');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer tok');
+  assert.equal(calls[0].init.headers['Idempotency-Key'], undefined);
+  assert.equal(order.status, 'CANCELLED');
+  assert.equal(order.cancelReason, 'BUYER');
+  assert.equal(order.canCancel, false);
+  assert.equal(order.canPay, false);
+  assert.equal(order.cancelledAt, '2026-09-18T10:05:00Z');
+});
+
+test('the payment deadline and cancel permission are read from the server only', async () => {
+  const { fetch } = recorder(() => json(200, detail()));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  const order = await service.getOrder('tok', 41);
+  assert.equal(order.expiresAt, '2026-09-18T10:30:00Z');
+  assert.equal(order.canCancel, true);
+  assert.equal(order.cancelReason, null);
+});
+
+test('an unknown cancel reason is treated as a malformed response', async () => {
+  const { fetch } = recorder(() => json(200, detail({ cancel_reason: 'SOMETHING_ELSE' })));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  await assert.rejects(() => service.getOrder('tok', 41), error => error instanceof OrderServiceError);
+});
+
+test('an expired order answers with a conflict carrying its code', async () => {
+  const { fetch } = recorder(() => json(409, { detail: { code: 'order_expired', message: 'หมดเวลา' } }));
+  const service = createOrderService({ baseUrl: 'https://api.test', fetch });
+  await assert.rejects(
+    () => service.simulatePayment('tok', { orderId: 41, outcome: 'SUCCESS', idempotencyKey: 'key-12345678' }),
+    error => error.kind === 'conflict' && error.code === 'order_expired',
+  );
+});
+
+test('remaining time counts down and never goes negative', () => {
+  const deadline = '2026-09-18T10:30:00Z';
+  const at = iso => new Date(iso).getTime();
+  assert.equal(formatRemaining(deadline, at('2026-09-18T10:00:00Z')), '30:00');
+  assert.equal(formatRemaining(deadline, at('2026-09-18T10:28:35Z')), '1:25');
+  assert.equal(formatRemaining(deadline, at('2026-09-18T10:29:59Z')), '0:01');
+  // ถึงเวลาแล้วและเลยเวลาแล้วต้องไม่แสดงตัวเลข หน้าจอจะได้ไปถามสถานะจริงแทน
+  assert.equal(formatRemaining(deadline, at('2026-09-18T10:30:00Z')), null);
+  assert.equal(formatRemaining(deadline, at('2026-09-18T11:00:00Z')), null);
+  assert.equal(formatRemaining(null, at('2026-09-18T10:00:00Z')), null);
+  assert.equal(formatRemaining('not-a-date', at('2026-09-18T10:00:00Z')), null);
+});
+
+
+// ---------------------------------------------------------------- สถานะที่แอปยังไม่รู้จัก
+
+test('สถานะใหม่จาก backend ไม่ทำให้หน้าคำสั่งซื้อพัง แต่กลายเป็น UNKNOWN', async () => {
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, detail({ status: 'SHIPPING_TO_INSPECTION', payment_status: 'PAID', paid_at: '2026-09-18T10:20:00Z' })),
+  });
+
+  const order = await service.getOrder('tok', 41);
+  assert.equal(order.status, 'UNKNOWN');
+  // ส่วนอื่นของคำสั่งซื้อต้องยังอ่านได้ตามปกติ
+  assert.equal(order.paymentStatus, 'PAID');
+  assert.equal(order.amounts.totalAmount, '1350.00');
+});
+
+test('สถานะใหม่ในรายการคำสั่งซื้อก็กลายเป็น UNKNOWN เหมือนกัน', async () => {
+  const item = {
+    id: 41, status: 'RECEIVED_AT_CENTER', payment_status: 'PAID', viewer_role: 'buyer',
+    product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
+    total_amount: '1350.00', seller_payout: null, currency: 'THB',
+    expires_at: null, cancel_reason: null, created_at: '2026-09-18T10:00:00Z', paid_at: '2026-09-18T10:20:00Z',
+  };
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, { items: [item], total: 1, limit: 20, offset: 0 }),
+  });
+
+  const page = await service.listOrders('tok', {});
+  assert.equal(page.items[0].status, 'UNKNOWN');
+});
+
+test('สถานะที่ไม่ใช่ข้อความยังถือว่า backend ตอบผิดรูปแบบ', async () => {
+  const service = createOrderService({
+    baseUrl: 'https://api.test',
+    fetch: async () => json(200, detail({ status: 42 })),
+  });
+  await assert.rejects(service.getOrder('tok', 41), error => error instanceof OrderServiceError && error.kind === 'server-error');
+});
+
+test('ข้อความสถานะกลางถูกใช้แทนค่าว่างเสมอ', () => {
+  assert.equal(orderStatusLabel('WAITING_PAYMENT'), 'รอชำระเงิน');
+  assert.equal(orderStatusLabel('UNKNOWN'), orderStatusLabels.UNKNOWN);
+  for (const value of ['SHIPPING_TO_BUYER', '', null, undefined]) {
+    assert.equal(orderStatusLabel(value), orderStatusLabels.UNKNOWN, `value=${value}`);
+  }
+  assert.notEqual(orderStatusLabels.UNKNOWN.trim(), '');
+});
+
+
+test('เศษวินาทีสุดท้ายยังต้องนับว่ายังไม่หมดเวลา', () => {
+  // ก่อนแก้: formatRemaining คืน null ใน 999 มิลลิวินาทีสุดท้าย แล้วหน้าจอเข้าใจว่าหมดเวลาไปแล้ว
+  const deadline = '2026-09-18T10:30:00Z';
+  const at = Date.parse(deadline);
+  assert.equal(formatRemaining(deadline, at - 500), '0:01');
+  assert.equal(formatRemaining(deadline, at - 1), '0:01');
+  assert.equal(formatRemaining(deadline, at), null);
+  assert.equal(formatRemaining(deadline, at + 500), null);
+});
+
+test('deadlineAt ให้เวลาดิบไว้ให้หน้าจอตัดสินเอง', () => {
+  assert.equal(deadlineAt('2026-09-18T10:30:00Z'), Date.parse('2026-09-18T10:30:00Z'));
+  assert.equal(deadlineAt(null), null);
+  assert.equal(deadlineAt(undefined), null);
+  assert.equal(deadlineAt('not-a-date'), null);
 });

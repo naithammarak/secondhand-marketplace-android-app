@@ -115,6 +115,19 @@ describe('ProductDetailScreen', () => {
     expect(screen.queryByText('ผู้ขาย')).toBeNull();
   });
 
+  test('the buy button opens checkout for this product', async () => {
+    mockGetProduct.mockResolvedValue(sampleProduct);
+
+    render(<ProductDetailScreen />);
+    fireEvent.press(await screen.findByRole('button', { name: 'ซื้อสินค้า' }));
+
+    // ราคาและสิทธิ์ซื้อถูกถามจาก server ในหน้า Checkout ไม่ส่งต่อจากหน้านี้
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/checkout/[productId]',
+      params: { productId: '101' },
+    });
+  });
+
   test('renders placeholder image when product has no images', async () => {
     const productWithoutImages: ProductDetail = {
       ...sampleProduct,

@@ -1,8 +1,9 @@
 /**
- * ทางเข้า Checkout ชั่วคราว (Decision Log D-16)
- * Repo ยังไม่มีหน้ารายละเอียดสินค้า เมื่อหน้าสินค้าพร้อมให้ปุ่ม "ซื้อ" เรียก
- * router.push({ pathname: '/checkout/[productId]', params: { productId } })
- * แล้วลบไฟล์นี้กับ route buy-by-product-id
+ * ทางเข้า Checkout ชั่วคราวสำหรับทดสอบด้วยรหัสสินค้าตรง ๆ (Decision Log D-16)
+ *
+ * ทางเข้าหลักคือปุ่ม "ซื้อสินค้านี้" ในหน้ารายละเอียดสินค้า หน้านี้จึงอยู่หลัง Feature Flag
+ * ที่ปิดเป็นค่าตั้งต้น (ดู src/orders/order-runtime.ts) และไม่นับว่าปิดงาน ORDER-04
+ * เมื่อเลิกใช้ ให้ลบไฟล์นี้ route buy-by-product-id และ flag พร้อมกัน
  */
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -14,6 +15,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Screen, styles } from '@/components/order-ui';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { isDirectProductIdEntryEnabled } from '@/orders/order-runtime';
 import { parseRouteId } from '@/orders/route-params';
 
 export function BuyByProductIdScreen() {
@@ -23,6 +25,8 @@ export function BuyByProductIdScreen() {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
 
+  // ปิดสนิทเมื่อ flag ปิด: เข้ามาทาง deep link ตรง ๆ ก็ต้องไม่เห็นหน้านี้
+  if (!isDirectProductIdEntryEnabled()) return <Redirect href="/" />;
   if (!auth.session) return <Redirect href="/login" />;
 
   const open = () => {

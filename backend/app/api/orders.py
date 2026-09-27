@@ -1,16 +1,20 @@
-"""สั่งซื้อ จองสินค้า และจ่ายเงินจำลอง (ORDER-02, ORDER-03, ORDER-07)
+"""สั่งซื้อ จองสินค้า จ่ายเงินจำลอง และยกเลิก (ORDER-02, ORDER-03, ORDER-07, ORDER-08)
 
 กติกาที่ต้องไม่หลุด
 - ผู้ซื้อ/ผู้ขายมาจาก token เสมอ ยอดเงินคำนวณที่ server จาก snapshot ใน Order
 - การจองสินค้าใช้ conditional update (AVAILABLE -> RESERVED) คู่กับ unique index ของ orders
 - การจ่ายเงินล็อกแถว Order ก่อนตรวจสถานะ และ unique constraint กันเงินซ้ำอีกชั้น
+- การหมดเวลาจ่ายเงินไม่ได้ใช้ scheduler แต่ตรวจและยกเลิกให้ตอนมีคนมาอ่านหรือมาแตะ Order นั้น
+  (lazy expiry) จุดบังคับใช้จริงอยู่ที่การจ่ายเงินซึ่งล็อกแถวอยู่แล้ว
+  ตรรกะการกวาดอยู่ที่ `app/services/order_expiry.py` เพราะแคตตาล็อกสินค้าก็ต้องเรียกด้วย
+  มิฉะนั้นสินค้าที่การจองหมดเวลาจะหายจากแคตตาล็อกแล้วไม่มีใครไปแตะ Order นั้นได้อีก (D-05)
 """
 
 import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -24,6 +28,7 @@ from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
 from app.models.user import User, UserRole, UserStatus
 from app.schemas.order import (
+    CancelReason,
     CheckoutQuote,
     CreateOrderRequest,
     OrderAmountsView,
@@ -42,18 +47,31 @@ from app.schemas.order import (
     SimulatePaymentResponse,
     ViewerRole,
 )
+from app.services.order_expiry import (
+    release_reserved_products,
+    sweep_expired_orders,
+)
 from app.services.order_pricing import (
     ATTEMPT_FAILED,
     ATTEMPT_SUCCEEDED,
+    CANCEL_REASON_BUYER,
+    CANCEL_REASON_EXPIRED,
     CURRENCY,
     ESCROW_HELD,
+    CANCELLABLE_ORDER_STATUSES,
+    ORDER_CANCELLED,
     ORDER_WAITING_PAYMENT,
     ORDER_WAITING_SELLER_SHIP,
+    PAYABLE_ORDER_STATUSES,
     PAYMENT_METHOD_SIMULATED,
     PRODUCT_AVAILABLE,
     PRODUCT_RESERVED,
+    SALE_TYPE_FIXED_PRICE,
+    as_utc,
     calculate_amounts,
+    payment_deadline,
     receipt_number,
+    utcnow,
 )
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -101,6 +119,35 @@ def not_order_buyer() -> HTTPException:
 
 def already_paid() -> HTTPException:
     return api_error(status.HTTP_409_CONFLICT, "order_already_paid", "คำสั่งซื้อนี้ชำระเงินแล้ว")
+
+
+def already_cancelled() -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "order_cancelled", "คำสั่งซื้อนี้ถูกยกเลิกแล้ว")
+
+
+def not_payable() -> HTTPException:
+    """สถานะที่เดินหน้าไปแล้ว (เช่น อยู่ระหว่างจัดส่ง) ต้องไม่ตกไปเข้าทางจ่ายเงิน"""
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "order_not_payable",
+        "คำสั่งซื้อนี้อยู่ในขั้นตอนที่ชำระเงินไม่ได้แล้ว",
+    )
+
+
+def not_cancellable() -> HTTPException:
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "order_not_cancellable",
+        "คำสั่งซื้อนี้อยู่ในขั้นตอนที่ยกเลิกเองไม่ได้แล้ว",
+    )
+
+
+def payment_expired_error() -> HTTPException:
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        "order_expired",
+        "หมดเวลาชำระเงินแล้ว คำสั่งซื้อนี้ถูกยกเลิกอัตโนมัติและสินค้าถูกปล่อยให้ผู้อื่นซื้อได้",
+    )
 
 
 def key_reused() -> HTTPException:
@@ -220,7 +267,56 @@ def load_order_for(db: Session, order_id: int, user: User, lock: bool = False) -
 
 
 def is_paid(order: Order) -> bool:
-    return order.status != ORDER_WAITING_PAYMENT
+    """จ่ายเงินสำเร็จแล้วหรือยัง ตัดสินจาก `paid_at` ไม่ใช่จากสถานะ
+
+    สถานะเดินหน้าต่อได้เรื่อย ๆ (ส่งเข้าศูนย์ตรวจ กำลังตรวจ ส่งถึงผู้ซื้อ ฯลฯ) การถามว่า
+    "สถานะเท่ากับ WAITING_SELLER_SHIP ไหม" จึงกลายเป็นเท็จทันทีที่ Order เดินหน้า
+    แล้วใบเสร็จจะหาย ผู้ขายจะไม่เห็นที่อยู่ และหน้าจอจะบอกว่ายังไม่ชำระ
+    ส่วน `paid_at` ถูกตั้งครั้งเดียวตอนจ่ายสำเร็จและไม่มีเส้นทางไหนลบค่านี้
+    """
+    return order.paid_at is not None
+
+
+def is_cancelled(order: Order) -> bool:
+    return order.status == ORDER_CANCELLED
+
+
+def is_payable(order: Order) -> bool:
+    """จ่ายได้เฉพาะสถานะในชุดที่ระบุไว้ ไม่ใช่ "ทุกสถานะที่ยังไม่จ่าย" """
+    return order.status in PAYABLE_ORDER_STATUSES
+
+
+def is_cancellable(order: Order) -> bool:
+    """ยกเลิกได้เฉพาะก่อนชำระเงิน สถานะหลังจากนั้นเป็นเรื่องของงานคืนสินค้า/คืนเงินในรอบถัดไป"""
+    return order.status in CANCELLABLE_ORDER_STATUSES
+
+
+def payment_window_passed(order: Order, now: datetime) -> bool:
+    """เลยเส้นตายและยังไม่จ่าย ค่านี้ตัดสินที่ server เท่านั้น"""
+    if order.status != ORDER_WAITING_PAYMENT:
+        return False
+    deadline = as_utc(order.expires_at)
+    return deadline is not None and deadline <= now
+
+
+def cancel_waiting_order(db: Session, order: Order, reason: str, now: datetime) -> bool:
+    """ยกเลิก Order ที่ยังรอชำระเงิน คืน False เมื่อแถวถูกคำขออื่นเปลี่ยนไปก่อนแล้ว"""
+    try:
+        changed = db.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == ORDER_WAITING_PAYMENT)
+            .values(status=ORDER_CANCELLED, cancel_reason=reason, cancelled_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        if changed.rowcount != 1:
+            db.rollback()
+            return False
+        release_reserved_products(db, [order.product_id])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return True
 
 
 def attempt_view(attempt: PaymentAttempt) -> PaymentAttemptView:
@@ -252,6 +348,13 @@ def order_address(order: Order) -> ShippingAddress:
 
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
     paid = is_paid(order)
+    reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
+    # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
+    # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
+    # จ่ายได้กับยกเลิกได้ตัดสินจากชุดสถานะของตัวเอง ชุดใดชุดหนึ่งเปลี่ยนต้องไม่ลากอีกปุ่มไปด้วย
+    within_window = not payment_window_passed(order, utcnow()) and viewer.status == UserStatus.ACTIVE
+    can_pay = within_window and is_payable(order)
+    can_cancel = within_window and is_cancellable(order)
     if role == ViewerRole.BUYER:
         last_attempt = db.scalars(
             select(PaymentAttempt)
@@ -281,7 +384,11 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             last_payment_attempt=attempt_view(last_attempt) if last_attempt else None,
             paid_at=order.paid_at,
             receipt_no=receipt_no,
-            can_pay=not paid and viewer.status == UserStatus.ACTIVE,
+            can_pay=can_pay,
+            can_cancel=can_cancel,
+            expires_at=order.expires_at,
+            cancelled_at=order.cancelled_at,
+            cancel_reason=reason,
             created_at=order.created_at,
             updated_at=order.updated_at,
         )
@@ -302,19 +409,29 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             commission_fee=order.commission_fee,
             seller_payout=order.seller_payout,
         ),
-        shipping_address=order_address(order) if order.status == ORDER_WAITING_SELLER_SHIP else None,
+        # ผู้ขายเห็นที่อยู่ตั้งแต่จ่ายเงินสำเร็จเป็นต้นไป และต้องไม่หายไปเมื่อสถานะเดินหน้าต่อ (D-12)
+        shipping_address=order_address(order) if paid else None,
         last_payment_attempt=None,
         paid_at=order.paid_at,
         receipt_no=None,
         can_pay=False,
+        can_cancel=False,
+        expires_at=order.expires_at,
+        cancelled_at=order.cancelled_at,
+        cancel_reason=reason,
         created_at=order.created_at,
         updated_at=order.updated_at,
     )
 
 
 def active_order_of_buyer(db: Session, buyer_id: int, product_id: int) -> Order | None:
+    """Order ที่ยังมีผลของผู้ซื้อคนนี้ Order ที่ยกเลิกแล้วไม่กันการสั่งซื้อรอบใหม่"""
     return db.scalars(
-        select(Order).where(Order.buyer_id == buyer_id, Order.product_id == product_id)
+        select(Order).where(
+            Order.buyer_id == buyer_id,
+            Order.product_id == product_id,
+            Order.status != ORDER_CANCELLED,
+        )
     ).first()
 
 
@@ -338,6 +455,16 @@ def load_purchasable_product(db: Session, buyer: User, product_id: int) -> Produ
         raise api_error(status.HTTP_404_NOT_FOUND, "product_not_found", "ไม่พบสินค้า")
     if product.user_id == buyer.id:
         raise api_error(status.HTTP_409_CONFLICT, "self_purchase", "ไม่สามารถซื้อสินค้าของตัวเองได้")
+    if product.sale_type != SALE_TYPE_FIXED_PRICE:
+        # การประมูลอยู่นอกขอบเขตรอบนี้ ปฏิเสธไว้ก่อนแทนการคิดราคาจาก products.price (D-20)
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "sale_type_unsupported",
+            "สินค้าชิ้นนี้ไม่ได้ขายแบบราคาปกติ จึงยังสั่งซื้อผ่านระบบนี้ไม่ได้",
+        )
+    if product.status == PRODUCT_RESERVED and sweep_expired_orders(db, Order.product_id == product_id):
+        # การจองที่หมดเวลาแล้วไม่ควรกันสินค้าไว้ ปล่อยของก่อนแล้วค่อยตัดสินใจจากสถานะล่าสุด
+        db.refresh(product)
     if product.status != PRODUCT_AVAILABLE:
         raise unavailable_conflict(db, buyer, product_id)
     return product
@@ -445,7 +572,9 @@ def create_order(
             raise unavailable_conflict(db, buyer, body.product_id)
 
         amounts = calculate_amounts(reserved.price)
+        # เส้นตายคิดจากนาฬิกาของ server ตอนสร้าง เก็บเป็นค่าคงที่ของ Order นี้ไปตลอด
         order = Order(
+            expires_at=payment_deadline(utcnow()),
             buyer_id=buyer.id,
             seller_id=reserved.user_id,
             product_id=body.product_id,
@@ -507,6 +636,9 @@ def list_orders(
     owner_column = Order.buyer_id if viewer_role == ViewerRole.BUYER else Order.seller_id
     condition = owner_column == current_user.id
 
+    # รายการต้องไม่แสดง "รอชำระเงิน" ทั้งที่เลยเวลาไปแล้ว กวาดเฉพาะ Order ของผู้เรียกเท่านั้น
+    sweep_expired_orders(db, condition)
+
     total = db.scalar(select(func.count()).select_from(Order).where(condition)) or 0
     orders = db.scalars(
         select(Order)
@@ -527,6 +659,8 @@ def list_orders(
                 total_amount=order.total_amount if viewer_role == ViewerRole.BUYER else None,
                 seller_payout=order.seller_payout if viewer_role == ViewerRole.SELLER else None,
                 currency=order.currency,
+                expires_at=order.expires_at,
+                cancel_reason=CancelReason(order.cancel_reason) if order.cancel_reason else None,
                 created_at=order.created_at,
                 paid_at=order.paid_at,
             )
@@ -545,6 +679,49 @@ def get_order(
     db: Session = Depends(get_db),
 ):
     order, role = load_order_for(db, order_id, current_user)
+    if sweep_expired_orders(db, Order.id == order.id):
+        db.refresh(order)
+    return to_detail(db, order, role, current_user)
+
+
+@router.post("/{order_id}/cancel", response_model=OrderDetail)
+def cancel_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """ยกเลิกคำสั่งซื้อที่ยังไม่ได้ชำระเงิน
+
+    ไม่ต้องใช้ Idempotency-Key เพราะคำขอนี้ไม่สร้างแถวใหม่และเรียกซ้ำได้ผลเดิม (D-18)
+    """
+    try:
+        order, role = load_order_for(db, order_id, current_user, lock=True)
+        if role != ViewerRole.BUYER:
+            raise not_order_buyer()
+        ensure_active(current_user)
+        if is_paid(order):
+            raise already_paid()
+
+        if is_cancelled(order):
+            db.rollback()  # ยกเลิกไปแล้ว ไม่มีอะไรต้องเปลี่ยน ปล่อยล็อกทันที
+        elif not is_cancellable(order):
+            raise not_cancellable()
+        else:
+            now = utcnow()
+            # เลยเวลาไปแล้วให้บันทึกตามความจริงว่าหมดเวลา ผลที่ผู้ใช้เห็นเหมือนกัน
+            reason = CANCEL_REASON_EXPIRED if payment_window_passed(order, now) else CANCEL_REASON_BUYER
+            if not cancel_waiting_order(db, order, reason, now):
+                # แพ้การแข่งกับคำขออื่น (เช่น จ่ายเงินสำเร็จพอดี) อ่านสถานะล่าสุดมาตัดสินใหม่
+                order, role = load_order_for(db, order_id, current_user)
+                if is_paid(order):
+                    raise already_paid()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
     return to_detail(db, order, role, current_user)
 
 
@@ -565,10 +742,20 @@ def simulate_payment(
         if role != ViewerRole.BUYER:
             raise not_order_buyer()
 
+        # เส้นตายต้องมีผลก่อนทุกอย่าง รวมถึงการส่งซ้ำด้วย key เดิม
+        # ถ้าปล่อยให้ replay ตอบก่อน ผู้ซื้อจะได้ยินว่า "ยังรอชำระเงิน" ทั้งที่เลยเวลาแล้ว
+        # และสินค้าจะยังค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด
+        expired = payment_window_passed(order, utcnow())
+        if expired:
+            # กวาดแล้ว transaction ปิดและล็อกถูกปล่อย เส้นทางนี้จึงมีแต่การอ่านกับการปฏิเสธเท่านั้น
+            sweep_expired_orders(db, Order.id == order.id)
+            order, role = load_order_for(db, order_id, current_user)
+
         previous = find_attempt_by_key(db, order.id, idempotency_key)
         if previous is not None:
             if previous.request_hash != fingerprint:
                 raise key_reused()
+            # key เดิม payload เดิม ต้องได้ attempt เดิมเสมอ แต่สถานะ Order ที่แนบไปต้องเป็นของจริง
             response.headers[REPLAY_HEADER] = "true"
             return SimulatePaymentResponse(
                 attempt=attempt_view(previous), order=to_detail(db, order, role, current_user)
@@ -578,6 +765,14 @@ def simulate_payment(
         if is_paid(order):
             # key ใหม่หลังจ่ายแล้ว ไม่บันทึก attempt และไม่สร้างเงินซ้ำ
             raise already_paid()
+        if expired:
+            # จุดบังคับใช้จริงของ Timer: ยกเลิกไปแล้วด้านบน เหลือแค่บอกผู้เรียกด้วย code ที่ตรงเหตุ
+            raise payment_expired_error()
+        if is_cancelled(order):
+            raise already_cancelled()
+        if not is_payable(order):
+            # สถานะอื่นที่ยังไม่มีในรอบนี้ (เช่น ระหว่างจัดส่ง) ต้องถูกปฏิเสธ ไม่ใช่ตกมาสร้าง attempt
+            raise not_payable()
 
         attempt = PaymentAttempt(
             order_id=order.id,
@@ -590,7 +785,7 @@ def simulate_payment(
         db.flush()
 
         if attempt.outcome == ATTEMPT_SUCCEEDED:
-            paid_at = datetime.now(timezone.utc)
+            paid_at = utcnow()
             payment = Payment(
                 order_id=order.id,
                 attempt_id=attempt.id,
