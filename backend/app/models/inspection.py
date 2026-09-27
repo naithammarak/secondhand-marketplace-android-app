@@ -16,6 +16,7 @@ class Inspection(Base):
     __table_args__ = (
         UniqueConstraint("order_id", name="uq_inspections_order_id"),
         UniqueConstraint("id", "order_id", name="uq_inspections_id_order_id"),
+        UniqueConstraint("id", "order_id", "result", name="uq_inspections_id_order_result"),
         CheckConstraint("(inspector_id IS NULL AND started_at IS NULL) OR (inspector_id IS NOT NULL AND started_at IS NOT NULL)", name="ck_inspections_assignment"),
         CheckConstraint("result IS NULL OR result IN ('PASS', 'MINOR_ISSUE', 'NOT_AS_DESCRIBED', 'FAKE')", name="ck_inspections_result"),
         CheckConstraint("(result IS NULL AND summary IS NULL AND inspected_at IS NULL) OR (result IS NOT NULL AND summary IS NOT NULL AND inspected_at IS NOT NULL AND inspector_id IS NOT NULL AND started_at IS NOT NULL AND inspected_at >= started_at AND length(summary) BETWEEN 10 AND 2000 AND summary = trim(summary))", name="ck_inspections_final_result"),

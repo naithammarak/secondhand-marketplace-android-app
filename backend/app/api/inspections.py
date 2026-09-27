@@ -198,6 +198,9 @@ def issue_certificate(db: Session, order: Order, work: Inspection, result: str) 
         raise ValueError("Only qualifying results receive certificates")
     token = secrets.token_urlsafe(32)
     _public_url(token)  # Validate configuration before creating any row.
+    # Persist the final result first so the certificate snapshot FK can match it.
+    # This flush remains inside the same transaction; failure rolls both back.
+    db.flush()
     row = Certificate(
         order_id=order.id, inspection_id=work.id, result=result,
         certificate_no=f"CERT-{uuid4().hex[:24].upper()}", public_token=token,

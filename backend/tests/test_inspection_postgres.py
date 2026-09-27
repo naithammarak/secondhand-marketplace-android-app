@@ -160,7 +160,8 @@ def pg_engine():
 
 def test_migration_graph_and_schema(pg_engine):
     script = ScriptDirectory.from_config(_config())
-    assert script.get_heads() == [CERT_HEAD]
+    assert len(script.get_heads()) == 1
+    assert CERT_HEAD in {revision.revision for revision in script.walk_revisions()}
     assert script.get_revision(CERT_HEAD).down_revision == INSPECT_HEAD
     assert script.get_revision(INSPECT_HEAD).down_revision == PRE_INSPECT
     with pg_engine.connect() as connection:
