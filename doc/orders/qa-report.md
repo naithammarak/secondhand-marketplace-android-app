@@ -1,5 +1,9 @@
 # ORDER-06 — QA Report: สั่งซื้อและจ่ายเงินจำลอง
 
+> ผลหลังรวม main ของ PR #92 วันที่ 27 ก.ย. 2026 อยู่ใน
+> [PR #92 verification](pr92-verification-2026-09-27.md): code `6be08c9`, backend 456 passed,
+> HTTP 57/57, mobile logic 294 และ components 119 passed. ผลด้านล่างเป็นประวัติรอบก่อน.
+
 ## Environment
 | รายการ | ค่า |
 |---|---|
