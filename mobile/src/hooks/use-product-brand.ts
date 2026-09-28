@@ -47,22 +47,15 @@ export async function fetchProductBrand(id: number): Promise<string | null> {
 export function useProductBrand(item: ProductListItem): string {
   const explicit = item.brand?.brandName ?? item.brandName ?? (item as any).brand;
   const cached = brandCache.get(item.id);
-  const [brandName, setBrandName] = useState<string | null>(explicit ?? cached ?? null);
+  const [resolvedBrand, setResolvedBrand] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
-    if (explicit) {
-      setBrandName(explicit);
-      brandCache.set(item.id, explicit);
-      return;
-    }
-    if (cached) {
-      setBrandName(cached);
-      return;
-    }
+    if (explicit) brandCache.set(item.id, explicit);
+    if (explicit || cached) return;
     let active = true;
     void fetchProductBrand(item.id).then(resolved => {
       if (active && resolved) {
-        setBrandName(resolved);
+        setResolvedBrand({ id: item.id, name: resolved });
       }
     });
     return () => {
@@ -70,5 +63,5 @@ export function useProductBrand(item: ProductListItem): string {
     };
   }, [item.id, explicit, cached]);
 
-  return brandName ?? explicit ?? cached ?? 'ไม่ระบุแบรนด์';
+  return explicit ?? cached ?? (resolvedBrand?.id === item.id ? resolvedBrand.name : null) ?? 'ไม่ระบุแบรนด์';
 }

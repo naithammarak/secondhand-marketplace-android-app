@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { productCatalogStore } from '@/products/product-catalog-instance';
-import { productCatalogService } from '@/products/product-catalog-instance';
+import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
 
 const imageCache = new Map<number, string>();
 const inFlightPromises = new Map<number, Promise<string | null>>();
@@ -65,37 +64,26 @@ export function useProductImage(id: number, initialUrl?: string | null): string 
   const storeItemUrl = id > 0 ? productCatalogStore?.getSnapshot?.()?.items?.find?.(item => item.id === id)?.mainImage?.imageUrl : null;
   const cached = id > 0 ? imageCache.get(id) : undefined;
   const effectiveInitial = initialUrl || cached || storeItemUrl || null;
-  const [imageUrl, setImageUrl] = useState<string | null>(effectiveInitial);
+  const [resolvedImage, setResolvedImage] = useState<{ id: number; url: string } | null>(null);
 
   useEffect(() => {
-    if (!id || id <= 0) {
-      setImageUrl(null);
-      return;
-    }
+    if (id <= 0) return;
     if (initialUrl) {
-      setImageUrl(initialUrl);
       imageCache.set(id, initialUrl);
       return;
     }
-    if (cached) {
-      setImageUrl(cached);
-      return;
-    }
-    if (storeItemUrl) {
-      setImageUrl(storeItemUrl);
-      imageCache.set(id, storeItemUrl);
-      return;
-    }
+    if (effectiveInitial) return;
     let active = true;
     void fetchProductImage(id).then(resolved => {
       if (active && resolved) {
-        setImageUrl(resolved);
+        setResolvedImage({ id, url: resolved });
       }
     });
     return () => {
       active = false;
     };
-  }, [id, initialUrl, cached, storeItemUrl]);
+  }, [id, initialUrl, effectiveInitial]);
 
-  return imageUrl ?? effectiveInitial;
+  if (id <= 0) return null;
+  return effectiveInitial ?? (resolvedImage?.id === id ? resolvedImage.url : null);
 }

@@ -19,7 +19,7 @@ export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, 
   const [prevUri, setPrevUri] = useState(uri);
   const [failed, setFailed] = useState(false);
   const [internalHovered, setInternalHovered] = useState(false);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(1));
 
   if (prevUri !== uri) {
     setPrevUri(uri);

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, Platform } from 'react-native';
 
 export function usePullToRefresh({
@@ -9,7 +9,10 @@ export function usePullToRefresh({
   onRefresh: () => void;
 }) {
   const isRefreshingRef = useRef(refreshing);
-  isRefreshingRef.current = refreshing;
+
+  useEffect(() => {
+    isRefreshingRef.current = refreshing;
+  }, [refreshing]);
 
   const scrollYRef = useRef(0);
   const dragStartYRef = useRef<number | null>(null);
