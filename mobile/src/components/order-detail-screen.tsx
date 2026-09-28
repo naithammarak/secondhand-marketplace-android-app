@@ -4,8 +4,9 @@ import { MarketplaceHeader } from './marketplace-header';
 import { useTheme } from '@/hooks/use-theme';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useProductImage } from '@/hooks/use-product-image';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
@@ -37,6 +38,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const lastDeadlineCheck = useRef(0);
 
   const order = state.owner === auth.session?.user.id && state.orderId === orderId ? state.order : null;
+  const productImageUrl = useProductImage(order?.product?.id ?? 0, order?.product?.imageUrl ?? null);
   const paying = state.paying !== null;
   const isBuyer = order?.viewerRole === 'buyer';
   // เส้นตายมาจาก server ฝั่งแอปทำแค่แปลงเป็นเวลาที่เหลือให้ดู ไม่ตัดสินสถานะเอง
@@ -162,10 +164,34 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
               </Card>
 
               <Card>
-                <ThemedText type="smallBold">{order.product.name}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  {CONDITION_LABELS[order.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} • ไซซ์ {order.product.size}
-                </ThemedText>
+                <View style={detailStyles.productHeaderRow}>
+                  <View style={[detailStyles.imageContainer, { backgroundColor: theme.backgroundElement ?? '#F1F5F9' }]}>
+                    {productImageUrl ? (
+                      <Image
+                        source={{ uri: productImageUrl }}
+                        style={detailStyles.productImage}
+                        resizeMode="cover"
+                        accessibilityLabel={`รูปสินค้า ${order.product.name}`}
+                      />
+                    ) : (
+                      <ThemedText style={{ fontSize: 26 }}>
+                        {order.product.name.includes('กระเป๋า')
+                          ? '👜'
+                          : order.product.name.includes('เสื้อ') || order.product.name.includes('Jacket')
+                            ? '🧥'
+                            : order.product.name.includes('หูฟัง')
+                              ? '🎧'
+                              : '📦'}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <View style={detailStyles.productInfo}>
+                    <ThemedText type="smallBold">{order.product.name}</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {CONDITION_LABELS[order.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} • ไซซ์ {order.product.size}
+                    </ThemedText>
+                  </View>
+                </View>
                 <Row label="ราคาสินค้า" value={formatBaht(order.amounts.itemPrice)} />
                 {isBuyer ? (
                   <>
@@ -320,3 +346,28 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     </Screen>
   );
 }
+
+const detailStyles = StyleSheet.create({
+  productHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 4,
+  },
+  imageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImage: {
+    width: 56,
+    height: 56,
+  },
+  productInfo: {
+    flex: 1,
+    gap: 2,
+  },
+});

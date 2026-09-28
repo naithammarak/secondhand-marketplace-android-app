@@ -26,6 +26,8 @@ from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
+from app.models.product_image import ProductImage
+from app.api.products import sign_images
 from app.models.user import User, UserRole, UserStatus
 from app.schemas.order import (
     CancelReason,
@@ -328,12 +330,35 @@ def attempt_view(attempt: PaymentAttempt) -> PaymentAttemptView:
     )
 
 
-def product_snapshot(order: Order) -> ProductSnapshot:
+def get_product_images_map(db: Session, product_ids: set[int]) -> dict[int, str]:
+    if not product_ids:
+        return {}
+    try:
+        images = db.scalars(
+            select(ProductImage)
+            .where(ProductImage.product_id.in_(product_ids))
+            .order_by(ProductImage.sort_order, ProductImage.image_id)
+        ).all()
+        first_images: dict[int, ProductImage] = {}
+        for img in images:
+            if img.product_id not in first_images:
+                first_images[img.product_id] = img
+        try:
+            signed = sign_images(list(first_images.values()))
+            return {img.product_id: signed_url for img, signed_url, _ in signed}
+        except Exception:
+            return {pid: img.image_url for pid, img in first_images.items()}
+    except Exception:
+        return {}
+
+
+def product_snapshot(order: Order, image_url: str | None = None) -> ProductSnapshot:
     return ProductSnapshot(
         id=order.product_id,
         name=order.product_name,
         condition=order.product_condition,
         size=order.product_size,
+        image_url=image_url,
     )
 
 
@@ -358,6 +383,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
     within_window = not payment_window_passed(order, utcnow()) and viewer.status == UserStatus.ACTIVE
     can_pay = within_window and is_payable(order)
     can_cancel = within_window and is_cancellable(order)
+    image_url = get_product_images_map(db, {order.product_id}).get(order.product_id)
     if role == ViewerRole.BUYER:
         last_attempt = db.scalars(
             select(PaymentAttempt)
@@ -373,7 +399,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             status=OrderStatus(order.status),
             payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
             viewer_role=role,
-            product=product_snapshot(order),
+            product=product_snapshot(order, image_url),
             amounts=OrderAmountsView(
                 currency=order.currency,
                 item_price=order.item_price,
@@ -402,7 +428,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
         status=OrderStatus(order.status),
         payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
         viewer_role=role,
-        product=product_snapshot(order),
+        product=product_snapshot(order, image_url),
         amounts=OrderAmountsView(
             currency=order.currency,
             item_price=order.item_price,
@@ -508,9 +534,14 @@ def checkout_quote(
 ):
     product = load_purchasable_product(db, buyer, product_id)
     amounts = calculate_amounts(product.price)
+    image_url = get_product_images_map(db, {product.id}).get(product.id)
     return CheckoutQuote(
         product=ProductSnapshot(
-            id=product.id, name=product.product_name, condition=product.condition, size=product.size
+            id=product.id,
+            name=product.product_name,
+            condition=product.condition,
+            size=product.size,
+            image_url=image_url,
         ),
         currency=CURRENCY,
         item_price=amounts.item_price,
@@ -652,6 +683,9 @@ def list_orders(
         .offset(offset)
     ).all()
 
+    product_ids = {order.product_id for order in orders}
+    images_map = get_product_images_map(db, product_ids)
+
     return OrderPage(
         items=[
             OrderListItem(
@@ -659,7 +693,7 @@ def list_orders(
                 status=OrderStatus(order.status),
                 payment_status=PaymentStatus.PAID if is_paid(order) else PaymentStatus.UNPAID,
                 viewer_role=viewer_role,
-                product=product_snapshot(order),
+                product=product_snapshot(order, images_map.get(order.product_id)),
                 total_amount=order.total_amount if viewer_role == ViewerRole.BUYER else None,
                 seller_payout=order.seller_payout if viewer_role == ViewerRole.SELLER else None,
                 currency=order.currency,
