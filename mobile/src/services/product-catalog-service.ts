@@ -245,7 +245,7 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-export type ListProductsParams = { q?: string; page?: number; pageSize?: number };
+export type ListProductsParams = { q?: string; page?: number; pageSize?: number; categoryId?: number | null };
 
 // MOCK: explicit development/test fixture for GET /products and GET /products/{id}.
 // สินค้า id 107 มี status CANCELLED เพื่อทดสอบว่าไม่โผล่ใน public list และ detail ตอบ 404
@@ -457,7 +457,8 @@ async function mockListProducts(params: ListProductsParams): Promise<ProductPage
 
   const query = (params.q ?? '').trim().toLowerCase();
   const filtered = mockSortedAvailable()
-    .filter(product => !query || product.productName.toLowerCase().includes(query));
+    .filter(product => (!query || product.productName.toLowerCase().includes(query))
+      && (!params.categoryId || product.categoryId === params.categoryId));
 
   const total = filtered.length;
   const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
@@ -553,9 +554,17 @@ export function createProductCatalogService(options: ProductCatalogServiceOption
       const query = new URLSearchParams();
       const q = (params.q ?? '').trim();
       if (q) query.set('q', q);
+      if (params.categoryId != null) query.set('category_id', String(params.categoryId));
       query.set('page', String(params.page ?? 1));
       query.set('page_size', String(params.pageSize ?? DEFAULT_PAGE_SIZE));
       return toPage(await request(`/products?${query.toString()}`, { method: 'GET' }, signal));
+    },
+
+    async getCategories(signal?: AbortSignal): Promise<ProductCategory[]> {
+      if (mode === 'mock') return [...new Map(MOCK_SEED.map(p => [p.category.id, p.category])).values()];
+      const body = obj(await request('/categories', { method: 'GET' }, signal));
+      if (!Array.isArray(body.data)) throw new ProductCatalogError('server-error');
+      return body.data.map(toCategory);
     },
 
     async getProduct(id: number, signal?: AbortSignal): Promise<ProductDetail> {

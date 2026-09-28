@@ -1,3 +1,4 @@
+import { useTheme } from '@/hooks/use-theme';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -11,7 +12,7 @@ import {
   type ProductFieldErrors,
   type ProductFormValues,
 } from '@/products/product-form';
-import { Spacing } from '@/constants/theme';
+import { Fonts, Spacing, type MarketplaceTheme } from '@/constants/theme';
 import { pickProductImage } from '@/products/pick-product-image';
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createImageUploadService } from '@/services/image-upload-service';
@@ -38,7 +39,7 @@ type Props = {
   onSubmit: (values: ProductFormValues) => void | Promise<void>;
 };
 
-const ACCENT = '#96bde9';
+
 
 const imageUploadService = createImageUploadService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
@@ -113,6 +114,9 @@ export function ProductForm({
   uploadAbortVersion,
   onSubmit,
 }: Props) {
+  const theme = useTheme();
+  const styles = makeStyles(theme);
+  const ACCENT = theme.primary;
   const [values, setValues] = useState<ProductFormValues>(initialValues ?? emptyProductFormValues);
   const [priceText, setPriceText] = useState(initialValues?.price ?? '');
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -267,156 +271,6 @@ export function ProductForm({
       )}
 
       <View style={styles.field}>
-        <Text style={styles.label}>ชื่อสินค้า *</Text>
-        <TextInput
-          style={[styles.input, nameError && styles.inputError]}
-          value={values.name}
-          onChangeText={name => setValues(current => ({ ...current, name }))}
-          placeholder="เช่น เสื้อยืดสีขาว"
-          placeholderTextColor="#9aa3af"
-          editable={!disabled}
-        />
-        {nameError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{nameError}</Text>}
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>รายละเอียด</Text>
-        <TextInput
-          style={[styles.input, styles.multiline, descError && styles.inputError]}
-          value={values.description}
-          onChangeText={description => setValues(current => ({ ...current, description }))}
-          placeholder="อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ"
-          placeholderTextColor="#9aa3af"
-          multiline
-          editable={!disabled}
-        />
-        {descError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{descError}</Text>}
-      </View>
-
-      <View style={styles.row}>
-        <View style={[styles.field, styles.rowItem]}>
-          <Text style={styles.label}>แบรนด์</Text>
-          <TextInput
-            style={[styles.input, brandError && styles.inputError]}
-            value={values.brand}
-            onChangeText={brand => {
-              const matched = brands.find(b => b.name.trim().toLowerCase() === brand.trim().toLowerCase());
-              setValues(current => ({
-                ...current,
-                brand,
-                brandId: matched ? matched.id : undefined,
-              }));
-            }}
-            placeholder="เช่น Uniqlo"
-            placeholderTextColor="#9aa3af"
-            editable={!disabled && !loadingOptions}
-          />
-          {loadingOptions ? (
-            <View style={styles.optionsInlineLoading}>
-              <ActivityIndicator size="small" color={ACCENT} />
-              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
-            </View>
-          ) : brands.length === 0 ? null : (
-            <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
-              {brands.map(option => {
-                const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
-                return (
-                  <TouchableOpacity
-                    key={option.id}
-                    style={[styles.chip, isSelected && styles.chipSelected]}
-                    onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
-                    disabled={disabled}
-                  >
-                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                      {option.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-          {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
-        </View>
-        <View style={[styles.field, styles.rowItem]}>
-          <Text style={styles.label}>ไซซ์</Text>
-          <TextInput
-            style={[styles.input, sizeError && styles.inputError]}
-            value={values.size}
-            onChangeText={size => setValues(current => ({ ...current, size }))}
-            placeholder="เช่น M, 42"
-            placeholderTextColor="#9aa3af"
-            editable={!disabled}
-          />
-          {sizeError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{sizeError}</Text>}
-        </View>
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>ราคา *</Text>
-        <View style={[styles.priceInputWrapper, priceError && styles.inputError]}>
-          <Text style={styles.pricePrefix}>฿</Text>
-          <TextInput
-            style={styles.priceInput}
-            value={priceText}
-            onChangeText={setPriceText}
-            placeholder="0"
-            placeholderTextColor="#9aa3af"
-            keyboardType="numeric"
-            editable={!disabled}
-          />
-        </View>
-        {priceError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{priceError}</Text>}
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>หมวดหมู่ *</Text>
-        {loadingOptions ? (
-          <View style={styles.optionsInlineLoading}>
-            <ActivityIndicator size="small" color={ACCENT} />
-            <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
-          </View>
-        ) : categories.length === 0 ? null : (
-          <View style={styles.chipRow}>
-            {categories.map(option => {
-              const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[styles.chip, isSelected && styles.chipSelected]}
-                  onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
-                  disabled={disabled}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {option.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-        {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>สภาพสินค้า</Text>
-        <View style={styles.chipRow}>
-          {CONDITION_OPTIONS.map(option => (
-            <TouchableOpacity
-              key={option}
-              style={[styles.chip, values.condition === option && styles.chipSelected]}
-              onPress={() => setValues(current => ({ ...current, condition: option }))}
-              disabled={disabled}
-            >
-              <Text style={[styles.chipText, values.condition === option && styles.chipTextSelected]}>
-                {CONDITION_LABELS[option] ?? option}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {conditionError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{conditionError}</Text>}
-      </View>
-
-      <View style={styles.field}>
         <Text style={styles.label}>รูปภาพ * ({values.images.length}/{MAX_PRODUCT_IMAGES})</Text>
         <Text style={styles.optionsInlineLoadingText}>JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป</Text>
         <View style={styles.imageGrid}>
@@ -503,9 +357,174 @@ export function ProductForm({
         {imagesError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{imagesError}</Text>}
       </View>
 
+      <View style={styles.field}>
+        <Text style={styles.label}>ชื่อสินค้า *</Text>
+        <TextInput
+          style={[styles.input, nameError && styles.inputError]}
+          value={values.name}
+          onChangeText={name => setValues(current => ({ ...current, name }))}
+          accessibilityLabel="ชื่อสินค้า"
+          placeholder="เช่น เสื้อยืดสีขาว"
+          placeholderTextColor={theme.textSecondary}
+          editable={!disabled}
+        />
+        {nameError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{nameError}</Text>}
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>รายละเอียด</Text>
+        <TextInput
+          style={[styles.input, styles.multiline, descError && styles.inputError]}
+          value={values.description}
+          onChangeText={description => setValues(current => ({ ...current, description }))}
+          accessibilityLabel="รายละเอียดสินค้า"
+          placeholder="อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ"
+          placeholderTextColor={theme.textSecondary}
+          multiline
+          editable={!disabled}
+        />
+        {descError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{descError}</Text>}
+      </View>
+
+      <View style={styles.row}>
+        <View style={[styles.field, styles.rowItem]}>
+          <Text style={styles.label}>แบรนด์</Text>
+          <TextInput
+            style={[styles.input, brandError && styles.inputError]}
+            value={values.brand}
+            onChangeText={brand => {
+              const matched = brands.find(b => b.name.trim().toLowerCase() === brand.trim().toLowerCase());
+              setValues(current => ({
+                ...current,
+                brand,
+                brandId: matched ? matched.id : undefined,
+              }));
+            }}
+            accessibilityLabel="แบรนด์"
+          placeholder="เช่น Uniqlo"
+            placeholderTextColor={theme.textSecondary}
+            editable={!disabled && !loadingOptions}
+          />
+          {loadingOptions ? (
+            <View style={styles.optionsInlineLoading}>
+              <ActivityIndicator size="small" color={ACCENT} />
+              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
+            </View>
+          ) : brands.length === 0 ? null : (
+            <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
+              {brands.map(option => {
+                const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected, disabled }}
+                    style={[styles.chip, isSelected && styles.chipSelected]}
+                    onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {option.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+          {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
+        </View>
+        <View style={[styles.field, styles.rowItem]}>
+          <Text style={styles.label}>ไซซ์</Text>
+          <TextInput
+            style={[styles.input, sizeError && styles.inputError]}
+            value={values.size}
+            onChangeText={size => setValues(current => ({ ...current, size }))}
+            accessibilityLabel="ไซซ์"
+          placeholder="เช่น M, 42"
+            placeholderTextColor={theme.textSecondary}
+            editable={!disabled}
+          />
+          {sizeError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{sizeError}</Text>}
+        </View>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>ราคา *</Text>
+        <View style={[styles.priceInputWrapper, priceError && styles.inputError]}>
+          <Text style={styles.pricePrefix}>฿</Text>
+          <TextInput
+            style={styles.priceInput}
+            value={priceText}
+            onChangeText={setPriceText}
+            accessibilityLabel="ราคา (บาท)"
+          placeholder="0"
+            placeholderTextColor={theme.textSecondary}
+            keyboardType="numeric"
+            editable={!disabled}
+          />
+        </View>
+        {priceError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{priceError}</Text>}
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>หมวดหมู่ *</Text>
+        {loadingOptions ? (
+          <View style={styles.optionsInlineLoading}>
+            <ActivityIndicator size="small" color={ACCENT} />
+            <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
+          </View>
+        ) : categories.length === 0 ? null : (
+          <View style={styles.chipRow}>
+            {categories.map(option => {
+              const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected, disabled }}
+                  style={[styles.chip, isSelected && styles.chipSelected]}
+                  onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
+                  disabled={disabled}
+                >
+                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                    {option.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+        {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>สภาพสินค้า</Text>
+        <View style={styles.chipRow}>
+          {CONDITION_OPTIONS.map(option => (
+            <TouchableOpacity
+              key={option}
+              accessibilityRole="button"
+              accessibilityState={{ selected: values.condition === option, disabled }}
+              style={[styles.chip, values.condition === option && styles.chipSelected]}
+              onPress={() => setValues(current => ({ ...current, condition: option }))}
+              disabled={disabled}
+            >
+              <Text style={[styles.chipText, values.condition === option && styles.chipTextSelected]}>
+                {CONDITION_LABELS[option] ?? option}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {conditionError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{conditionError}</Text>}
+      </View>
+
+
       {submitError && <Text accessibilityLiveRegion="polite" style={styles.formErrorText}>{submitError}</Text>}
 
+      <View style={styles.field}><Text style={styles.label}>รูปแบบการขาย</Text><Text style={styles.input}>ราคาปกติ</Text></View>
       <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ disabled: cannotSubmit, busy: !!submitting }}
         style={[styles.submitButton, cannotSubmit && !submitSuccess && styles.submitButtonDisabled,
           submitSuccess && styles.submitButtonSuccess]}
         disabled={cannotSubmit}
@@ -523,7 +542,7 @@ export function ProductForm({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   optionsInlineLoading: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -531,89 +550,91 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.one,
   },
   optionsInlineLoadingText: {
-    fontSize: 13,
-    color: '#64748b',
+    fontFamily: Fonts.sans, fontSize: 13,
+    color: theme.textSecondary,
   },
   optionsErrorBox: {
-    backgroundColor: '#fff1f0',
+    backgroundColor: theme.dangerSoft,
     borderWidth: 1,
-    borderColor: '#ffa39e',
-    borderRadius: Spacing.two,
+    borderColor: theme.danger,
+    borderRadius: 10,
     padding: Spacing.three,
     alignItems: 'center',
     gap: Spacing.two,
   },
   optionsErrorText: {
-    fontSize: 13,
-    color: '#cf1322',
+    fontFamily: Fonts.sans, fontSize: 13,
+    color: theme.danger,
     textAlign: 'center',
   },
   retryOptionsBtn: {
-    backgroundColor: ACCENT,
+    backgroundColor: theme.primary,
     borderRadius: Spacing.one + 2,
     paddingVertical: Spacing.one,
     paddingHorizontal: Spacing.three,
   },
   retryOptionsBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
+    color: theme.onPrimary,
+    fontFamily: Fonts.sans, fontSize: 13,
     fontWeight: '700',
   },
   form: { gap: Spacing.three },
   field: { gap: Spacing.one },
   row: { flexDirection: 'row', gap: Spacing.three },
   rowItem: { flex: 1 },
-  label: { fontSize: 14, fontWeight: '600', color: '#33404f' },
+  label: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600', color: theme.text },
   input: {
     borderWidth: 1.5,
-    borderColor: '#dce4ee',
-    backgroundColor: '#f8fafc',
-    borderRadius: Spacing.two,
+    borderColor: theme.border,
+    backgroundColor: theme.backgroundElement,
+    borderRadius: 10,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
-    fontSize: 16,
-    color: '#1a1f27',
+    fontFamily: Fonts.sans, fontSize: 16,
+    color: theme.text,
   },
-  inputError: { borderColor: '#d9534f' },
+  inputError: { borderColor: theme.danger },
   multiline: { minHeight: 90, textAlignVertical: 'top' },
-  fieldErrorText: { fontSize: 12, color: '#d9534f' },
+  fieldErrorText: { fontFamily: Fonts.sans, fontSize: 12, color: theme.danger },
   priceInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#dce4ee',
-    backgroundColor: '#f8fafc',
-    borderRadius: Spacing.two,
+    borderColor: theme.border,
+    backgroundColor: theme.backgroundElement,
+    borderRadius: 10,
     paddingHorizontal: Spacing.three,
   },
-  pricePrefix: { fontSize: 16, fontWeight: '700', color: ACCENT, marginRight: Spacing.one },
-  priceInput: { flex: 1, paddingVertical: Spacing.two, fontSize: 16, color: '#1a1f27' },
+  pricePrefix: { fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700', color: theme.primary, marginRight: Spacing.one },
+  priceInput: { flex: 1, paddingVertical: Spacing.two, fontFamily: Fonts.sans, fontSize: 16, color: theme.text },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
-    backgroundColor: '#eef3f9',
+    minHeight: 44, justifyContent: 'center',
+    borderWidth: 1, borderColor: theme.border,
+    backgroundColor: theme.backgroundElement,
     borderRadius: 20,
     paddingVertical: Spacing.one + 2,
     paddingHorizontal: Spacing.three,
   },
-  chipSelected: { backgroundColor: ACCENT },
-  chipText: { fontSize: 14, fontWeight: '500', color: '#4a5568' },
-  chipTextSelected: { color: '#ffffff', fontWeight: '700' },
+  chipSelected: { backgroundColor: theme.primary, borderColor: theme.primary },
+  chipText: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '500', color: theme.textSecondary },
+  chipTextSelected: { color: theme.onPrimary, fontWeight: '700' },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   imageTile: {
-    width: 90,
+    width: 88,
     height: 104,
-    borderRadius: Spacing.two,
-    backgroundColor: '#eef3f9',
+    borderRadius: 10,
+    backgroundColor: theme.backgroundElement,
     position: 'relative',
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#dce4ee',
+    borderColor: theme.border,
     justifyContent: 'space-between',
   },
   imageThumbnail: {
     width: '100%',
     height: 74,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: theme.border,
   },
   mainBadge: {
     position: 'absolute',
@@ -625,7 +646,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     zIndex: 2,
   },
-  mainBadgeText: { color: '#ffd166', fontSize: 10, fontWeight: '700' },
+  mainBadgeText: { color: '#ffd166', fontFamily: Fonts.sans, fontSize: 10, fontWeight: '700' },
   setMainButton: {
     position: 'absolute',
     top: 4,
@@ -636,9 +657,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     zIndex: 2,
     borderWidth: 0.5,
-    borderColor: '#cbd5e1',
+    borderColor: theme.border,
   },
-  setMainButtonText: { color: '#33404f', fontSize: 10, fontWeight: '600' },
+  setMainButtonText: { color: theme.text, fontFamily: Fonts.sans, fontSize: 10, fontWeight: '600' },
   imageRemoveBadge: {
     position: 'absolute',
     top: 4,
@@ -646,53 +667,53 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#d9534f',
+    backgroundColor: theme.danger,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
   },
-  imageRemoveBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  imageRemoveBadgeText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 11, fontWeight: '700', lineHeight: 14 },
   reorderBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     height: 28,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.surface,
     paddingHorizontal: 4,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: theme.border,
   },
   reorderBtn: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: '#edf2f7',
+    backgroundColor: theme.backgroundElement,
   },
   reorderBtnText: {
-    fontSize: 11,
-    color: '#33404f',
+    fontFamily: Fonts.sans, fontSize: 11,
+    color: theme.text,
     fontWeight: '700',
   },
   reorderBtnPlaceholder: {
     width: 20,
   },
   addImageTile: {
-    width: 90,
+    width: 88,
     height: 104,
-    borderRadius: Spacing.two,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: ACCENT,
+    borderColor: theme.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addImageIcon: { fontSize: 20, color: ACCENT, fontWeight: '700', lineHeight: 22 },
-  addImageLabel: { fontSize: 11, color: ACCENT, fontWeight: '600' },
-  formErrorText: { fontSize: 13, color: '#d9534f', textAlign: 'center' },
+  addImageIcon: { fontFamily: Fonts.sans, fontSize: 20, color: theme.primary, fontWeight: '700', lineHeight: 22 },
+  addImageLabel: { fontFamily: Fonts.sans, fontSize: 11, color: theme.primary, fontWeight: '600' },
+  formErrorText: { fontFamily: Fonts.sans, fontSize: 13, color: theme.danger, textAlign: 'center' },
   submitButton: {
     marginTop: Spacing.two,
-    backgroundColor: ACCENT,
-    borderRadius: Spacing.three,
+    backgroundColor: theme.primary,
+    borderRadius: 10,
     paddingVertical: Spacing.three,
     alignItems: 'center',
     shadowColor: '#000',
@@ -701,7 +722,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  submitButtonDisabled: { backgroundColor: '#a9b6c4', shadowOpacity: 0 },
-  submitButtonSuccess: { backgroundColor: '#3fa76b' },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  submitButtonDisabled: { backgroundColor: theme.textSecondary, shadowOpacity: 0 },
+  submitButtonSuccess: { backgroundColor: theme.success },
+  submitButtonText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
 });

@@ -27,7 +27,7 @@ export function BuyByProductIdScreen() {
 
   // ปิดสนิทเมื่อ flag ปิด: เข้ามาทาง deep link ตรง ๆ ก็ต้องไม่เห็นหน้านี้
   if (!isDirectProductIdEntryEnabled()) return <Redirect href="/" />;
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   const open = () => {
     const productId = parseRouteId(value.trim());
@@ -50,7 +50,7 @@ export function BuyByProductIdScreen() {
           <View style={styles.field}>
             <ThemedText type="smallBold">รหัสสินค้า</ThemedText>
             <TextInput
-              style={[styles.input, { color: theme.text, borderColor: error ? '#C53030' : theme.backgroundSelected }]}
+              style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: error ? theme.danger : theme.border }]}
               value={value}
               onChangeText={text => { setValue(text); setError(''); }}
               keyboardType="number-pad"

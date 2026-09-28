@@ -10,7 +10,8 @@
 ห้ามชี้ไปที่ฐานข้อมูลกลาง (Supabase)
 """
 
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import os
 import threading
 import time
@@ -25,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 import app.api.orders as orders_module
+import app.services.order_expiry as expiry_module
 from app.database import get_db
 from app.main import app
 from app.models.audit import AdminAccessLog
@@ -548,6 +550,15 @@ def test_cancel_fields_must_match_status(db, world):
     db.rollback()
 
     with pytest.raises(IntegrityError):
+        # SQL CHECK must reject NULL, not accept UNKNOWN as a valid predicate.
+        db.execute(
+            text("UPDATE orders SET status = 'CANCELLED', cancelled_at = now(), cancel_reason = NULL WHERE id = :id"),
+            {"id": order.id},
+        )
+        db.commit()
+    db.rollback()
+
+    with pytest.raises(IntegrityError):
         # ยังไม่ยกเลิกแต่มีเหตุผลติดมา
         db.execute(
             text("UPDATE orders SET cancel_reason = 'BUYER' WHERE id = :id"), {"id": order.id}
@@ -730,3 +741,134 @@ def test_expiry_lookup_index_exists_after_migration(pg_engine):
     # index บางส่วน: ต้องแตะเฉพาะแถวที่ยังรอชำระเงิน ไม่ใช่ทั้งตาราง
     assert "WHERE" in definition
     assert "status" in definition and "WAITING_PAYMENT" in definition
+
+
+def test_expiry_migration_preserves_existing_order_and_money_rows(db, world):
+    """Round-trip ORDER-08 over paid/unpaid data without dropping ORDER-01 tables."""
+    paid_id = create_order(world)
+    assert pay(paid_id, world["a"]).status_code == 200
+    second_product = create_product(db, world["seller"])
+    unpaid = post_order(world["b"], order_body(second_product))
+    assert unpaid.status_code == 201
+
+    def snapshots():
+        saved = {}
+        for table in ORDER_TABLES:
+            rows = db.execute(text(f"SELECT * FROM {table} ORDER BY id")).mappings().all()
+            saved[table] = [
+                {key: value for key, value in row.items()
+                 if key not in {"expires_at", "cancelled_at", "cancel_reason"}}
+                for row in rows
+            ]
+        db.commit()  # release read locks before running DDL on another connection
+        return saved
+
+    before = snapshots()
+    assert all(before[table] for table in ORDER_TABLES)
+    run_alembic("downgrade", PRE_EXPIRY_REVISION)
+    assert snapshots() == before
+    run_alembic("upgrade", "head")
+    assert snapshots() == before
+    deadlines = db.execute(text("SELECT created_at, expires_at FROM orders")).all()
+    assert all(row.expires_at == payment_deadline(row.created_at) for row in deadlines)
+    assert count(db, Payment, order_id=paid_id) == 1
+    assert count(db, Escrow, order_id=paid_id) == 1
+    assert count(db, Receipt, order_id=paid_id) == 1
+
+
+def test_cancelled_data_blocks_downgrade_without_losing_rows(db, world):
+    order_id = create_order(world)
+    assert cancel(order_id, world["a"]).status_code == 200
+    with pytest.raises(RuntimeError, match="CANCELLED"):
+        run_alembic("downgrade", PRE_EXPIRY_REVISION)
+    db.expire_all()
+    assert db.get(Order, order_id).status == "CANCELLED"
+    assert db.get(Product, world["product_id"]).status == "AVAILABLE"
+    db.commit()
+    run_alembic("upgrade", "head")
+
+
+@pytest.mark.parametrize("release_kind", ["cancel", "expiry"])
+def test_released_product_can_be_reserved_by_exactly_one_new_buyer(db, world, release_kind):
+    order_id = create_order(world)
+    if release_kind == "cancel":
+        assert cancel(order_id, world["a"]).status_code == 200
+    else:
+        db.execute(text("UPDATE orders SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": order_id})
+        db.commit()
+        # Both creates may sweep the same expiry; only one may reserve afterward.
+    results = run_parallel([
+        lambda: post_order(world["a"], order_body(world["product_id"])),
+        lambda: post_order(world["b"], order_body(world["product_id"])),
+    ])
+    assert sorted(result.status_code for result in results) == [201, 409]
+    db.expire_all()
+    old = db.get(Order, order_id)
+    assert (old.status, old.cancel_reason) == ("CANCELLED", "BUYER" if release_kind == "cancel" else "EXPIRED")
+    assert db.get(Product, world["product_id"]).status == "RESERVED"
+    assert count(db, Order, product_id=world["product_id"], status="WAITING_PAYMENT") == 1
+    assert count(db, Order, product_id=world["product_id"]) == 2
+    assert all(count(db, model) == 0 for model in (Payment, Escrow, Receipt))
+
+
+def test_expiry_waits_for_payment_and_never_releases_a_paid_product(db, world, Session, monkeypatch):
+    order_id = create_order(world)
+    locked, release = block_first_success(monkeypatch)
+    # Payment locks before the deadline; the sweeper runs after it.
+    monkeypatch.setattr(expiry_module, "utcnow", lambda: utcnow() + timedelta(hours=1))
+
+    def sweep():
+        with Session() as session:
+            return expiry_module.sweep_expired_orders(session)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        payer = pool.submit(pay, order_id, world["a"])
+        assert locked.wait(timeout=30)
+        sweeper = pool.submit(sweep)
+        try:
+            time.sleep(0.2)
+            assert not sweeper.done(), "expiry must wait for the payment row lock"
+        finally:
+            release.set()
+        assert payer.result(timeout=30).status_code == 200
+        assert sweeper.result(timeout=30) == 0
+    db.expire_all()
+    assert db.get(Order, order_id).status == "WAITING_SELLER_SHIP"
+    assert db.get(Product, world["product_id"]).status == "RESERVED"
+    assert all(count(db, model, order_id=order_id) == 1 for model in (Payment, Escrow, Receipt))
+
+
+def test_payment_waits_for_expiry_and_cannot_create_money(db, world, Session, monkeypatch):
+    order_id = create_order(world)
+    db.execute(text("UPDATE orders SET expires_at = now() - interval '1 minute' WHERE id = :id"), {"id": order_id})
+    db.commit()
+    locked, release = threading.Event(), threading.Event()
+    real_release = expiry_module.release_reserved_products
+
+    def paused_release(session, product_ids):
+        if product_ids:
+            locked.set()
+            assert release.wait(timeout=30)
+        real_release(session, product_ids)
+
+    monkeypatch.setattr(expiry_module, "release_reserved_products", paused_release)
+
+    def sweep():
+        with Session() as session:
+            return expiry_module.sweep_expired_orders(session)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        sweeper = pool.submit(sweep)
+        assert locked.wait(timeout=30)
+        payer = pool.submit(pay, order_id, world["a"])
+        try:
+            time.sleep(0.2)
+            assert not payer.done(), "payment must wait for the expiry row lock"
+        finally:
+            release.set()
+        assert sweeper.result(timeout=30) == 1
+        assert payer.result(timeout=30).status_code == 409
+    db.expire_all()
+    assert (db.get(Order, order_id).status, db.get(Order, order_id).cancel_reason) == ("CANCELLED", "EXPIRED")
+    assert db.get(Product, world["product_id"]).status == "AVAILABLE"
+    assert all(count(db, model, order_id=order_id) == 0 for model in (PaymentAttempt, Payment, Escrow, Receipt))
