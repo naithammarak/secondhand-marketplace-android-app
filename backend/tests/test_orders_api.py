@@ -600,6 +600,25 @@ def test_payment_rolls_back_everything_when_a_step_fails(world, db, monkeypatch)
 # ------------------------------------------------------------------ read (ORDER-07)
 
 
+@pytest.mark.parametrize("status", [
+    "SHIPPING_TO_CENTER", "RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED",
+])
+def test_list_and_detail_read_inspect_statuses(world, db, status):
+    order_id = create_paid_order(world)
+    db.get(Order, order_id).status = status
+    db.commit()
+
+    for headers, role in ((world["a"], "buyer"), (world["seller_h"], "seller")):
+        detail = client.get(f"/orders/{order_id}", headers=headers)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["status"] == status
+        assert detail.json()["viewer_role"] == role
+
+        listing = client.get("/orders", headers=headers)
+        assert listing.status_code == 200, listing.text
+        assert any(item["id"] == order_id and item["status"] == status for item in listing.json()["items"])
+
+
 def test_detail_permissions_and_views(world, db):
     order = post_order(world["a"], order_body(world["product_id"])).json()
 

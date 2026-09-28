@@ -32,7 +32,10 @@ MONEY = Numeric(12, 2)
 # ตั้งใจไม่ใช้ native enum ของ PostgreSQL เพราะการเพิ่มค่าจะผูกกับ ALTER TYPE และ downgrade ยาก
 # คอลัมน์เป็น String(32) จึงรองรับชื่อสถานะยาว ๆ ของรอบถัดไปได้โดยไม่ต้องขยาย
 # ส่วน uq_orders_active_product ใช้เงื่อนไข `status <> 'CANCELLED'` จึงคลุมสถานะใหม่ให้เองอัตโนมัติ
-ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED")
+ORDER_STATUSES = (
+    "WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED",
+    "SHIPPING_TO_CENTER", "RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED",
+)
 CANCEL_REASONS = ("BUYER", "EXPIRED")
 ATTEMPT_OUTCOMES = ("SUCCEEDED", "FAILED")
 ESCROW_STATUSES = ("HELD",)
@@ -92,6 +95,7 @@ class Order(Base):
         ),
         Index("ix_orders_buyer_created", "buyer_id", "created_at", "id"),
         Index("ix_orders_seller_created", "seller_id", "created_at", "id"),
+        Index("ix_orders_inspection_queue", "status", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

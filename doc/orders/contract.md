@@ -84,10 +84,10 @@
 |---|---|---|---|
 | 1 | รอชำระเงิน | `WAITING_PAYMENT` | ✅ ทำแล้ว |
 | 2 | รอผู้ขายส่งของ | `WAITING_SELLER_SHIP` | ✅ ทำแล้ว |
-| 3 | กำลังจัดส่งไปยังศูนย์ตรวจสอบ | `SHIPPING_TO_CENTER` | ⏸ สงวนไว้ (INSPECT-00 #54) |
-| 4 | ศูนย์กลางรับของแล้ว | `RECEIVED_AT_CENTER` | ⏸ สงวนไว้ |
-| 5 | กำลังตรวจสอบ | `INSPECTING` | ⏸ สงวนไว้ |
-| 6 | แจ้งผลตรวจ / รอผู้ซื้อยืนยัน | `RESULT_NOTIFIED` | ⏸ สงวนไว้ (INSPECT-00 #54) |
+| 3 | กำลังจัดส่งไปยังศูนย์ตรวจสอบ | `SHIPPING_TO_CENTER` | ✅ DB รองรับใน INSPECT-01; API อยู่ใน INSPECT-02 |
+| 4 | ศูนย์กลางรับของแล้ว | `RECEIVED_AT_CENTER` | ✅ DB รองรับใน INSPECT-01; API อยู่ใน INSPECT-02 |
+| 5 | กำลังตรวจสอบ | `INSPECTING` | ✅ DB รองรับใน INSPECT-01; API อยู่ใน INSPECT-02 |
+| 6 | แจ้งผลตรวจ / รอผู้ซื้อยืนยัน | `RESULT_NOTIFIED` | ✅ DB รองรับใน INSPECT-01; API อยู่ใน INSPECT-03/CERT |
 | 7 | กำลังจัดส่งถึงผู้ซื้อ | `SHIPPING_TO_BUYER` | ⏸ สงวนไว้ |
 | 8 | ผู้ซื้อรับของ / ปิดงาน | `COMPLETED` | ⏸ สงวนไว้ |
 | – | ส่งคืนผู้ขาย | `RETURNED_TO_SELLER` | ⏸ สงวนไว้ |
@@ -95,8 +95,8 @@
 | – | ยกเลิก | `CANCELLED` | ✅ ทำแล้ว (ORDER-08) |
 
 สี่สถานะของช่วงตรวจสินค้าใช้ชื่อตาม **สัญญา INSPECT-00 ([issue #54](https://github.com/naithammarak/secondhand-marketplace-android-app/issues/54))**
-ซึ่งเป็นเจ้าของขอบเขตนั้น ส่วนชื่อของช่วง CERT/FINISH ยัง **ตั้งไว้ล่วงหน้าเพื่อการออกแบบเท่านั้น** และเปลี่ยนได้ในรอบนั้น
-และ **ห้ามเขียนค่าเหล่านี้ลงฐานข้อมูลจนกว่าจะมี Feature รองรับ** (`ck_orders_status` ยังไม่รับค่าเหล่านี้)
+ซึ่งเป็นเจ้าของขอบเขตนั้น และ `ck_orders_status` รับสี่ค่านี้แล้ว ส่วนชื่อของช่วง CERT/FINISH ยัง **ตั้งไว้ล่วงหน้าเพื่อการออกแบบเท่านั้น** และเปลี่ยนได้ในรอบนั้น
+ห้ามเขียนค่า CERT/FINISH ลงฐานข้อมูลจนกว่า Feature รองรับ (`ck_orders_status` ยังไม่รับค่าเหล่านั้น)
 ค่าอ้างอิงอยู่ที่ `ORDER_STATUSES_RESERVED` ใน `backend/app/services/order_pricing.py`
 
 #### การเพิ่มสถานะใหม่ต้องแก้อะไรบ้าง
