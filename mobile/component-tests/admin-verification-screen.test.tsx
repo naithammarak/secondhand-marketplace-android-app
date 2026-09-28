@@ -9,6 +9,7 @@ let mockReviewState: any;
 let mockReviewStore: any;
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
   useRouter: () => ({ back: mockBack }),
   Redirect: ({ href }: { href: string }) => null,
 }));
@@ -41,6 +42,7 @@ const sampleRequest = (id = 1, status = 'PENDING', extra = {}): ReviewRequest =>
   sellerId: 201,
   sellerName: 'ผู้ขาย สมหมาย',
   sellerEmail: 'seller@example.com',
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารกรุงไทย',
   bankAccountName: 'สมหมาย ขายดี',
   bankAccountLast4: '5678',
@@ -341,4 +343,17 @@ test('navigates back to list view from detail view', async () => {
   const backToListBtn = screen.getByRole('button', { name: 'กลับไปที่รายการ' });
   await fireEvent.press(backToListBtn);
   expect(mockReviewStore.select).toHaveBeenCalledWith(null);
+});
+
+test('private queue and evidence disappear immediately when account owner changes', () => {
+  mockReviewState.owner = 'previous-admin';
+  render(<AdminVerificationScreen />);
+  expect(screen.queryByText('seller@example.com')).toBeNull();
+  expect(mockReviewStore.load).not.toHaveBeenCalled();
+});
+test('a previously known Admin with an auth failure cannot continue reviewing', () => {
+  mockAuth.accountError = 'forbidden';
+  render(<AdminVerificationScreen />);
+  expect(screen.queryByText('seller@example.com')).toBeNull();
+  expect(screen.getByText('ตรวจสอบสิทธิ์บัญชีไม่สำเร็จ')).toBeTruthy();
 });

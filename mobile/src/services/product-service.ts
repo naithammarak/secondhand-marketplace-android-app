@@ -61,10 +61,10 @@ export const CONDITION_OPTIONS = ['NEW', 'LIKE_NEW', 'GOOD', 'FAIR'] as const;
 export type ProductCondition = (typeof CONDITION_OPTIONS)[number];
 
 export const CONDITION_LABELS: Record<string, string> = {
-  NEW: 'ใหม่',
-  LIKE_NEW: 'เหมือนใหม่',
+  NEW: 'สภาพใหม่',
+  LIKE_NEW: 'สภาพเหมือนใหม่',
   GOOD: 'สภาพดี',
-  FAIR: 'พอใช้',
+  FAIR: 'สภาพพอใช้',
 };
 
 export const CATEGORY_OPTIONS = ['เสื้อผ้า', 'รองเท้า', 'กระเป๋า', 'เครื่องประดับ', 'อื่น ๆ'] as const;

@@ -54,6 +54,21 @@ def latest_approval_status():
     )
 
 
+def public_sellers(db: Session, user_ids: set[int]) -> dict[int, dict]:
+    """One batched lookup; use the same latest record as catalog eligibility.
+
+    Explicit projection intentionally excludes all identity/banking/evidence data.
+    """
+    latest_id = (select(Verification.id).where(Verification.user_id == User.id)
+                 .order_by(Verification.created_at.desc(), Verification.id.desc())
+                 .limit(1).correlate(User).scalar_subquery())
+    rows = db.execute(select(User.id, Verification.shop_name)
+                      .join(Verification, Verification.id == latest_id)
+                      .where(User.id.in_(user_ids), Verification.verification_status == "APPROVED"))
+    return {user_id: {"display_name": shop_name or "ร้านค้าที่ได้รับอนุมัติ", "verified": True}
+            for user_id, shop_name in rows}
+
+
 def release_expired_reservations(
     db: Session, product_id: int | None = None, *, seller_id: int | None = None
 ) -> None:
@@ -185,6 +200,7 @@ def list_products(
             rows_query.where(*filters).offset((page - 1) * page_size).limit(page_size)
         ).all()
         product_ids = [product.id for product in products]
+        sellers = public_sellers(db, {p.user_id for p in products}) if seller_id is None else {}
         images = (
             db.scalars(
                 select(ProductImage)
@@ -222,6 +238,7 @@ def list_products(
                 "price": format(product.price, ".2f"),
                 "condition": product.condition,
                 "status": product.status,
+                **({"seller": sellers.get(product.user_id)} if seller_id is None else {}),
                 "main_image": (
                     {
                         "image_id": main[0].image_id,
@@ -274,7 +291,10 @@ def detail(db: Session, product_id: int, seller_id: int | None = None) -> dict:
     except Exception as exc:
         logger.exception("PRODUCT-05 detail lookup failed")
         raise product_error(503, "APPROVAL_STATE_UNAVAILABLE" if seller_id is None else "PRODUCT_SAVE_FAILED") from exc
-    return product_result(product, category, brand, signed_product_images(images))
+    result = product_result(product, category, brand, signed_product_images(images))
+    if seller_id is None:
+        result["seller"] = public_sellers(db, {product.user_id}).get(product.user_id)
+    return result
 
 
 @router.get("/products/me", summary="ดูรายการสินค้าของฉัน", description="กด Authorize ด้วยบัญชีผู้ขายก่อน จากนั้นกด Try it out และ Execute เพื่อดูสินค้าของตนเอง")

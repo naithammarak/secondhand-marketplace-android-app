@@ -9,6 +9,7 @@ import {
 
 const idCard = { uri: 'file:///card.png', name: 'card.png', type: 'image/png', size: 1024 };
 const validForm = {
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารทดสอบ',
   bankAccountName: 'ผู้ขาย ทดสอบ',
   bankAccountNumber: '123-4-56789-0',
@@ -18,14 +19,15 @@ const validForm = {
 test('an empty form reports every required field', () => {
   const errors = validateVerificationForm(emptyVerificationForm);
   assert.deepEqual(Object.keys(errors).sort(),
-    ['bankAccountName', 'bankAccountNumber', 'bankName', 'idCard']);
+    ['bankAccountName', 'bankAccountNumber', 'bankName', 'idCard', 'shopName']);
   assert.equal(errors.bankName, 'กรุณากรอกชื่อธนาคาร');
 });
 
 test('a complete form has no errors and normalises the account number', () => {
   assert.deepEqual(validateVerificationForm(validForm), {});
   assert.deepEqual(toVerificationInput(validForm), {
-    bankName: 'ธนาคารทดสอบ',
+    shopName: 'ร้านทดสอบ',
+  bankName: 'ธนาคารทดสอบ',
     bankAccountName: 'ผู้ขาย ทดสอบ',
     bankAccountNumber: '1234567890',
     idCard,

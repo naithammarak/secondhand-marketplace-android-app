@@ -5,6 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/use-theme';
 import { MarketplaceHeader } from './marketplace-header';
+import { WondeeMascot } from './wondee/brand';
+import { ImageViewer } from './wondee/primitives';
 import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Row, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
@@ -27,6 +29,7 @@ export function ProductDetailScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const imageSize = Math.min(width, MaxContentWidth) - 32;
+  const [zoom, setZoom] = useState<string | null>(null);
   const [selection, setSelection] = useState({ productId: NaN, index: 0 });
   const params = useLocalSearchParams<{ id: string }>();
   // id ที่ parse ไม่ได้ส่งเป็น NaN ให้ store เองปฏิเสธเป็น not-available โดยไม่เรียก service (ดู isValidProductId)
@@ -64,8 +67,9 @@ export function ProductDetailScreen() {
             <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.retry(); }} />
           </Card>}
           {!state.loading && product && <>
-            <ProductImage uri={images[selectedImage]?.imageUrl} width="100%" height={imageSize}
-              accessibilityLabel={`รูปสินค้า ${product.productName}`} />
+<Pressable accessibilityRole="button" accessibilityLabel="ขยายรูปสินค้า" onPress={() => setZoom(images[selectedImage]?.imageUrl ?? null)}>
+            <ProductImage uri={images[selectedImage]?.imageUrl} width="100%" height={imageSize * 3 / 4}
+              accessibilityLabel={`รูปสินค้า ${product.productName}`} /></Pressable>
             {images.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnails}>
               {images.map((image, index) => <Pressable key={image.imageId}
                 accessibilityRole="button" accessibilityLabel={`ดูรูปที่ ${index + 1}`} accessibilityState={{ selected: selectedImage === index }}
@@ -74,8 +78,9 @@ export function ProductDetailScreen() {
               </Pressable>)}
             </ScrollView>}
             <ThemedText type="title">{product.productName}</ThemedText>
+            <ThemedText style={[styles.price, { color: theme.accent }]}>{formatBaht(product.price)}</ThemedText>
             <View style={[styles.condition, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="small" style={{ color: theme.primary }}>สภาพ · {conditionLabels[product.condition]}</ThemedText>
+              <ThemedText type="small" style={{ color: theme.accent }}>{conditionLabels[product.condition]}</ThemedText>
             </View>
             <View>
               <Row label="หมวดหมู่" value={product.category.categoryName} />
@@ -83,6 +88,8 @@ export function ProductDetailScreen() {
               <Row label="ขนาด" value={product.size} />
               <Row label="สภาพ" value={conditionLabels[product.condition]} />
             </View>
+            {product.seller && <Card><View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><WondeeMascot size={48} /><View style={{ flex: 1 }}><ThemedText type="smallBold">{product.seller.displayName}</ThemedText>{product.seller.verified && <ThemedText type="small" themeColor="success">ร้านค้าที่ได้รับอนุมัติ</ThemedText>}</View></View></Card>}
+            <Card><ThemedText type="subtitle">การตรวจสภาพกับวนดี</ThemedText><ThemedText themeColor="textSecondary">ตรวจหลังชำระเงินตามขั้นตอนของระบบ ดูค่าบริการจากสรุปยอดก่อนยืนยันคำสั่งซื้อ</ThemedText></Card>
             <View style={[styles.description, { borderColor: theme.border }]}>
               <ThemedText type="subtitle">รายละเอียด</ThemedText>
               <ThemedText themeColor="textSecondary">{product.description || 'ผู้ขายไม่ได้ระบุรายละเอียดเพิ่มเติม'}</ThemedText>
@@ -90,14 +97,11 @@ export function ProductDetailScreen() {
           </>}
         </ScrollView>
         {!state.loading && product && <View style={[styles.purchase, { borderColor: theme.border }]}>
-          <View style={{ flex: 1 }}>
-            <ThemedText type="small" themeColor="textSecondary">ราคาสินค้า</ThemedText>
-            <ThemedText style={styles.price}>{formatBaht(product.price)}</ThemedText>
-          </View>
           <Button label="ซื้อสินค้า" variant="primary" onPress={() => router.push({
             pathname: '/checkout/[productId]', params: { productId: String(product.id) },
           })} />
         </View>}
+<ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
       </SafeAreaView>
     </Screen>
   );
@@ -109,6 +113,6 @@ const styles = StyleSheet.create({
   thumbnail: { padding: 2, borderRadius: 10, borderWidth: 2 },
   condition: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   description: { gap: 8, borderTopWidth: 1, paddingTop: 16, paddingBottom: 16 },
-  purchase: { borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  purchase: { borderTopWidth: 1, gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
   price: { fontFamily: Fonts.displayBold, fontSize: 24, lineHeight: 34 },
 });

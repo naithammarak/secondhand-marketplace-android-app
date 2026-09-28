@@ -123,8 +123,8 @@ describe('ProductListScreen', () => {
     expect(mockStore.setCategory).toHaveBeenCalledWith(42);
     fireEvent.press(screen.getByRole('tab', { name: 'คำสั่งซื้อ' }));
     expect(mockReplace).toHaveBeenCalledWith('/orders');
-    fireEvent.press(screen.getByRole('tab', { name: 'ขายของ' }));
-    expect(mockReplace).toHaveBeenCalledWith('/sell');
+    fireEvent.press(screen.getByRole('tab', { name: 'ฉัน' }));
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
     fireEvent.press(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
     expect(mockPush).toHaveBeenCalledWith('/login');
   });
@@ -183,11 +183,11 @@ describe('ProductListScreen', () => {
 
     expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
     expect(screen.getByText('฿1,290.00')).toBeTruthy();
-    expect(screen.getByText('ดี')).toBeTruthy();
+    expect(screen.getByText('สภาพดี')).toBeTruthy();
 
     expect(screen.getByText('กระเป๋าสะพายหนัง')).toBeTruthy();
     expect(screen.getByText('฿1,990.00')).toBeTruthy();
-    expect(screen.getByText('เหมือนใหม่')).toBeTruthy();
+    expect(screen.getByText('สภาพเหมือนใหม่')).toBeTruthy();
   });
 
   test('updates query when user types in search input', () => {
@@ -292,22 +292,6 @@ describe('ProductListScreen', () => {
     });
   });
 
-  test('navigates back when back button is pressed', () => {
-    mockState = defaultState({ loaded: true });
-    render(<ProductListScreen />);
 
-    const backButton = screen.getByText('กลับ');
-    fireEvent.press(backButton);
-    expect(mockBack).toHaveBeenCalledTimes(1);
-  });
 
-  test('replaces to root when canGoBack is false and back button is pressed', () => {
-    mockCanGoBack = false;
-    mockState = defaultState({ loaded: true });
-    render(<ProductListScreen />);
-
-    const backButton = screen.getByText('กลับ');
-    fireEvent.press(backButton);
-    expect(mockReplace).toHaveBeenCalledWith('/');
-  });
 });

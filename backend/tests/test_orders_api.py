@@ -178,8 +178,8 @@ def test_checkout_quote_requires_buyer(world):
     response = client.get(
         f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["seller_h"]
     )
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "buyer_role_required"
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "self_purchase"
 
 
 # ------------------------------------------------------------------ create (ORDER-02)
@@ -265,7 +265,6 @@ def test_create_validates_address_fields(world, db):
 @pytest.mark.parametrize(
     "role,status_",
     [
-        (UserRole.SELLER, UserStatus.ACTIVE),
         (UserRole.ADMIN, UserStatus.ACTIVE),
         (UserRole.INSPECTOR, UserStatus.ACTIVE),
         (None, UserStatus.ACTIVE),
@@ -545,8 +544,7 @@ def test_suspended_buyer_cannot_pay(world, db):
     response = pay(order["id"], world["a"])
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "account_inactive"
-    detail = client.get(f"/orders/{order['id']}", headers=world["a"]).json()
-    assert detail["can_pay"] is False
+    assert client.get(f"/orders/{order['id']}", headers=world["a"]).status_code == 403
 
 
 def test_payment_request_validation(world, db):
@@ -685,7 +683,7 @@ def test_list_role_filter_cannot_reach_other_users_orders(world, db):
     assert client.get("/orders", headers=world["b"]).json()["total"] == 0
     assert client.get("/orders", headers=world["other_seller_h"]).json()["total"] == 0
     _, admin_h = create_user(db, UserRole.ADMIN)
-    assert client.get("/orders", headers=admin_h).json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert client.get("/orders", headers=admin_h).status_code == 403
     # query ที่พยายามส่ง buyer_id มาถูกละเลย ไม่มีผลต่อสิทธิ์
     response = client.get(f"/orders?buyer_id={world['buyer_a']}", headers=world["b"])
     assert response.json()["total"] == 0
@@ -1107,3 +1105,31 @@ def test_a_new_key_after_the_deadline_still_reports_order_expired(world, db):
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "order_expired"
     assert count(db, PaymentAttempt, order_id=order["id"]) == 0
+
+
+def test_seller_can_buy_pay_read_receipt_and_keep_sales_isolated(world, db):
+    seller_buyer, headers = create_user(db, UserRole.SELLER, name='Seller also shopping')
+    quote = client.get(f"/orders/checkout-quote?product_id={world['product_id']}", headers=headers)
+    assert quote.status_code == 200
+    created = post_order(headers, order_body(world['product_id']))
+    assert created.status_code == 201
+    order_id = created.json()['id']
+    assert created.json()['viewer_role'] == 'buyer'
+    assert pay(order_id, headers).status_code == 200
+    assert client.get(f'/orders/{order_id}/receipt', headers=headers).status_code == 200
+    assert client.get(f'/orders/{order_id}', headers=headers).json()['viewer_role'] == 'buyer'
+    purchases = client.get('/orders?role=buyer', headers=headers).json()['items']
+    assert [row['id'] for row in purchases] == [order_id]
+    assert client.get('/orders?role=seller', headers=headers).json()['items'] == []
+    assert client.get(f'/orders/{order_id}/receipt', headers=world['other_seller_h']).status_code == 404
+    assert pay(order_id, world['other_seller_h']).status_code == 404
+
+
+def test_seller_buyer_can_cancel_unpaid_own_purchase(world, db):
+    _, headers = create_user(db, UserRole.SELLER)
+    order = post_order(headers, order_body(world['product_id'])).json()
+    assert cancel(order['id'], world['other_seller_h']).status_code == 404
+    response = cancel(order['id'], headers)
+    assert response.status_code == 200
+    assert response.json()['status'] == 'CANCELLED'
+    assert product_status(db, world['product_id']) == 'AVAILABLE'

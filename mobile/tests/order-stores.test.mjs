@@ -631,3 +631,25 @@ test('การรีเฟรชที่มาช้าต้องไม่�
   assert.equal(store.getSnapshot().order.paymentStatus, 'PAID');
   assert.equal(store.getSnapshot().lastResult, 'succeeded');
 });
+
+test('Seller purchase/sales switch clears old rows and discards an in-flight response from the old view', async () => {
+  const calls = [];
+  const pending = [];
+  const store = createOrdersListStore({ ...tokens(), service: { listOrders: async (_token, params) => {
+    calls.push(params);
+    return await new Promise(resolve => pending.push(resolve));
+  } } });
+  store.setOwner('seller-as-buyer');
+  const purchase = store.load();
+  while (pending.length < 1) await new Promise(resolve => setImmediate(resolve));
+  const sales = store.setView('seller');
+  assert.deepEqual(store.getSnapshot().items, []);
+  while (pending.length < 2) await new Promise(resolve => setImmediate(resolve));
+  pending[1]({ items: [{ id: 8, viewerRole: 'seller' }], total: 1 }); await sales;
+  pending[0]({ items: [{ id: 7, viewerRole: 'buyer' }], total: 1 }); await purchase;
+  assert.deepEqual(calls.map(call => call.role), ['buyer', 'seller']);
+  assert.deepEqual(store.getSnapshot().items.map(item => item.id), [8]);
+  store.setOwner('another');
+  assert.equal(store.getSnapshot().view, 'buyer');
+  assert.deepEqual(store.getSnapshot().items, []);
+});

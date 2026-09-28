@@ -10,7 +10,7 @@ class AllowedRole(str, Enum):
 
 
 class GoogleLoginRequest(BaseModel):
-    role: Optional[AllowedRole] = None  # อนุญาตให้เลือกได้เฉพาะ BUYER หรือ SELLER
+    role: Optional[AllowedRole] = None  # Legacy compatibility only; ignored by server.
 
 
 class SetRoleRequest(BaseModel):

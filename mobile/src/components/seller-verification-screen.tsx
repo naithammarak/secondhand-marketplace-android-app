@@ -1,369 +1,114 @@
 import { Image } from 'expo-image';
-import { Redirect, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
 import { useTheme } from '@/hooks/use-theme';
-import type { VerificationErrorKind, VerificationStatus } from '@/services/verification-service';
-import { pickIdCardImage } from '@/verification/pick-id-card';
-import { emptyVerificationForm, type VerificationFormValues } from '@/verification/verification-form';
 import { useVerification } from '@/verification/verification-provider';
+import { emptyVerificationForm, type VerificationFormValues } from '@/verification/verification-form';
+import { pickIdCardImage } from '@/verification/pick-id-card';
+import { type VerificationErrorKind } from '@/services/verification-service';
+import { Button, Card, Loading, Screen, styles } from './order-ui';
+import { MarketplaceHeader } from './marketplace-header';
+import { ThemedText } from './themed-text';
+import { TextField } from './wondee/primitives';
+import { WondeeMascot } from './wondee/brand';
 
-const statusLabels: Record<VerificationStatus, string> = {
-  NOT_SUBMITTED: 'ยังไม่ส่งคำขอ',
-  PENDING: 'รอตรวจสอบ',
-  APPROVED: 'อนุมัติแล้ว',
-  REJECTED: 'ถูกปฏิเสธ',
+const errors: Record<VerificationErrorKind, string> = {
+  unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่', forbidden: 'บัญชีนี้ไม่มีสิทธิ์ส่งคำขอ',
+  conflict: 'ส่งคำขอไว้แล้ว ระบบกำลังแสดงสถานะล่าสุด', 'validation-error': 'กรุณาตรวจสอบข้อมูลที่ระบุ',
+  'network-error': 'เชื่อมต่อไม่ได้ กรุณาตรวจสอบสถานะคำขอก่อนส่งอีกครั้ง',
+  'server-error': 'ส่งข้อมูลไม่สำเร็จ กรุณาตรวจสอบสถานะก่อนลองใหม่', unavailable: 'บริการขอเปิดร้านยังไม่พร้อมใช้งาน',
 };
-
-const statusDescriptions: Record<VerificationStatus, string> = {
-  NOT_SUBMITTED: 'กรอกข้อมูลด้านล่างเพื่อส่งคำขอยืนยันตัวตนผู้ขาย',
-  PENDING: 'ส่งคำขอแล้ว กำลังรอผู้ตรวจสอบพิจารณา ระหว่างนี้ยังส่งคำขอใหม่ไม่ได้',
-  APPROVED: 'บัญชีผู้ขายของคุณได้รับการยืนยันแล้ว',
-  REJECTED: 'คำขอถูกปฏิเสธ แก้ไขข้อมูลตามเหตุผลด้านล่างแล้วส่งคำขอใหม่ได้',
-};
-
-const statusColors: Record<VerificationStatus, string> = {
-  NOT_SUBMITTED: '#60646C',
-  PENDING: '#B7791F',
-  APPROVED: '#2F855A',
-  REJECTED: '#C53030',
-};
-
-const errorMessages: Record<VerificationErrorKind, string> = {
-  unauthorized: 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
-  forbidden: 'บัญชีนี้ไม่มีสิทธิ์ส่งคำขอยืนยันผู้ขาย',
-  conflict: 'มีคำขอที่รอผลอยู่แล้ว ระบบได้ดึงสถานะล่าสุดมาแสดงให้',
-  'validation-error': 'ข้อมูลยังไม่ครบถ้วน กรุณาตรวจสอบช่องที่มีข้อความสีแดง',
-  'network-error': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
-  'server-error': 'ระบบขัดข้อง กรุณาลองใหม่ภายหลัง',
-  unavailable: 'บริการยืนยันผู้ขายยังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง',
-};
-
-const pickerMessages = {
-  'permission-denied': 'ไม่ได้รับอนุญาตให้เข้าถึงคลังรูปภาพ กรุณาอนุญาตในการตั้งค่า',
-  cancelled: '',
-};
-
-function formatDate(value: string | null): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString('th-TH');
-}
-
+const labels = { NOT_SUBMITTED: 'เตรียมร้านของคุณให้พร้อม', PENDING: 'กำลังตรวจสอบคำขอ', APPROVED: 'ร้านค้าได้รับอนุมัติแล้ว', REJECTED: 'กรุณาแก้ไขข้อมูลแล้วส่งใหม่' };
 export function SellerVerificationScreen() {
+  const auth = useAuth();
+  return <SellerVerificationContent key={auth.session?.user.id ?? 'guest'} />;
+}
+function SellerVerificationContent() {
   const auth = useAuth();
   const router = useRouter();
   const theme = useTheme();
   const { state, store } = useVerification();
   const [values, setValues] = useState<VerificationFormValues>(emptyVerificationForm);
   const [pickerError, setPickerError] = useState('');
-
-  const record = state.record;
-  const status = record?.status ?? 'NOT_SUBMITTED';
-  const canSubmit = record ? record.canSubmit : true;
+  const owner = auth.session?.user.id ?? null;
+  const currentOwner = useRef(owner);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const customer = auth.account?.source === 'backend' && (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') && !auth.accountError;
+  const record = state.owner === owner && customer ? state.record : null;
   const busy = state.submitting;
-
-  const isSeller = auth.account?.role === 'SELLER';
-
+  useFocusEffect(useCallback(() => {
+    if (owner && customer && state.owner === owner) void store.load();
+  }, [customer, owner, state.owner, store]));
+  const refreshedApproval = useRef<number | null>(null);
+  useEffect(() => { refreshedApproval.current = null; }, [owner]);
   useEffect(() => {
-    // owner ถูกตั้งหลัง effect ของหน้าจอนี้รอบแรก จึงต้องโหลดอีกครั้งเมื่อผูกบัญชีแล้ว
-    if (!isSeller || !state.owner || state.loading || state.refreshing) return;
-    if (!state.record && !state.loadError) void store.load();
-  }, [isSeller, state.loadError, state.loading, state.owner, state.record, state.refreshing, store]);
-
+    if (record?.status === 'APPROVED' && refreshedApproval.current !== record.id) {
+      refreshedApproval.current = record.id;
+      void auth.retryAccount();
+    }
+  }, [auth, record]);
   if (!auth.session) return <Redirect href="/login" />;
-
-  // ระหว่างที่ยังไม่รู้บทบาทจาก backend ต้องไม่แสดงฟอร์มหรือข้อมูลไปก่อน
-  if (!auth.account) {
-    return (
-      <ThemedView style={styles.screen}>
-        <SafeAreaView style={[styles.content, styles.center]}>
-          {auth.accountError ? (
-            <>
-              <ThemedText accessibilityLiveRegion="polite">ตรวจสอบสิทธิ์บัญชีไม่สำเร็จ</ThemedText>
-              <Pressable
-                style={[styles.secondaryButton, auth.accountChecking && styles.buttonDisabled]}
-                disabled={auth.accountChecking}
-                accessibilityRole="button"
-                onPress={() => { void auth.retryAccount(); }}>
-                <ThemedText type="smallBold">ลองใหม่อีกครั้ง</ThemedText>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              <ActivityIndicator accessibilityLabel="กำลังตรวจสอบสิทธิ์บัญชี" />
-              <ThemedText type="small">กำลังตรวจสอบสิทธิ์บัญชี</ThemedText>
-            </>
-          )}
-          <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => router.back()}>
-            <ThemedText type="smallBold">กลับหน้าหลัก</ThemedText>
-          </Pressable>
-        </SafeAreaView>
-      </ThemedView>
-    );
-  }
-
-  if (!isSeller) {
-    return (
-      <ThemedView style={styles.screen}>
-        <SafeAreaView style={styles.content}>
-          <ThemedText type="subtitle">ยืนยันตัวตนผู้ขาย</ThemedText>
-          <ThemedText>หน้านี้สำหรับบัญชีผู้ขายเท่านั้น</ThemedText>
-          <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => router.back()}>
-            <ThemedText type="smallBold">กลับ</ThemedText>
-          </Pressable>
-        </SafeAreaView>
-      </ThemedView>
-    );
-  }
-
   const update = (field: keyof VerificationFormValues, value: string) => {
-    setValues(current => ({ ...current, [field]: value }));
-    store.clearFieldError(field);
+    setValues(current => ({ ...current, [field]: value })); store.clearFieldError(field);
   };
-
-  const onPickImage = async () => {
+  async function pick() {
+    const pickedOwner = owner;
     setPickerError('');
     const result = await pickIdCardImage();
-    if (result.status === 'picked') {
-      setValues(current => ({ ...current, idCard: result.file }));
-      store.clearFieldError('idCard');
-      return;
-    }
-    setPickerError(pickerMessages[result.status]);
-  };
-
-  const onSubmit = async () => {
+    if (!mounted.current || pickedOwner !== currentOwner.current) return;
+    if (result.status === 'picked') { setValues(current => ({ ...current, idCard: result.file })); store.clearFieldError('idCard'); }
+    else setPickerError(result.status === 'permission-denied' ? 'ไม่ได้รับอนุญาตให้เข้าถึงคลังรูปภาพ กรุณาอนุญาตในการตั้งค่า' : 'ยกเลิกการเลือกรูปแล้ว');
+  }
+  async function submit() {
+    const submittedOwner = owner;
     await store.submit(values);
-    // ส่งสำเร็จแล้วล้างฟอร์ม เพื่อไม่ให้เลขบัญชีและรูปบัตรค้างอยู่บนหน้าจอ
-    if (store.getSnapshot().record?.status === 'PENDING') setValues(emptyVerificationForm);
-  };
-
-  const fieldError = (field: keyof VerificationFormValues) => state.fieldErrors[field];
-
-  const renderField = (
-    field: 'bankName' | 'bankAccountName' | 'bankAccountNumber',
-    label: string,
-    placeholder: string,
-    keyboardType: 'default' | 'number-pad' = 'default',
-  ) => {
-    const error = fieldError(field);
-    return (
-      <View style={styles.field}>
-        <ThemedText type="smallBold">{label}</ThemedText>
-        <TextInput
-          style={[styles.input, { color: theme.text, borderColor: error ? statusColors.REJECTED : theme.backgroundSelected }]}
-          value={values[field]}
-          onChangeText={text => update(field, text)}
-          placeholder={placeholder}
-          placeholderTextColor={theme.textSecondary}
-          editable={!busy}
-          keyboardType={keyboardType}
-          accessibilityLabel={label}
-          accessibilityHint={error}
-        />
-        {error ? (
-          <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
-            {error}
-          </ThemedText>
-        ) : null}
-      </View>
-    );
-  };
-
-  const reviewedAt = formatDate(record?.reviewedAt ?? null);
-  const verifiedAt = formatDate(record?.verifiedAt ?? null);
-
-  return (
-    <ThemedView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <SafeAreaView style={styles.content}>
-          <ThemedText type="subtitle">ยืนยันตัวตนผู้ขาย</ThemedText>
-
-          {state.loading && !record ? (
-            <View style={styles.center}>
-              <ActivityIndicator accessibilityLabel="กำลังโหลดสถานะคำขอ" />
-              <ThemedText type="small">กำลังโหลดสถานะคำขอ</ThemedText>
+    if (mounted.current && submittedOwner === currentOwner.current && store.getSnapshot().record?.status === 'PENDING') setValues(emptyVerificationForm);
+  }
+  const status = record?.status ?? 'NOT_SUBMITTED';
+  return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
+    <MarketplaceHeader title="ยืนยันตัวตนเพื่อเปิดร้าน" back />
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}>
+        {auth.accountError ? <Card><ThemedText accessibilityRole="alert">ตรวจสอบสิทธิ์บัญชีไม่สำเร็จ</ThemedText><Button label="ลองใหม่อีกครั้ง" onPress={() => { void auth.retryAccount(); }} /></Card> : !auth.account || auth.accountChecking ? <Loading label="กำลังตรวจสอบสิทธิ์บัญชี" /> : !customer ? <Card>
+          <ThemedText>บัญชีนี้ยังไม่พร้อมขอเปิดร้าน</ThemedText><Button label="ลองตรวจบัญชีอีกครั้ง" onPress={() => { void auth.retryAccount(); }} />
+        </Card> : <>
+          {(state.loading || state.refreshing) && <Loading label="กำลังโหลดสถานะคำขอ" />}
+          {state.loadError && <Card><ThemedText accessibilityRole="alert">{errors[state.loadError]}</ThemedText><Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.retry(); }} /></Card>}
+          {record && <Card>
+            <View style={{ alignItems: 'center', gap: 12 }}><WondeeMascot size={80} variant={status === 'APPROVED' ? 'pass' : status === 'REJECTED' ? 'discrepancy' : 'neutral'} />
+              <ThemedText type="title" style={{ textAlign: 'center' }}>{labels[status]}</ThemedText>
+              <ThemedText themeColor="accent" accessibilityLiveRegion="polite">{status}</ThemedText></View>
+            {status === 'PENDING' && <ThemedText>เราได้รับข้อมูลแล้ว ระหว่างรอตรวจสอบคุณยังซื้อสินค้าได้ ไม่ต้องส่งคำขอซ้ำ</ThemedText>}
+            {record.shopName && <ThemedText type="subtitle">{record.shopName}</ThemedText>}
+            {record.bankName && <ThemedText themeColor="textSecondary">{record.bankName} · {record.bankAccountName} · เลขบัญชีลงท้าย {record.bankAccountLast4}</ThemedText>}
+            {record.reviewedAt && <ThemedText type="small">ตรวจสอบเมื่อ {new Date(record.reviewedAt).toLocaleString('th-TH')}</ThemedText>}
+            {record.rejectReason && <View style={[styles.noticeBox, { borderColor: theme.danger, backgroundColor: theme.dangerSoft }]}><ThemedText type="smallBold">เหตุผลที่ถูกปฏิเสธ</ThemedText><ThemedText>{record.rejectReason}</ThemedText></View>}
+            <Button label="รีเฟรชสถานะ" busy={state.refreshing} onPress={() => { void store.refresh(); void auth.retryAccount(); }} />
+            {status === 'APPROVED' && auth.account?.role === 'SELLER' && !auth.accountChecking && <><Button label="ลงขายสินค้า" variant="primary" onPress={() => router.push('/product/new')} /><Button label="สินค้าของฉัน" onPress={() => router.push('/product/mine')} /></>}
+          </Card>}
+            {state.submitError && <ThemedText style={{ color: theme.danger }} accessibilityRole="alert">{errors[state.submitError]}</ThemedText>}
+          {record?.canSubmit && !state.loadError && <Card>
+            <ThemedText type="subtitle">{status === 'REJECTED' ? 'ส่งคำขอใหม่' : 'ข้อมูลสำหรับเปิดร้าน'}</ThemedText>
+            <ThemedText themeColor="textSecondary">ชื่อร้านแสดงแก่ผู้ซื้อ ส่วนข้อมูลบัญชีและรูปบัตรใช้เพื่อให้ผู้ดูแลตรวจสอบคำขอ</ThemedText>
+            {([['shopName', 'ชื่อร้านค้า', 'ชื่อร้าน 2–100 ตัวอักษร'], ['bankName', 'ชื่อธนาคาร', 'เช่น ธนาคารกรุงไทย'], ['bankAccountName', 'ชื่อบัญชี', 'ชื่อ-นามสกุลตามหน้าสมุดบัญชี'], ['bankAccountNumber', 'เลขที่บัญชี', 'ตัวเลข 10–15 หลัก']] as const).map(([field, label, placeholder]) =>
+              <TextField key={field} label={label} placeholder={placeholder} value={values[field]} editable={!busy}
+                keyboardType={field === 'bankAccountNumber' ? 'number-pad' : 'default'} error={state.fieldErrors[field]} onChangeText={value => update(field, value)} />)}
+            <View style={[styles.noticeBox, { borderColor: theme.inputBorder, borderStyle: 'dashed', padding: 16 }]}>
+              <ThemedText type="smallBold">รูปบัตรประชาชน</ThemedText><ThemedText type="small" themeColor="textSecondary">JPG, PNG หรือ WEBP ขนาดไม่เกิน 5 MB ให้เห็นชื่อและรูปถ่ายชัดเจน</ThemedText>
+              <Button label={values.idCard ? 'เปลี่ยนรูปบัตรประชาชน' : 'เลือกรูปบัตรประชาชน'} accessibilityLabel="เลือกรูปบัตรประชาชน" disabled={busy} onPress={() => { void pick(); }} />
+              {!!values.idCard && <Image source={{ uri: values.idCard.uri }} contentFit="contain" style={{ height: 120, width: '100%' }} accessibilityLabel="รูปบัตรที่เลือก" />}
+              {!!(state.fieldErrors.idCard || pickerError) && <ThemedText style={{ color: theme.danger }} accessibilityRole="alert">{state.fieldErrors.idCard || pickerError}</ThemedText>}
             </View>
-          ) : null}
 
-          {state.loadError ? (
-            <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText accessibilityLiveRegion="polite">{errorMessages[state.loadError]}</ThemedText>
-              <Pressable
-                style={[styles.secondaryButton, state.refreshing && styles.buttonDisabled]}
-                disabled={state.loading || state.refreshing}
-                accessibilityRole="button"
-                onPress={() => { void store.retry(); }}>
-                <ThemedText type="smallBold">ลองใหม่อีกครั้ง</ThemedText>
-              </Pressable>
-            </ThemedView>
-          ) : null}
-
-          {record ? (
-            <ThemedView type="backgroundElement" style={styles.card}>
-              <View style={styles.statusRow}>
-                <View style={[styles.statusDot, { backgroundColor: statusColors[status] }]} />
-                <ThemedText type="smallBold" accessibilityLiveRegion="polite">
-                  สถานะ: {statusLabels[status]}
-                </ThemedText>
-              </View>
-              <ThemedText type="small" themeColor="textSecondary">{statusDescriptions[status]}</ThemedText>
-
-              {record.bankName ? (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {record.bankName} • {record.bankAccountName} • เลขบัญชีลงท้าย {record.bankAccountLast4}
-                </ThemedText>
-              ) : null}
-              {reviewedAt ? (
-                <ThemedText type="small" themeColor="textSecondary">ตรวจสอบเมื่อ {reviewedAt}</ThemedText>
-              ) : null}
-              {verifiedAt ? (
-                <ThemedText type="small" themeColor="textSecondary">ยืนยันเมื่อ {verifiedAt}</ThemedText>
-              ) : null}
-
-              {status === 'REJECTED' && record.rejectReason ? (
-                <ThemedView style={[styles.reasonBox, { borderColor: statusColors.REJECTED }]}>
-                  <ThemedText type="smallBold">เหตุผลที่ถูกปฏิเสธ</ThemedText>
-                  <ThemedText type="small">{record.rejectReason}</ThemedText>
-                </ThemedView>
-              ) : null}
-
-              <Pressable
-                style={[styles.secondaryButton, (state.refreshing || state.loading) && styles.buttonDisabled]}
-                disabled={state.refreshing || state.loading}
-                accessibilityRole="button"
-                onPress={() => { void store.refresh(); }}>
-                <ThemedText type="smallBold">
-                  {state.refreshing ? 'กำลังรีเฟรช' : 'รีเฟรชสถานะ'}
-                </ThemedText>
-              </Pressable>
-            </ThemedView>
-          ) : null}
-
-          {canSubmit ? (
-            <ThemedView type="backgroundElement" style={styles.card}>
-              <ThemedText type="smallBold">
-                {status === 'REJECTED' ? 'ส่งคำขอใหม่' : 'ข้อมูลสำหรับยืนยันตัวตน'}
-              </ThemedText>
-
-              {renderField('bankName', 'ชื่อธนาคาร', 'เช่น ธนาคารกรุงไทย')}
-              {renderField('bankAccountName', 'ชื่อบัญชี', 'ชื่อ-นามสกุลตามหน้าสมุดบัญชี')}
-              {renderField('bankAccountNumber', 'เลขที่บัญชี', 'ตัวเลข 10-15 หลัก', 'number-pad')}
-
-              <View style={styles.field}>
-                <ThemedText type="smallBold">รูปบัตรประชาชน</ThemedText>
-                <Pressable
-                  style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-                  disabled={busy}
-                  accessibilityRole="button"
-                  accessibilityLabel="เลือกรูปบัตรประชาชน"
-                  onPress={() => { void onPickImage(); }}>
-                  <ThemedText type="smallBold">
-                    {values.idCard ? 'เปลี่ยนรูปบัตรประชาชน' : 'เลือกรูปบัตรประชาชน'}
-                  </ThemedText>
-                </Pressable>
-                {values.idCard ? (
-                  <View style={styles.previewRow}>
-                    <Image source={{ uri: values.idCard.uri }} style={styles.preview} contentFit="cover" />
-                    <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.previewName}>
-                      {values.idCard.name}
-                    </ThemedText>
-                  </View>
-                ) : null}
-                {fieldError('idCard') ? (
-                  <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
-                    {fieldError('idCard')}
-                  </ThemedText>
-                ) : null}
-                {pickerError ? (
-                  <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
-                    {pickerError}
-                  </ThemedText>
-                ) : null}
-              </View>
-
-              {state.submitError ? (
-                <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
-                  {errorMessages[state.submitError]}
-                </ThemedText>
-              ) : null}
-
-              <Pressable
-                style={[styles.primaryButton, busy && styles.buttonDisabled]}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: busy, busy }}
-                onPress={() => { void onSubmit(); }}>
-                {busy ? <ActivityIndicator color="#ffffff" accessibilityLabel="กำลังส่งคำขอ" /> : null}
-                <ThemedText type="smallBold" style={styles.primaryButtonText}>
-                  {busy ? 'กำลังส่งคำขอ' : 'ส่งคำขอยืนยันตัวตน'}
-                </ThemedText>
-              </Pressable>
-              <ThemedText type="small" themeColor="textSecondary">
-                รูปบัตรประชาชนถูกส่งผ่านเซิร์ฟเวอร์ของระบบและใช้เพื่อการตรวจสอบเท่านั้น
-              </ThemedText>
-            </ThemedView>
-          ) : null}
-
-          {!canSubmit && state.submitError === 'conflict' ? (
-            <ThemedText type="small" accessibilityLiveRegion="polite">{errorMessages.conflict}</ThemedText>
-          ) : null}
-
-          <Pressable style={styles.secondaryButton} accessibilityRole="button" onPress={() => router.back()}>
-            <ThemedText type="smallBold">กลับหน้าหลัก</ThemedText>
-          </Pressable>
-        </SafeAreaView>
+            <Button label="ส่งคำขอยืนยันตัวตน" variant="primary" busy={busy} onPress={() => { void submit(); }} />
+          </Card>}
+        </>}
+        <Button label="กลับหน้าหลัก" onPress={() => router.canGoBack() ? router.back() : router.replace('/profile')} />
       </ScrollView>
-    </ThemedView>
-  );
+    </KeyboardAvoidingView>
+  </SafeAreaView></Screen>;
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1 },
-  scrollContent: { flexGrow: 1, alignItems: 'center', padding: Spacing.three },
-  content: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
-  center: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four },
-  card: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  reasonBox: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.half },
-  field: { gap: Spacing.one },
-  input: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  errorText: { color: '#C53030' },
-  previewRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  preview: { width: 72, height: 48, borderRadius: Spacing.one },
-  previewName: { flexShrink: 1 },
-  primaryButton: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    backgroundColor: '#243a73',
-    borderRadius: Spacing.two,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: { color: '#ffffff' },
-  secondaryButton: {
-    borderRadius: Spacing.two,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#243a73',
-  },
-  buttonDisabled: { opacity: 0.5 },
-});

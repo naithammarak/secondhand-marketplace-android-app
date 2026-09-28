@@ -531,7 +531,7 @@ export function ProductForm({
         onPress={handleSubmit}
       >
         {submitting ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={theme.onPrimary} />
         ) : submitSuccess ? (
           <Text style={styles.submitButtonText}>✓ สำเร็จ</Text>
         ) : (
@@ -585,9 +585,9 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   label: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '600', color: theme.text },
   input: {
     borderWidth: 1.5,
-    borderColor: theme.border,
-    backgroundColor: theme.backgroundElement,
-    borderRadius: 10,
+    borderColor: theme.inputBorder,
+    backgroundColor: theme.input,
+    minHeight: 48, borderRadius: 12,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     fontFamily: Fonts.sans, fontSize: 16,
@@ -600,16 +600,16 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: theme.border,
-    backgroundColor: theme.backgroundElement,
-    borderRadius: 10,
+    borderColor: theme.inputBorder,
+    backgroundColor: theme.input,
+    minHeight: 48, borderRadius: 12,
     paddingHorizontal: Spacing.three,
   },
   pricePrefix: { fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700', color: theme.primary, marginRight: Spacing.one },
   priceInput: { flex: 1, paddingVertical: Spacing.two, fontFamily: Fonts.sans, fontSize: 16, color: theme.text },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   chip: {
-    minHeight: 44, justifyContent: 'center',
+    minHeight: 48, justifyContent: 'center',
     borderWidth: 1, borderColor: theme.border,
     backgroundColor: theme.backgroundElement,
     borderRadius: 20,
@@ -621,8 +621,8 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   chipTextSelected: { color: theme.onPrimary, fontWeight: '700' },
   imageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   imageTile: {
-    width: 88,
-    height: 104,
+    width: 144,
+    height: 184,
     borderRadius: 10,
     backgroundColor: theme.backgroundElement,
     position: 'relative',
@@ -633,7 +633,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   imageThumbnail: {
     width: '100%',
-    height: 74,
+    height: 134,
     backgroundColor: theme.border,
   },
   mainBadge: {
@@ -646,12 +646,13 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     paddingVertical: 2,
     zIndex: 2,
   },
-  mainBadgeText: { color: '#ffd166', fontFamily: Fonts.sans, fontSize: 10, fontWeight: '700' },
+  mainBadgeText: { color: '#ffd166', fontFamily: Fonts.sans, fontSize: 12, fontWeight: '700' },
   setMainButton: {
+    minHeight: 48, width: 80, justifyContent: 'center',
     position: 'absolute',
     top: 4,
     left: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: theme.surface,
     borderRadius: 6,
     paddingHorizontal: 5,
     paddingVertical: 2,
@@ -659,38 +660,39 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     borderWidth: 0.5,
     borderColor: theme.border,
   },
-  setMainButtonText: { color: theme.text, fontFamily: Fonts.sans, fontSize: 10, fontWeight: '600' },
+  setMainButtonText: { color: theme.text, fontFamily: Fonts.sans, fontSize: 12, fontWeight: '600' },
   imageRemoveBadge: {
     position: 'absolute',
     top: 4,
     right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     backgroundColor: theme.danger,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,
   },
-  imageRemoveBadgeText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  imageRemoveBadgeText: { color: theme.onDanger, fontFamily: Fonts.sans, fontSize: 12, fontWeight: '700', lineHeight: 14 },
   reorderBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    height: 28,
+    height: 48,
     backgroundColor: theme.surface,
     paddingHorizontal: 4,
     borderTopWidth: 1,
     borderTopColor: theme.border,
   },
   reorderBtn: {
+    minHeight: 48, minWidth: 48, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     backgroundColor: theme.backgroundElement,
   },
   reorderBtnText: {
-    fontFamily: Fonts.sans, fontSize: 11,
+    fontFamily: Fonts.sans, fontSize: 12,
     color: theme.text,
     fontWeight: '700',
   },
@@ -698,8 +700,8 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     width: 20,
   },
   addImageTile: {
-    width: 88,
-    height: 104,
+    width: 144,
+    height: 184,
     borderRadius: 10,
     borderWidth: 1.5,
     borderStyle: 'dashed',
@@ -708,7 +710,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     justifyContent: 'center',
   },
   addImageIcon: { fontFamily: Fonts.sans, fontSize: 20, color: theme.primary, fontWeight: '700', lineHeight: 22 },
-  addImageLabel: { fontFamily: Fonts.sans, fontSize: 11, color: theme.primary, fontWeight: '600' },
+  addImageLabel: { fontFamily: Fonts.sans, fontSize: 12, color: theme.primary, fontWeight: '600' },
   formErrorText: { fontFamily: Fonts.sans, fontSize: 13, color: theme.danger, textAlign: 'center' },
   submitButton: {
     marginTop: Spacing.two,
@@ -724,5 +726,5 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   submitButtonDisabled: { backgroundColor: theme.textSecondary, shadowOpacity: 0 },
   submitButtonSuccess: { backgroundColor: theme.success },
-  submitButtonText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
+  submitButtonText: { color: theme.onPrimary, fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
 });

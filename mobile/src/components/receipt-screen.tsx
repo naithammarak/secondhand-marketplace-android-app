@@ -26,7 +26,7 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
 
   if (!auth.session) return <Redirect href="/login" />;
 
-  const receipt = state.orderId === orderId ? state.receipt : null;
+  const receipt = state.owner === auth.session?.user.id && state.orderId === orderId ? state.receipt : null;
   const issuedAt = formatDateTime(receipt?.issuedAt);
 
   return (

@@ -3,6 +3,7 @@ export type VerificationStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJ
 export type VerificationRecord = {
   status: VerificationStatus;
   id: number | null;
+  shopName: string | null;
   bankName: string | null;
   bankAccountName: string | null;
   bankAccountLast4: string | null;
@@ -26,6 +27,7 @@ export type IdCardFile = {
 };
 
 export type VerificationInput = {
+  shopName: string;
   bankName: string;
   bankAccountName: string;
   bankAccountNumber: string;
@@ -60,6 +62,7 @@ function toRecord(payload: unknown): VerificationRecord {
   return {
     status,
     id: typeof data.id === 'number' ? data.id : null,
+    shopName: readString(data.shop_name),
     bankName: readString(data.bank_name),
     bankAccountName: readString(data.bank_account_name),
     bankAccountLast4: readString(data.bank_account_last4),
@@ -136,6 +139,7 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
       signal?: AbortSignal,
     ): Promise<VerificationRecord> {
       const body = new FormData();
+      body.append('shop_name', input.shopName);
       body.append('bank_name', input.bankName);
       body.append('bank_account_name', input.bankAccountName);
       body.append('bank_account_number', input.bankAccountNumber);

@@ -228,6 +228,7 @@ def test_concurrent_pending_submissions_enforce_single_pending(postgres_engine, 
     def submit_one():
         barrier.wait()
         data = {
+            "shop_name": "ร้านทดสอบ",
             "bank_name": "ธนาคารไทยพาณิชย์",
             "bank_account_name": "นาย ทดสอบ ผู้ขาย",
             "bank_account_number": "1234567890",
@@ -249,7 +250,7 @@ def test_concurrent_pending_submissions_enforce_single_pending(postgres_engine, 
 def test_concurrent_admin_decision_allows_only_one_winner(postgres_engine, pg_api):
     client, _ = pg_api
     with Session(postgres_engine) as session:
-        seller_id, _ = create_user(session, role=UserRole.SELLER)
+        seller_id, _ = create_user(session, role=UserRole.BUYER)
         admin1_id, token_admin1 = create_user(session, role=UserRole.ADMIN)
         admin2_id, token_admin2 = create_user(session, role=UserRole.ADMIN)
 
@@ -290,3 +291,8 @@ def test_concurrent_admin_decision_allows_only_one_winner(postgres_engine, pg_ap
     assert 409 in codes
     conflict_resp = r1 if r1.status_code == 409 else r2
     assert conflict_resp.json()["detail"]["code"] == "already_reviewed"
+
+    with Session(postgres_engine) as session:
+        record = session.get(Verification, ver_id)
+        expected = UserRole.SELLER if record.verification_status == 'APPROVED' else UserRole.BUYER
+        assert session.get(User, seller_id).role == expected

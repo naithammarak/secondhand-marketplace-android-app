@@ -1,7 +1,8 @@
+import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
@@ -62,12 +63,12 @@ export default function MyProductsScreen() {
     <View style={styles.page}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <SafeAreaView style={styles.content}>
-          <Text style={styles.title}>สินค้าของฉัน</Text>
+          <ThemedText style={styles.title}>สินค้าของฉัน</ThemedText>
           <TouchableOpacity style={styles.button} onPress={() => router.push('/product/new')} accessibilityRole="button">
-            <Text style={styles.buttonText}>ลงขายสินค้า</Text>
+            <ThemedText style={styles.buttonText}>ลงขายสินค้า</ThemedText>
           </TouchableOpacity>
           {loading && <ActivityIndicator accessibilityLabel="กำลังโหลดสินค้าของฉัน" />}
-          {!loading && items.length === 0 && !error && <Text>ยังไม่มีสินค้า</Text>}
+          {!loading && items.length === 0 && !error && <ThemedText>ยังไม่มีสินค้า</ThemedText>}
           {!loading && items.map(item => (
             <TouchableOpacity
               key={item.id}
@@ -79,25 +80,25 @@ export default function MyProductsScreen() {
             >
               {item.mainImageUrl && <Image source={{ uri: item.mainImageUrl }} style={styles.image} />}
               <View style={styles.details}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text>฿{item.price} · {statusLabels[item.status] ?? item.status}</Text>
-                {item.status === 'AVAILABLE' && <Text style={styles.action}>แก้ไข / ยกเลิกการขาย</Text>}
+                <ThemedText style={styles.name}>{item.name}</ThemedText>
+                <ThemedText>฿{item.price} · {statusLabels[item.status] ?? item.status}</ThemedText>
+                {item.status === 'AVAILABLE' && <ThemedText style={styles.action}>แก้ไข / ยกเลิกการขาย</ThemedText>}
               </View>
             </TouchableOpacity>
           ))}
           {error && <View style={styles.errorBox}>
-            <Text accessibilityLiveRegion="polite">{error}</Text>
+            <ThemedText accessibilityLiveRegion="polite">{error}</ThemedText>
             <TouchableOpacity style={styles.button} onPress={() => { void load(retryPage); }} accessibilityRole="button">
-              <Text style={styles.buttonText}>ลองใหม่อีกครั้ง</Text>
+              <ThemedText style={styles.buttonText}>ลองใหม่อีกครั้ง</ThemedText>
             </TouchableOpacity>
           </View>}
           {hasNext && !error && !loading && (
             <TouchableOpacity style={styles.button} disabled={loadingMore} onPress={() => { void load(page + 1); }} accessibilityRole="button">
-              <Text style={styles.buttonText}>{loadingMore ? 'กำลังโหลด...' : 'โหลดเพิ่ม'}</Text>
+              <ThemedText style={styles.buttonText}>{loadingMore ? 'กำลังโหลด...' : 'โหลดเพิ่ม'}</ThemedText>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} accessibilityRole="button">
-            <Text style={styles.action}>กลับ</Text>
+          <TouchableOpacity style={{ minHeight: 48, justifyContent: 'center' }} onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} accessibilityRole="button">
+            <ThemedText style={styles.action}>กลับ</ThemedText>
           </TouchableOpacity>
         </SafeAreaView>
       </ScrollView>
@@ -110,12 +111,12 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   scroll: { flexGrow: 1, alignItems: 'center' },
   content: { width: '100%', maxWidth: MaxContentWidth, padding: Spacing.three, gap: Spacing.three },
   title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text },
-  button: { backgroundColor: theme.primary, borderRadius: 8, padding: Spacing.three, alignItems: 'center' },
+  button: { backgroundColor: theme.primary, minHeight: 48, borderRadius: 16, padding: Spacing.three, alignItems: 'center' },
   buttonText: { color: theme.onPrimary, fontWeight: '700' },
-  card: { backgroundColor: theme.surface, borderRadius: 12, padding: Spacing.three, flexDirection: 'row', gap: Spacing.three },
+  card: { backgroundColor: theme.surface, borderRadius: 16, padding: Spacing.three, flexDirection: 'row', gap: Spacing.three },
   image: { width: 72, height: 72, borderRadius: 8 },
   details: { flex: 1, gap: Spacing.one },
-  name: { fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
+  name: { color: theme.text, fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
   action: { color: theme.primary, fontWeight: '700' },
   errorBox: { gap: Spacing.two },
 });

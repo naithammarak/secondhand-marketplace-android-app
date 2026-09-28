@@ -5,15 +5,16 @@
  * order/verification service เดิมที่ใช้ {"detail":...} เพราะ Product API ใช้ envelope ใหม่นี้โดยเฉพาะ
  */
 
-export type ProductCondition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR';
+export type ProductCondition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'UNKNOWN';
 export type ProductStatus = 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'CANCELLED';
 
 /** ข้อความภาษาไทยของ condition จาก backend หน้าจอแสดงตามนี้เท่านั้น ไม่คำนวณเอง */
 export const conditionLabels: Record<ProductCondition, string> = {
-  NEW: 'ใหม่',
-  LIKE_NEW: 'เหมือนใหม่',
-  GOOD: 'ดี',
-  FAIR: 'พอใช้',
+  NEW: 'สภาพใหม่',
+  LIKE_NEW: 'สภาพเหมือนใหม่',
+  GOOD: 'สภาพดี',
+  FAIR: 'สภาพพอใช้',
+  UNKNOWN: 'ข้อมูลสภาพไม่พร้อมใช้งาน',
 };
 
 export type ProductMainImage = {
@@ -29,7 +30,10 @@ export type ProductImage = ProductMainImage & {
   photoType: 'MAIN' | 'GALLERY';
 };
 
+export type PublicSeller = { displayName: string; verified: boolean };
+
 export type ProductListItem = {
+  seller?: PublicSeller | null;
   id: number;
   productName: string;
   /** ราคาเป็น string ทศนิยม 2 ตำแหน่งเสมอตาม contract ห้ามแปลงเป็น number เพื่อคำนวณในแอป */
@@ -43,6 +47,7 @@ export type ProductCategory = { id: number; categoryName: string; parentCategory
 export type ProductBrand = { id: number; brandName: string };
 
 export type ProductDetail = {
+  seller?: PublicSeller | null;
   id: number;
   productName: string;
   description: string;
@@ -133,7 +138,7 @@ function money(value: unknown): string {
 }
 
 function toCondition(value: unknown): ProductCondition {
-  return CONDITIONS.find(condition => condition === value) ?? bad();
+  return CONDITIONS.find(condition => condition === value) ?? (typeof value === 'string' && value.length > 0 ? 'UNKNOWN' : bad());
 }
 
 function toStatus(value: unknown): ProductStatus {
@@ -174,11 +179,19 @@ function toBrand(value: unknown): ProductBrand {
   return { id: int(data.id), brandName: str(data.brand_name) };
 }
 
+function toSeller(value: unknown): PublicSeller | null {
+  if (value === null || value === undefined) return null;
+  const data = obj(value);
+  if (typeof data.display_name !== 'string' || !data.display_name.trim() || typeof data.verified !== 'boolean') return null;
+  return { displayName: data.display_name, verified: data.verified };
+}
+
 function toListItem(value: unknown): ProductListItem {
   const data = obj(value);
   return {
     id: int(data.id),
     productName: str(data.product_name),
+    seller: toSeller(data.seller),
     price: money(data.price),
     condition: toCondition(data.condition),
     status: toStatus(data.status),
@@ -192,6 +205,7 @@ function toDetail(value: unknown): ProductDetail {
   return {
     id: int(data.id),
     productName: str(data.product_name),
+    seller: toSeller(data.seller),
     description: str(data.description),
     price: money(data.price),
     categoryId: int(data.category_id),

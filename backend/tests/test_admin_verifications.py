@@ -423,6 +423,7 @@ def submit_as_seller(headers):
     return client.post(
         "/verifications",
         data={
+            "shop_name": "ร้านทดสอบ",
             "bank_name": "ธนาคารทดสอบ",
             "bank_account_name": "ผู้ขาย ทดสอบ",
             "bank_account_number": "123-4-56789-0",
@@ -520,3 +521,62 @@ def test_admin_data_minimization():
     assert "id_card_image_url" not in detail
     assert detail["bank_account_last4"] == "7890"
     assert detail["has_id_card_image"] is True
+
+
+@pytest.mark.parametrize('decision, expected_role', [('APPROVED', UserRole.SELLER), ('REJECTED', UserRole.BUYER)])
+def test_review_promotes_buyer_only_on_approval(decision, expected_role):
+    user_id, customer = create_user(role=UserRole.BUYER)
+    _, admin = create_user()
+    verification_id = add_verification(user_id)
+    response = client.post(f'/admin/verifications/{verification_id}/decision',
+                           json={'decision': decision, 'reject_reason': 'ข้อมูลยังไม่ครบถ้วน'}, headers=admin)
+    assert response.status_code == 200
+    assert client.get('/auth/me', headers=customer).json()['role'] == expected_role.value
+    with TestingSessionLocal() as db:
+        assert db.get(Verification, verification_id).verification_status == decision
+        assert db.get(User, user_id).role == expected_role
+
+
+def test_promotion_failure_rolls_back_approval(monkeypatch):
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+    user_id, _ = create_user(role=UserRole.BUYER)
+    _, admin = create_user()
+    verification_id = add_verification(user_id)
+    def fail_promotion(session, *_):
+        if any(isinstance(row, User) and row.id == user_id and row.role == UserRole.SELLER for row in session.dirty):
+            raise RuntimeError('injected promotion failure')
+    event.listen(Session, 'before_flush', fail_promotion)
+    try:
+        with pytest.raises(RuntimeError, match='injected promotion failure'):
+            client.post(f'/admin/verifications/{verification_id}/decision', json={'decision': 'APPROVED'}, headers=admin)
+    finally:
+        event.remove(Session, 'before_flush', fail_promotion)
+    with TestingSessionLocal() as db:
+        assert db.get(User, user_id).role == UserRole.BUYER
+        record = db.get(Verification, verification_id)
+        assert record.verification_status == 'PENDING'
+        assert record.reviewed_by is None
+
+
+@pytest.mark.parametrize('status', [UserStatus.SUSPENDED, UserStatus.CLOSED])
+def test_review_cannot_promote_inactive_target(status):
+    user_id, _ = create_user(role=UserRole.BUYER, status=status)
+    _, admin = create_user()
+    verification_id = add_verification(user_id)
+    assert client.post(f'/admin/verifications/{verification_id}/decision', json={'decision': 'APPROVED'}, headers=admin).status_code == 403
+    with TestingSessionLocal() as db:
+        assert db.get(User, user_id).role == UserRole.BUYER
+        assert db.get(Verification, verification_id).verification_status == 'PENDING'
+
+
+def test_non_latest_review_never_promotes():
+    user_id, _ = create_user(role=UserRole.BUYER)
+    _, admin = create_user()
+    stale = add_verification(user_id)
+    add_verification(user_id, status='REJECTED', reject_reason='คำขอใหม่กว่า')
+    response = client.post(f'/admin/verifications/{stale}/decision', json={'decision': 'APPROVED'}, headers=admin)
+    assert response.status_code == 409
+    assert response.json()['detail']['code'] == 'stale_verification'
+    with TestingSessionLocal() as db:
+        assert db.get(User, user_id).role == UserRole.BUYER

@@ -6,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/auth-provider';
 import { useVerification } from '@/verification/verification-provider';
 import { MarketplaceHeader } from '@/components/marketplace-header';
-import { MarketplaceNav } from '@/components/marketplace-nav';
 import { Button, Card, Loading, Screen, styles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 
@@ -23,7 +22,7 @@ export default function SellScreen() {
   const record = state.owner === owner ? state.record : null;
   const ready = !auth.accountChecking && !auth.accountError && !state.loading && !state.refreshing && !state.loadError;
   return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
-    <MarketplaceHeader title="ขายของ" />
+    <MarketplaceHeader title="ร้านค้าของฉัน" back />
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
       <Card>
         <ThemedText type="title">ส่งต่อของที่คุณรัก</ThemedText>
@@ -34,7 +33,7 @@ export default function SellScreen() {
       {state.loadError && isSeller && <Button label="ลองโหลดสถานะอีกครั้ง" onPress={() => { void store.refresh(); }} />}
       {!isSeller && !auth.accountChecking && <Card>
         <ThemedText>การลงขายต้องใช้บัญชีผู้ขายที่ผ่านการยืนยันตัวตน</ThemedText>
-        <Button label="ดูบัญชีของฉัน" onPress={() => router.push('/profile')} />
+        {auth.account?.role === 'BUYER' ? <Button label="ขอเปิดร้านค้า" variant="primary" onPress={() => router.push('/seller-verification')} /> : <Button label="ดูบัญชีของฉัน" onPress={() => router.push('/profile')} />}
       </Card>}
       {isSeller && ready && record && <Card>
         <ThemedText type="subtitle">สถานะผู้ขาย</ThemedText>
@@ -45,6 +44,5 @@ export default function SellScreen() {
         </> : <Button label="ดูการยืนยันตัวตน" onPress={() => router.push('/seller-verification')} />}
       </Card>}
     </ScrollView>
-    <MarketplaceNav selected="sell" />
   </SafeAreaView></Screen>;
 }

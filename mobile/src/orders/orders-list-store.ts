@@ -5,6 +5,7 @@ export const ORDER_PAGE_SIZE = 20;
 
 export type OrdersListState = {
   owner: string | null;
+  view: 'buyer' | 'seller';
   items: OrderListItem[];
   total: number;
   loaded: boolean;
@@ -16,6 +17,7 @@ export type OrdersListState = {
 
 export const initialOrdersListState: OrdersListState = {
   owner: null,
+  view: 'buyer',
   items: [],
   total: 0,
   loaded: false,
@@ -59,7 +61,7 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
       error: null,
     });
     try {
-      const page = await withToken(deps, token => deps.service.listOrders(token, { limit: pageSize, offset }, signal), signal);
+      const page = await withToken(deps, token => deps.service.listOrders(token, { limit: pageSize, offset, role: state.view }, signal), signal);
       if (current !== generation) return;
       // หน้าถัดไปอาจซ้อนกับหน้าก่อนเมื่อมี Order ใหม่ระหว่างเลื่อน จึงตัดรายการซ้ำตาม id
       const merged = mode === 'more' ? [...state.items] : [];
@@ -93,6 +95,17 @@ export function createOrdersListStore(deps: OrdersListStoreDeps) {
       reachedEnd = false;
       state = { ...initialOrdersListState, owner };
       emit();
+    },
+
+    setView(view: 'buyer' | 'seller') {
+      if (state.view === view) return Promise.resolve();
+      generation += 1;
+      controller?.abort();
+      nextOffset = 0;
+      reachedEnd = false;
+      state = { ...initialOrdersListState, owner: state.owner, view };
+      emit();
+      return fetchPage('load');
     },
 
     load() {

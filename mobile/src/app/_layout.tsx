@@ -1,6 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
+import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
 
 import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
@@ -14,18 +14,24 @@ import { VerificationProvider } from '@/verification/verification-provider';
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  return <WondeeThemeProvider><AppLayout /></WondeeThemeProvider>;
+}
+
+function AppLayout() {
+  const { scheme: colorScheme, ready } = useThemePreference();
   const [fontsLoaded, fontError] = useFonts({
-    'Kanit-Medium': require('@/assets/fonts/Kanit-Medium.ttf'),
-    'Kanit-SemiBold': require('@/assets/fonts/Kanit-SemiBold.ttf'),
-    'NotoSansThai-Regular': require('@/assets/fonts/NotoSansThai-Regular.ttf'),
-    'NotoSansThai-Medium': require('@/assets/fonts/NotoSansThai-Medium.ttf'),
+    'Prompt-Regular': require('@/assets/fonts/Prompt-Regular.ttf'),
+    'Prompt-Medium': require('@/assets/fonts/Prompt-Medium.ttf'),
+    'Prompt-SemiBold': require('@/assets/fonts/Prompt-SemiBold.ttf'),
+    'Prompt-Bold': require('@/assets/fonts/Prompt-Bold.ttf'),
+    'Prompt-ExtraBold': require('@/assets/fonts/Prompt-ExtraBold.ttf'),
+    'PlusJakartaSans': require('@/assets/fonts/PlusJakartaSans.ttf'),
   });
-  useEffect(() => { if (fontsLoaded || fontError) void SplashScreen.hideAsync(); }, [fontsLoaded, fontError]);
-  if (!fontsLoaded && !fontError) return null;
+  useEffect(() => { if (ready && (fontsLoaded || fontError)) void SplashScreen.hideAsync(); }, [ready, fontsLoaded, fontError]);
+  if (!ready || (!fontsLoaded && !fontError)) return null;
   const theme = Colors[colorScheme === 'dark' ? 'dark' : 'light'];
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={{ ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme), colors: { ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme).colors, primary: theme.primary, background: theme.background, card: theme.surface, text: theme.text, border: theme.border } }}>
       <AuthProvider>
         <VerificationProvider>
           <ReviewProvider>
@@ -42,9 +48,7 @@ export default function TabLayout() {
                 <Stack.Screen name="buy-by-product-id" />
                 <Stack.Screen name="products/index" />
                 <Stack.Screen name="products/[id]" />
-                <Stack.Screen name="product/new" />
-                <Stack.Screen name="product/mine" />
-                <Stack.Screen name="product/[id]/edit" />
+                <Stack.Screen name="product" />
                 <Stack.Screen name="checkout/[productId]" />
                 <Stack.Screen name="orders/index" />
                 <Stack.Screen name="orders/[orderId]" />
