@@ -132,6 +132,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const epoch = authEpoch;
     const operation = (async () => {
       const parsed = parseAuthCallback(url, redirectTo);
+      // The implicit OAuth callback contains credentials. Remove them from the
+      // browser address/history after parsing, including failed callbacks.
+      if (parsed && Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.history.replaceState(window.history.state, '', window.location.pathname);
+      }
       if (!parsed || 'error' in parsed) return 'oauth-error';
       const fingerprint = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, url);
       if (completedCallbacks.has(fingerprint)) return 'success';

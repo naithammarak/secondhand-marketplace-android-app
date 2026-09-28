@@ -36,6 +36,7 @@ export function ProfileScreen() {
   const customer = account?.source === 'backend' && (account.role === 'BUYER' || account.role === 'SELLER');
   const record = customer && state.owner === owner ? state.record : null;
   const approved = account?.role === 'SELLER' && record?.status === 'APPROVED' && !state.loadError && !auth.accountChecking;
+  const waitingSellerAccess = account?.role === 'BUYER' && record?.status === 'APPROVED';
   return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
     <MarketplaceHeader title="ฉัน" />
     <ScrollView contentContainerStyle={local.content}>
@@ -52,10 +53,10 @@ export function ProfileScreen() {
         </Card>
         {customer && !approved && <LinearGradient colors={[theme.upgrade, theme.surface]} style={[local.upgrade, { borderColor: theme.upgradeBorder }]}>
           <ThemedText type="smallBold" style={{ color: theme.upgradeText }}>ส่งต่อของรักกับวนดี</ThemedText>
-          <ThemedText type="title" style={{ color: theme.upgradeText }}>ต้องการเปิดร้านขายสินค้า?</ThemedText>
-          <ThemedText style={{ color: theme.upgradeText }}>ยืนยันตัวตนและข้อมูลบัญชีเพื่อขอเปิดร้าน ระหว่างรอผลคุณยังเลือกซื้อสินค้าได้</ThemedText>
+          <ThemedText type="title" style={{ color: theme.upgradeText }}>{waitingSellerAccess ? 'คำขอร้านได้รับอนุมัติแล้ว' : 'ต้องการเปิดร้านขายสินค้า?'}</ThemedText>
+          <ThemedText style={{ color: theme.upgradeText }}>{waitingSellerAccess ? 'บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล' : 'ยืนยันตัวตนและข้อมูลบัญชีเพื่อขอเปิดร้าน ระหว่างรอผลคุณยังเลือกซื้อสินค้าได้'}</ThemedText>
           {!!record?.rejectReason && <ThemedText style={{ color: theme.upgradeText }}>{record.rejectReason}</ThemedText>}
-          <Button label={record ? statusLabels[record.status] : 'ขอเปิดร้านค้า'} variant="primary" onPress={() => router.push('/seller-verification')} />
+          <Button label={waitingSellerAccess ? 'ตรวจสอบสิทธิ์ผู้ขายอีกครั้ง' : record ? statusLabels[record.status] : 'ขอเปิดร้านค้า'} variant="primary" onPress={() => { if (waitingSellerAccess) void auth.retryAccount(); else router.push('/seller-verification'); }} />
         </LinearGradient>}
         {approved && <Card><ThemedText type="subtitle">{record?.shopName ?? 'ร้านค้าที่ได้รับอนุมัติ'}</ThemedText>
           <ThemedText type="small" themeColor="success">อนุมัติผู้ขายแล้ว</ThemedText>
@@ -64,7 +65,8 @@ export function ProfileScreen() {
           <Button label="คำสั่งขาย" onPress={() => router.push({ pathname: '/orders', params: { view: 'seller' } })} />
         </Card>}
         {customer && <Card><ThemedText type="subtitle">การซื้อของคุณ</ThemedText><Button label="คำสั่งซื้อของฉัน" onPress={() => router.push({ pathname: '/orders', params: { view: 'buyer' } })} /></Card>}
-        {account?.role === 'ADMIN' && <Card><Button label="ตรวจคำขอยืนยันตัวตน" onPress={() => router.push('/admin-verifications')} /></Card>}
+        {account?.role === 'ADMIN' && <Card><Button label="ตรวจคำขอยืนยันตัวตน" onPress={() => router.push('/admin-verifications')} /><Button label="มอบหมายผู้ขนส่ง" onPress={() => router.push('/admin-deliveries')} /></Card>}
+        {account?.role === 'COURIER' && <Card><Button label="งานส่งเข้าศูนย์" onPress={() => router.push('/courier')} /></Card>}
         {account?.role === 'INSPECTOR' && <Card><Button label="งานตรวจสินค้า" onPress={() => router.push('/inspections')} /></Card>}
       </>}
       <Card><ThemedText type="subtitle">การแสดงผล</ThemedText>

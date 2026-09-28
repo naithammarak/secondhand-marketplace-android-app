@@ -1,4 +1,4 @@
-export type AccountRole = 'BUYER' | 'SELLER' | 'ADMIN' | 'INSPECTOR' | null;
+export type AccountRole = 'BUYER' | 'SELLER' | 'ADMIN' | 'INSPECTOR' | 'COURIER' | null;
 export type SelectableRole = 'BUYER' | 'SELLER';
 export type MeResult = { fullName: string | null; role: AccountRole; source: 'backend' | 'mock' };
 export type MeErrorKind = 'unauthorized' | 'forbidden' | 'conflict' | 'validation-error'
@@ -17,7 +17,7 @@ export class MeServiceError extends Error {
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 function accountFromResponse(data: { full_name?: unknown; role?: unknown }): MeResult {
-  const supportedRoles: AccountRole[] = ['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR', null];
+  const supportedRoles: AccountRole[] = ['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR', 'COURIER', null];
   const role = supportedRoles.includes(data.role as AccountRole) ? data.role as AccountRole : null;
   return {
     fullName: typeof data.full_name === 'string' && data.full_name.trim() ? data.full_name : null,

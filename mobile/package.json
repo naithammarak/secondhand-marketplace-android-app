@@ -58,7 +58,8 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run test:logic && npm run test:components",
     "test:logic": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-concurrency=1 tests/*.test.mjs",
-    "test:components": "jest --runInBand"
+    "test:components": "jest --runInBand",
+    "web:live": "node scripts/start-live.cjs"
   },
   "jest": {
     "preset": "jest-expo",

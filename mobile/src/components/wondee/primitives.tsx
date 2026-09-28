@@ -69,7 +69,7 @@ function ZoomImage({ source, label }: { source: ImageSource; label: string }) {
       <ThemedText style={{ alignSelf: 'center' }}>{scale}×</ThemedText>
       <Pressable accessibilityRole="button" accessibilityLabel="ขยายภาพ" disabled={scale === 4} onPress={() => setScale(value => Math.min(4, value + 1))} style={styles.zoom}><ThemedText>+</ThemedText></Pressable>
     </View>
-    <ScrollView horizontal style={{ maxHeight: 420 }}><ScrollView style={{ maxHeight: 420 }}><Image source={source} style={{ width: size * scale, height: size * scale }} contentFit="contain" accessibilityLabel={label} /></ScrollView></ScrollView>
+    <ScrollView horizontal style={{ maxHeight: 420 }}><ScrollView style={{ maxHeight: 420 }}><Image source={source} cachePolicy="none" style={{ width: size * scale, height: size * scale }} contentFit="contain" accessibilityLabel={label} /></ScrollView></ScrollView>
   </View>;
 }
 const styles = StyleSheet.create({

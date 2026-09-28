@@ -46,8 +46,11 @@ test('approval on Buyer does not optimistically promote the account', () => {
   mockState.record.status = 'APPROVED';
   render(<ProfileScreen />);
   expect(screen.queryByText('ลงขายสินค้า')).toBeNull();
+  expect(screen.getByText('คำขอร้านได้รับอนุมัติแล้ว')).toBeTruthy();
+  fireEvent.press(screen.getByText('ตรวจสอบสิทธิ์ผู้ขายอีกครั้ง'));
+  expect(mockPush).not.toHaveBeenCalled();
 });
-test.each([['ADMIN','ตรวจคำขอยืนยันตัวตน','/admin-verifications'], ['INSPECTOR','งานตรวจสินค้า','/inspections']])('%s has its existing staff entry', (role, label, path) => {
+test.each([['ADMIN','ตรวจคำขอยืนยันตัวตน','/admin-verifications'], ['ADMIN','มอบหมายผู้ขนส่ง','/admin-deliveries'], ['INSPECTOR','งานตรวจสินค้า','/inspections'], ['COURIER','งานส่งเข้าศูนย์','/courier']])('%s has its existing staff entry', (role, label, path) => {
   mockAuth.account.role = role;
   render(<ProfileScreen />);
   fireEvent.press(screen.getByRole('button', { name: label }));
