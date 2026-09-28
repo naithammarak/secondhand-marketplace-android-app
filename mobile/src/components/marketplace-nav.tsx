@@ -10,6 +10,10 @@ export function MarketplaceNav({ selected }: { selected: 'home' | 'orders' | 'se
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
+
+  const activeColor = '#10b981';
+  const inactiveColor = '#94a3b8';
+
   return <View style={[styles.bar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
     {([
       { key: 'home', label: 'หน้าแรก', href: '/' },
@@ -17,20 +21,27 @@ export function MarketplaceNav({ selected }: { selected: 'home' | 'orders' | 'se
       { key: 'profile', label: 'ฉัน', href: '/profile' },
     ] as const).map(tab => {
       const active = selected === tab.key;
-      const color = active ? theme.accent : theme.textSecondary;
+      const color = active ? activeColor : inactiveColor;
+      const iconName = tab.key === 'home' && active ? 'home-filled' : tab.key;
       return <Pressable key={tab.key} accessibilityRole="tab" accessibilityLabel={tab.label}
         accessibilityState={{ selected: active }} onPress={() => router.replace(tab.href)}
         style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.65 : 1 }]}>
-        <View style={[styles.icon, active && { backgroundColor: theme.backgroundSelected }]}>
-          {tab.key === 'profile' ? <WondeeMascot size={32} outline={!active} animate={active && focused} /> : <MarketplaceIcon name={tab.key} color={color} size={26} />}
+        <View style={styles.icon}>
+          {tab.key === 'profile' ? (
+            <WondeeMascot size={22} outline={!active} animate={active && focused} />
+          ) : (
+            <MarketplaceIcon name={iconName} color={color} size={22} />
+          )}
         </View>
-        <ThemedText type="small" style={{ color, fontSize: 12 }}>{tab.label}</ThemedText>
+        <ThemedText style={{ color, fontSize: 11, fontWeight: active ? '600' : '400', marginTop: 2 }}>
+          {tab.label}
+        </ThemedText>
       </Pressable>;
     })}
   </View>;
 }
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 6, paddingBottom: 4 },
-  tab: { flex: 1, minHeight: 56, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  icon: { width: 46, height: 34, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  bar: { flexDirection: 'row', borderTopWidth: 1, paddingTop: 6, paddingBottom: 6 },
+  tab: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  icon: { height: 26, alignItems: 'center', justifyContent: 'center' },
 });

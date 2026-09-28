@@ -15,6 +15,7 @@ import { formatBaht } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
 import { createProductDetailStore } from '@/products/product-detail-store';
+import { setCachedProductBrand } from '@/hooks/use-product-brand';
 import { conditionLabels } from '@/services/product-catalog-service';
 
 const detailErrorMessages: Record<string, string> = {
@@ -52,6 +53,12 @@ export function ProductDetailScreen() {
   const selectedImage = selection.productId === id ? selection.index : 0;
   const product = state.product?.id === id ? state.product : null;
   const images = product?.images.slice().sort((a, b) => a.sortOrder - b.sortOrder) ?? [];
+
+  useEffect(() => {
+    if (product?.brand?.brandName) {
+      setCachedProductBrand(product.id, product.brand.brandName);
+    }
+  }, [product]);
   return (
     <Screen>
       <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.surface }]}>
