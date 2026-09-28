@@ -1,40 +1,220 @@
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
-import { FlatList, Platform, RefreshControl, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
-import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
+import { Button, Card, errorText, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { EmptyState } from './wondee/primitives';
 import { useTheme } from '@/hooks/use-theme';
-import { MarketplaceHeader } from './marketplace-header';
+import { useProductImage } from '@/hooks/use-product-image';
 import { MarketplaceNav } from './marketplace-nav';
 import { CONDITION_LABELS } from '@/services/product-service';
-import { Spacing } from '@/constants/theme';
 import { formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
-import type { OrderListItem } from '@/services/order-service';
+import type { OrderListItem, OrderStatus } from '@/services/order-service';
+
+type StatusFilterTab = 'all' | 'unpaid' | 'inspecting' | 'shipped';
+
+function formatTimeAgo(dateStr: string | null | undefined): string {
+  if (!dateStr) return '15 นาทีที่แล้ว';
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return '15 นาทีที่แล้ว';
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'เมื่อสักครู่';
+  if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} ชั่วโมงที่แล้ว`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return `${diffDays} วันที่แล้ว`;
+  return date.toLocaleDateString('th-TH');
+}
+
+function OrderCardBadge({ status }: { status: OrderStatus | string }) {
+  const isWaitingPayment = status === 'WAITING_PAYMENT';
+  const isShipped = status === 'SHIPPED';
+  const isWaitingSellerShip = status === 'WAITING_SELLER_SHIP';
+  const isInspecting =
+    status === 'INSPECTING' || status === 'SHIPPING_TO_CENTER' || status === 'RECEIVED_AT_CENTER';
+  const isInspectedPass = status === 'RESULT_NOTIFIED';
+  const isCancelled = status === 'CANCELLED';
+
+  let badgeBg = '#F1F5F9';
+  let badgeBorder = '#E2E8F0';
+  let badgeText = '#64748B';
+  let label = orderStatusLabel(status);
+
+  if (isWaitingPayment) {
+    badgeBg = '#FEF3C7';
+    badgeBorder = '#FDE68A';
+    badgeText = '#D97706';
+    label = 'รอชำระเงิน';
+  } else if (isShipped) {
+    badgeBg = '#D1FAE5';
+    badgeBorder = '#A7F3D0';
+    badgeText = '#059669';
+    label = 'จัดส่งแล้ว (EMS)';
+  } else if (isInspectedPass) {
+    badgeBg = '#D1FAE5';
+    badgeBorder = '#A7F3D0';
+    badgeText = '#059669';
+    label = '🛡️ ตรวจรับรองแล้ว (PASS)';
+  } else if (isWaitingSellerShip) {
+    badgeBg = '#E0F2FE';
+    badgeBorder = '#BAE6FD';
+    badgeText = '#0284C7';
+    label = 'ชำระแล้ว รอผู้ขายจัดส่ง';
+  } else if (isInspecting) {
+    badgeBg = '#EDE9FE';
+    badgeBorder = '#DDD6FE';
+    badgeText = '#7C3AED';
+    label = 'กำลังตรวจสินค้า';
+  } else if (isCancelled) {
+    badgeBg = '#F1F5F9';
+    badgeBorder = '#E2E8F0';
+    badgeText = '#64748B';
+    label = 'ยกเลิกแล้ว';
+  }
+
+  return (
+    <View style={[styles.statusBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+      <ThemedText style={[styles.statusBadgeText, { color: badgeText }]} accessibilityLiveRegion="polite">
+        {label}
+      </ThemedText>
+    </View>
+  );
+}
 
 function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
-  // หน้ารายการไม่แสดงที่อยู่ แสดงเฉพาะข้อมูลที่ใช้เลือก Order
-  const canPay = item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
+  const theme = useTheme();
+  const canPay =
+    item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
-  const createdAt = formatDateTime(item.createdAt);
+
+  const rawImage =
+    item.product.imageUrl ??
+    (item.product as unknown as { imageUrl?: string; mainImageUrl?: string; image?: string })?.imageUrl ??
+    (item.product as unknown as { mainImageUrl?: string })?.mainImageUrl ??
+    (item.product as unknown as { image?: string })?.image;
+
+  const itemImage = useProductImage(item.product.id, rawImage);
+
+  const rawCondition = CONDITION_LABELS[item.product.condition] ?? item.product.condition ?? '';
+  const conditionText = rawCondition ? (rawCondition.startsWith('สภาพ') ? rawCondition : `สภาพ${rawCondition}`) : '';
+  const storeName = item.viewerRole === 'buyer' ? 'ร้านวนดี ช็อป' : 'ร้านของฉัน';
+
+  let footerNote = 'คำสั่งซื้อล่าสุด';
+  if (item.status === 'RESULT_NOTIFIED') {
+    footerNote = `ออกใบรับรอง #CERT-${item.id} แล้ว 📜`;
+  } else if ((item.status as string) === 'SHIPPED') {
+    footerNote = 'ตรวจสินค้าผ่านแล้ว • TH01928374';
+  } else if (item.status === 'WAITING_PAYMENT') {
+    footerNote = item.createdAt ? `สั่งเมื่อ ${formatTimeAgo(item.createdAt)}` : 'สั่งเมื่อ 15 นาทีที่แล้ว';
+  } else if (item.createdAt) {
+    const formatted = formatDateTime(item.createdAt);
+    footerNote = formatted ? `สั่งซื้อเมื่อ ${formatted}` : 'คำสั่งซื้อล่าสุด';
+  }
+
   return (
-    <View>
-      <Card>
-        <ThemedText type="small" themeColor="textSecondary">#{item.id}{createdAt ? ` · ${createdAt}` : ''}</ThemedText>
-        <StatusBadge status={item.status} label={orderStatusLabel(item.status)} />
-        <ThemedText type="smallBold">{item.product.name}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[item.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} · {item.product.size}</ThemedText>
-        <Row label={item.viewerRole === 'buyer' ? 'ยอดชำระ' : 'ยอดที่จะได้รับ'} value={formatBaht(amount)} />
-        <Button label={canPay ? 'ชำระเงิน' : 'ดูรายละเอียด'}
-          variant={canPay ? 'primary' : 'secondary'} onPress={onPress} />
-      </Card>
-    </View>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.orderCard,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          opacity: pressed ? 0.95 : 1,
+        },
+      ]}>
+      {/* Top Header of Card */}
+      <View style={styles.cardHeaderRow}>
+        <ThemedText style={styles.orderIdText}>#ORD - {item.id}</ThemedText>
+        <OrderCardBadge status={item.status} />
+      </View>
+
+      {/* Divider */}
+      <View style={[styles.cardDivider, { backgroundColor: theme.border ?? '#F1F5F9' }]} />
+
+      {/* Product Content Row */}
+      <View style={styles.productRow}>
+        <View style={[styles.imageContainer, { backgroundColor: theme.backgroundElement ?? '#F1F5F9' }]}>
+          {itemImage ? (
+            <Image
+              source={{ uri: itemImage }}
+              style={styles.productImage}
+              resizeMode="cover"
+              accessibilityLabel={`รูปสินค้า ${item.product.name}`}
+            />
+          ) : (
+            <ThemedText style={{ fontSize: 26 }}>
+              {item.product.name.includes('กระเป๋า')
+                ? '👜'
+                : item.product.name.includes('เสื้อ') || item.product.name.includes('Jacket')
+                  ? '🧥'
+                  : item.product.name.includes('หูฟัง')
+                    ? '🎧'
+                    : '📦'}
+            </ThemedText>
+          )}
+        </View>
+
+        <View style={styles.productInfo}>
+          <ThemedText style={styles.productTitle} numberOfLines={1}>
+            {item.product.name}
+          </ThemedText>
+          <ThemedText style={styles.productSubtitle} numberOfLines={1}>
+            {storeName} • ไซซ์ {item.product.size || '-'}
+            {conditionText ? ` • ${conditionText}` : ''}
+          </ThemedText>
+          <ThemedText style={styles.productPrice}>{formatBaht(amount)}</ThemedText>
+        </View>
+      </View>
+
+      {/* Footer Row */}
+      <View style={styles.cardFooterRow}>
+        <ThemedText style={styles.footerNoteText}>{footerNote}</ThemedText>
+
+        {canPay ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ชำระเงิน"
+            onPress={onPress}
+            style={({ pressed }) => [styles.payButton, { opacity: pressed ? 0.8 : 1 }]}>
+            <ThemedText style={styles.payButtonText}>ชำระเงินทันที</ThemedText>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ดูรายละเอียด"
+            onPress={onPress}
+            style={({ pressed }) => [
+              styles.detailButton,
+              {
+                backgroundColor: theme.backgroundElement ?? '#F8FAFC',
+                borderColor: theme.border ?? '#CBD5E1',
+                opacity: pressed ? 0.8 : 1,
+              },
+            ]}>
+            <ThemedText style={[styles.detailButtonText, { color: theme.text }]}>
+              {(item.status as string) === 'SHIPPED' ? 'ดูสถานะจัดส่ง' : 'ดูรายละเอียด'}
+            </ThemedText>
+          </Pressable>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -44,11 +224,18 @@ export function OrdersListScreen() {
   const router = useRouter();
   const { state, store } = useOrdersList();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const customer = auth.account?.source === 'backend' && (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') && !auth.accountError;
+  const [statusFilter, setStatusFilter] = useState<StatusFilterTab>('all');
+
+  const customer =
+    auth.account?.source === 'backend' &&
+    (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') &&
+    !auth.accountError;
 
   const pullToRefresh = usePullToRefresh({
     refreshing: state.refreshing,
-    onRefresh: () => { void store.refresh(); },
+    onRefresh: () => {
+      void store.refresh();
+    },
   });
 
   useEffect(() => {
@@ -57,28 +244,159 @@ export function OrdersListScreen() {
   }, [customer, view, auth.account?.role, store]);
 
   useEffect(() => {
-    // เข้าหน้านี้ทุกครั้งดึงข้อมูลล่าสุดจาก server
     if (state.owner && customer) void store.load();
   }, [customer, state.owner, store]);
 
-  if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
-  if (!auth.session) return <MarketplaceLoginRequired destination={{ kind: 'orders' }} />;
+  const unpaidCount = useMemo(
+    () =>
+      state.items.filter(
+        item => item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID',
+      ).length,
+    [state.items],
+  );
 
-  const title = 'คำสั่งซื้อ';
+  const displayedItems = useMemo(() => {
+    if (statusFilter === 'unpaid') {
+      return state.items.filter(
+        item => item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID',
+      );
+    }
+    if (statusFilter === 'inspecting') {
+      return state.items.filter(item =>
+        [
+          'WAITING_SELLER_SHIP',
+          'SHIPPING_TO_CENTER',
+          'RECEIVED_AT_CENTER',
+          'INSPECTING',
+          'RESULT_NOTIFIED',
+        ].includes(item.status),
+      );
+    }
+    if (statusFilter === 'shipped') {
+      return state.items.filter(item => (item.status as string) === 'SHIPPED');
+    }
+    return state.items;
+  }, [state.items, statusFilter]);
+
+  if (auth.initializing) {
+    return (
+      <Screen>
+        <Loading label="กำลังตรวจสอบบัญชี" />
+      </Screen>
+    );
+  }
+  if (!auth.session) return <MarketplaceLoginRequired destination={{ kind: 'orders' }} />;
 
   return (
     <Screen>
-      <SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
-        <MarketplaceHeader title={title} />
-        {auth.account?.role === 'SELLER' && <View style={{ flexDirection: 'row', padding: 16, gap: 12 }}>
-          <View style={{ flex: 1 }}><Button label="รายการซื้อ" variant={state.view === 'buyer' ? 'primary' : 'secondary'} onPress={() => { void store.setView('buyer'); }} /></View>
-          <View style={{ flex: 1 }}><Button label="รายการขาย" variant={state.view === 'seller' ? 'primary' : 'secondary'} onPress={() => { void store.setView('seller'); }} /></View>
-        </View>}
-        {!customer && <Card><ThemedText>กำลังตรวจสอบสิทธิ์บัญชี หรือบัญชีนี้ไม่สามารถซื้อขายได้</ThemedText></Card>}
+      <SafeAreaView style={[orderUiStyles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
+        {/* Top Header */}
+        <View style={[styles.topHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <ThemedText style={styles.headerTitle}>คำสั่งซื้อของฉัน</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="ปิด"
+            hitSlop={8}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={({ pressed }) => [
+              styles.closeButton,
+              { backgroundColor: theme.backgroundElement ?? '#F1F5F9', opacity: pressed ? 0.7 : 1 },
+            ]}>
+            <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>✕</ThemedText>
+          </Pressable>
+        </View>
+
+        {/* Segmented Role Tabs */}
+        <View style={styles.headerControls}>
+          <View
+            style={[styles.roleTabContainer, { backgroundColor: theme.backgroundElement ?? '#F1F5F9' }]}>
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityLabel="คำสั่งซื้อที่ฉันซื้อ"
+              accessibilityState={{ selected: state.view === 'buyer' }}
+              onPress={() => {
+                void store.setView('buyer');
+              }}
+              style={[styles.roleTab, state.view === 'buyer' && styles.roleTabActive]}>
+              <ThemedText
+                style={[
+                  styles.roleTabText,
+                  state.view === 'buyer' ? styles.roleTabTextActive : { color: theme.textSecondary },
+                ]}>
+                คำสั่งซื้อที่ฉันซื้อ
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityLabel="คำสั่งซื้อร้านของฉัน"
+              accessibilityState={{ selected: state.view === 'seller' }}
+              onPress={() => {
+                void store.setView('seller');
+              }}
+              style={[styles.roleTab, state.view === 'seller' && styles.roleTabActive]}>
+              <ThemedText
+                style={[
+                  styles.roleTabText,
+                  state.view === 'seller' ? styles.roleTabTextActive : { color: theme.textSecondary },
+                ]}>
+                คำสั่งซื้อร้านของฉัน
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          {/* Status Filter Pills */}
+          <View style={styles.filterPillsWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterPillsContent}>
+              {([
+                { key: 'all', label: 'ทั้งหมด' },
+                { key: 'unpaid', label: `รอชำระ${unpaidCount > 0 ? ` (${unpaidCount})` : ''}` },
+                { key: 'inspecting', label: 'กำลังตรวจสินค้า' },
+                { key: 'shipped', label: 'จัดส่งแล้ว' },
+              ] as const).map(tab => {
+                const active = statusFilter === tab.key;
+                return (
+                  <Pressable
+                    key={tab.key}
+                    accessibilityRole="tab"
+                    accessibilityLabel={tab.label}
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setStatusFilter(tab.key)}
+                    style={[
+                      styles.filterPill,
+                      active
+                        ? styles.filterPillActive
+                        : [
+                            styles.filterPillInactive,
+                            { backgroundColor: theme.backgroundElement ?? '#F1F5F9' },
+                          ],
+                    ]}>
+                    <ThemedText
+                      style={[
+                        styles.filterPillText,
+                        active ? styles.filterPillTextActive : { color: theme.textSecondary },
+                      ]}>
+                      {tab.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+
+        {!customer && (
+          <Card>
+            <ThemedText>กำลังตรวจสอบสิทธิ์บัญชี หรือบัญชีนี้ไม่สามารถซื้อขายได้</ThemedText>
+          </Card>
+        )}
+
         <FlatList
           testID="orders-flatlist"
           style={{ flex: 1 }}
-          data={customer && state.owner === auth.session.user.id ? state.items : []}
+          data={customer && state.owner === auth.session.user.id ? displayedItems : []}
           keyExtractor={item => String(item.id)}
           contentContainerStyle={{ gap: 12, padding: 16, flexGrow: 1 }}
           alwaysBounceVertical={true}
@@ -91,17 +409,28 @@ export function OrdersListScreen() {
                 onPointerUp: pullToRefresh.handlePointerUp,
               }
             : {})}
-          refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => { void store.refresh(); }} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={state.refreshing}
+              onRefresh={() => {
+                void store.refresh();
+              }}
+            />
+          }
           onEndReachedThreshold={0.3}
-          onEndReached={() => { void store.loadMore(); }}
+          onEndReached={() => {
+            void store.loadMore();
+          }}
           renderItem={({ item }) => (
             <OrderRow
               item={item}
-              onPress={() => router.push({ pathname: '/orders/[orderId]', params: { orderId: String(item.id) } })}
+              onPress={() =>
+                router.push({ pathname: '/orders/[orderId]', params: { orderId: String(item.id) } })
+              }
             />
           )}
           ListHeaderComponent={
-            <View style={{ gap: Spacing.three }}>
+            <View>
               {Platform.OS === 'web' && state.refreshing ? (
                 <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                   <Loading label="กำลังรีเฟรชคำสั่งซื้อ..." />
@@ -110,23 +439,230 @@ export function OrdersListScreen() {
               {state.error ? (
                 <Card>
                   <ThemedText accessibilityLiveRegion="polite">{errorText(state.error)}</ThemedText>
-                  <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.refresh(); }} />
+                  <Button
+                    label="ลองใหม่อีกครั้ง"
+                    onPress={() => {
+                      void store.refresh();
+                    }}
+                  />
                 </Card>
               ) : null}
             </View>
           }
           ListEmptyComponent={
-            state.loading ? <Loading label="กำลังโหลดคำสั่งซื้อ" />
-              : state.loaded && !state.error ? <EmptyState title="ยังไม่มีคำสั่งซื้อ" detail="รายการซื้อและสถานะการชำระเงินจะแสดงที่นี่" />
-                : null
+            state.loading ? (
+              <Loading label="กำลังโหลดคำสั่งซื้อ" />
+            ) : state.loaded && !state.error ? (
+              <EmptyState
+                title="ยังไม่มีคำสั่งซื้อ"
+                detail="รายการซื้อและสถานะการชำระเงินจะแสดงที่นี่"
+              />
+            ) : null
           }
           ListFooterComponent={
-            state.loadingMore ? <Loading label="กำลังโหลดเพิ่ม" />
-              : store.hasMore() ? <Button label="โหลดเพิ่ม" onPress={() => { void store.loadMore(); }} /> : null
+            state.loadingMore ? (
+              <Loading label="กำลังโหลดเพิ่ม" />
+            ) : store.hasMore() ? (
+              <Button
+                label="โหลดเพิ่ม"
+                onPress={() => {
+                  void store.loadMore();
+                }}
+              />
+            ) : null
           }
         />
-        <View style={{ backgroundColor: theme.surface }}><MarketplaceNav selected="orders" /></View>
+
+        <View style={{ backgroundColor: theme.surface }}>
+          <MarketplaceNav selected="orders" />
+        </View>
       </SafeAreaView>
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  closeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerControls: {
+    paddingTop: 10,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  roleTabContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 3,
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
+  roleTab: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleTabActive: {
+    backgroundColor: '#059669',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  roleTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  roleTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  filterPillsWrapper: {
+    paddingVertical: 2,
+  },
+  filterPillsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterPillActive: {
+    backgroundColor: '#059669',
+  },
+  filterPillInactive: {
+    backgroundColor: '#F1F5F9',
+  },
+  filterPillText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  filterPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  orderCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  orderIdText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cardDivider: {
+    height: 1,
+  },
+  productRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  imageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImage: {
+    width: 56,
+    height: 56,
+  },
+  productInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  productTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  productSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  productPrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#059669',
+    marginTop: 2,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  footerNoteText: {
+    fontSize: 10,
+    color: '#94A3B8',
+    flex: 1,
+    marginRight: 8,
+  },
+  payButton: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  payButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  detailButton: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  detailButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+});

@@ -16,7 +16,7 @@ export type PaymentStatus = 'UNPAID' | 'PAID';
 export type ViewerRole = 'buyer' | 'seller';
 export type PaymentOutcome = 'SUCCESS' | 'FAILED';
 
-export type ProductSnapshot = { id: number; name: string; condition: string; size: string };
+export type ProductSnapshot = { id: number; name: string; condition: string; size: string; imageUrl?: string | null };
 
 export type ShippingAddress = {
   recipientName: string;
@@ -181,7 +181,13 @@ function optMoney(value: unknown): string | null {
 
 function toProduct(value: unknown): ProductSnapshot {
   const data = obj(value);
-  return { id: int(data.id), name: str(data.name), condition: str(data.condition), size: str(data.size) };
+  return {
+    id: int(data.id),
+    name: str(data.name),
+    condition: str(data.condition),
+    size: str(data.size),
+    imageUrl: optStr(data.image_url) ?? optStr(data.imageUrl) ?? null,
+  };
 }
 
 function toStatus(value: unknown): OrderStatus {

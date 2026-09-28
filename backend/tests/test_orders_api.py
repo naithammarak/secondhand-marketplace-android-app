@@ -1133,3 +1133,15 @@ def test_seller_buyer_can_cancel_unpaid_own_purchase(world, db):
     assert response.status_code == 200
     assert response.json()['status'] == 'CANCELLED'
     assert product_status(db, world['product_id']) == 'AVAILABLE'
+
+
+def test_order_includes_product_image_when_available(world, db):
+    from app.models.product_image import ProductImage
+    db.add(ProductImage(image_id=999, product_id=world["product_id"], image_url="https://example.com/test.jpg", file_size=123, uploaded_at=utcnow(), sort_order=0, photo_type="MAIN"))
+    db.commit()
+    created = post_order(world["a"], order_body(world["product_id"])).json()
+    assert created["product"]["image_url"] == "https://example.com/test.jpg"
+    detail = client.get(f"/orders/{created['id']}", headers=world["a"]).json()
+    assert detail["product"]["image_url"] == "https://example.com/test.jpg"
+    items = client.get("/orders?role=buyer", headers=world["a"]).json()["items"]
+    assert items[0]["product"]["image_url"] == "https://example.com/test.jpg"

@@ -84,6 +84,7 @@ class ProductSnapshot(BaseModel):
     name: str
     condition: str
     size: str
+    image_url: str | None = None
 
 
 class OrderAmountsView(BaseModel):
