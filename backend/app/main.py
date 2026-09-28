@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,11 +14,20 @@ from app.api.products import router as products_router
 from app.api.orders import router as orders_router
 from app.api.inspections import router as inspections_router
 from app.api.verifications import router as verifications_router
+from app.services.certificate_urls import public_certificate_base_url
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Fail at startup before a positive inspection can commit without a usable URL.
+    public_certificate_base_url()
+    yield
 
 
 app = FastAPI(
     title="Project API",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Allow the Expo mobile app to call the API during development.

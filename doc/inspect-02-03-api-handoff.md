@@ -27,7 +27,7 @@ Example inbound handoff after the Seller ships (all POST requests carry `Authori
 ## Configuration and deployment prerequisites
 
 - Apply Alembic `c7e4b21a9d08` after INSPECT-01 `f3c1a09d8b56` on an isolated/staged database first. The new `certificates` table has RLS enabled and no anon/authenticated policy.
-- Set `CERT_PUBLIC_ORIGIN` to the trusted public API origin. Do not derive it from a request Host header. Without it, qualifying results return `503` and remain uncommitted.
+- Set `PUBLIC_CERTIFICATE_BASE_URL` to a trusted HTTPS origin. Startup rejects a missing or invalid origin; the API never derives certificate links from a request Host header.
 - For shared deployment, create a **private** Supabase Storage bucket named `inspection-evidence` and configure `SUPABASE_URL` plus `SUPABASE_SECRET_KEY` (or service-role key) on the backend only. Ensure the backend's database role can write the RLS-protected tables. The app must never receive this key or an object path.
 - For an isolated local run, `INSPECT_PRIVATE_STORAGE_DIR` selects a backend-only directory instead of Supabase Storage. The PostgreSQL end-to-end tests use this real private file path. Do not expose the directory through static hosting.
 - Before deployment, provision private storage, confirm the mobile status decoder and Certificate public URL/QR contract, and have the database owner apply/review the stacked migrations. No central database or shared bucket was changed by this branch.

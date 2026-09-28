@@ -1,6 +1,5 @@
 """INSPECT-02/03: authorized shipment, inspection and private result flow."""
 
-import os
 import secrets
 import logging
 import hashlib
@@ -23,6 +22,7 @@ from app.models.order import Escrow, Order, Payment
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from app.services import inspection_storage
+from app.services.certificate_urls import public_certificate_base_url
 
 
 router = APIRouter(tags=["Inspections"])
@@ -182,14 +182,20 @@ def _certificate(db: Session, order_id: int) -> Certificate | None:
 
 
 def _public_url(token: str) -> str:
-    origin = (os.getenv("CERT_PUBLIC_ORIGIN") or "").rstrip("/")
-    if not origin.startswith(("https://", "http://")) or "/" in origin.split("://", 1)[1]:
-        raise api_error(503, "certificate_unavailable", "Certificate service is unavailable")
+    try:
+        origin = public_certificate_base_url()
+    except ValueError as exc:
+        raise api_error(503, "certificate_unavailable", "Certificate service is unavailable") from exc
     return f"{origin}/certificates/{token}"
 
 
 def _certificate_view(row: Certificate | None):
-    return None if row is None else {"certificate_no": row.certificate_no, "public_url": _public_url(row.public_token)}
+    return None if row is None else {
+        "certificate_no": row.certificate_no,
+        "status": row.status,
+        "issued_at": row.issued_at,
+        "public_url": _public_url(row.public_token),
+    }
 
 
 def issue_certificate(db: Session, order: Order, work: Inspection, result: str) -> Certificate:

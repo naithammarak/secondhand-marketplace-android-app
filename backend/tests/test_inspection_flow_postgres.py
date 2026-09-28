@@ -10,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, inspect, select
+from sqlalchemy import create_engine, event, inspect, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -58,7 +58,7 @@ def world(pg_engine, monkeypatch, tmp_path):
     patch_auth(monkeypatch)
     monkeypatch.setenv("PAYMENT_SIMULATION_ENABLED", "true")
     monkeypatch.delenv("APP_ENV", raising=False)
-    monkeypatch.setenv("CERT_PUBLIC_ORIGIN", "https://cert.example.test")
+    monkeypatch.setenv("PUBLIC_CERTIFICATE_BASE_URL", "https://cert.example.test")
     monkeypatch.setenv("INSPECT_PRIVATE_STORAGE_DIR", str(tmp_path / "private-inspection-images"))
 
     def override_db():
@@ -149,7 +149,7 @@ def test_seller_inspector_buyer_flow(world, result):
     assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 404
     payload = {"result": result, "summary": "The item was inspected against its Order snapshot.", "evidence_ids": [photo_id]}
     result_key = new_key()
-    saved = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": result_key})
+    saved = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": result_key, "Host": "attacker.test"})
     assert saved.status_code == 200 and saved.json()["result"] == result, saved.text
     assert saved.json()["order_status"] == "RESULT_NOTIFIED"
     repeated = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": result_key})
@@ -167,6 +167,9 @@ def test_seller_inspector_buyer_flow(world, result):
     assert bool(buyer_view.json()["certificate"]) is positive
     assert buyer_view.json()["next_action"] == ("WAIT_BUYER_DECISION" if positive else "RETURN_TO_SELLER")
     if positive:
+        assert buyer_view.json()["certificate"]["status"] == "ISSUED"
+        assert buyer_view.json()["certificate"]["issued_at"]
+        assert buyer_view.json()["certificate"]["public_url"].startswith("https://cert.example.test/certificates/")
         token = buyer_view.json()["certificate"]["public_url"].rsplit("/", 1)[-1]
         public = client.get(f"/certificates/{token}")
         assert public.status_code == 200
@@ -174,10 +177,19 @@ def test_seller_inspector_buyer_flow(world, result):
         assert public.json()["result"] == result
     with Session(engine) as session:
         assert session.scalar(select(Order).where(Order.id == order_id)).status == "RESULT_NOTIFIED"
-        assert session.scalar(select(Inspection).where(Inspection.id == work_id)).result == result
+        recorded = session.scalar(select(Inspection).where(Inspection.id == work_id))
+        assert recorded.result == result
         assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 1
         assert session.query(InspectionEvidence).filter_by(inspection_id=work_id).count() == 1
         assert (session.query(Certificate).filter_by(order_id=order_id).count() == 1) is positive
+        if positive:
+            certificate = session.query(Certificate).filter_by(order_id=order_id).one()
+            assert certificate.inspection_id == work_id
+            assert certificate.result == recorded.result
+            assert certificate.status == "ISSUED"
+            assert certificate.issued_at is not None
+            assert certificate.public_token not in {str(order_id), certificate.certificate_no}
+            assert len(certificate.public_token) >= 22  # >= 128 bits after URL-safe encoding.
 
 
 def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatch):
@@ -199,6 +211,76 @@ def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatc
     monkeypatch.setattr(inspect_api, "issue_certificate", original)
     retried = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
     assert retried.status_code == 200 and retried.json()["certificate"] is not None, retried.text
+
+
+@pytest.mark.parametrize("failure", ["token", "insert", "url"])
+def test_certificate_creation_failure_rolls_back_everything(world, monkeypatch, failure):
+    client, engine, _, _, inspector, _, _, _, _, _ = world
+    order_id, work_id = started_work(world)
+    uploaded = client.post(
+        f"/inspections/{work_id}/evidence",
+        files={"file": ("photo.png", image_bytes(), "image/png")},
+        headers=request_headers(inspector),
+    )
+    photo_id = uploaded.json()["evidence"]["id"]
+    payload = {"result": "PASS", "summary": "The item matches the original Order snapshot.", "evidence_ids": [photo_id]}
+    key = new_key()
+
+    def reject_certificate_insert(_conn, _cursor, statement, _params, _context, _many):
+        if statement.lstrip().lower().startswith("insert into certificates"):
+            raise RuntimeError("synthetic certificate insert failure")
+
+    with monkeypatch.context() as patch:
+        if failure == "token":
+            patch.setattr(inspect_api.secrets, "token_urlsafe", lambda _bytes: (_ for _ in ()).throw(RuntimeError("token unavailable")))
+        elif failure == "url":
+            patch.setenv("PUBLIC_CERTIFICATE_BASE_URL", "https://cert.example.test/untrusted-path")
+        else:
+            event.listen(engine, "before_cursor_execute", reject_certificate_insert)
+        try:
+            failed = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
+        finally:
+            if failure == "insert":
+                event.remove(engine, "before_cursor_execute", reject_certificate_insert)
+
+    assert failed.status_code == 503 and failed.json()["detail"]["code"] == "certificate_unavailable", failed.text
+    with Session(engine) as session:
+        assert session.get(Order, order_id).status == "INSPECTING"
+        recorded = session.get(Inspection, work_id)
+        assert recorded.result is None and recorded.summary is None and recorded.inspected_at is None
+        assert session.query(InspectionResultEvidence).filter_by(inspection_id=work_id).count() == 0
+        assert session.query(Certificate).filter_by(order_id=order_id).count() == 0
+
+    retry = client.post(f"/inspections/{work_id}/result", json=payload, headers={**inspector, "Idempotency-Key": key})
+    assert retry.status_code == 200 and retry.json()["certificate"]["status"] == "ISSUED", retry.text
+    with Session(engine) as session:
+        assert session.get(Order, order_id).status == "RESULT_NOTIFIED"
+        assert session.query(Certificate).filter_by(order_id=order_id).count() == 1
+
+
+def test_concurrent_different_results_cannot_change_final_result(world):
+    client, engine, _, _, inspector, _, _, _, _, _ = world
+    order_id, work_id = started_work(world)
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    photo_id = uploaded.json()["evidence"]["id"]
+
+    def submit(result):
+        return client.post(
+            f"/inspections/{work_id}/result",
+            json={"result": result, "summary": "Final result submitted once per inspection.", "evidence_ids": [photo_id]},
+            headers=request_headers(inspector),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(submit, ["PASS", "FAKE"]))
+    assert sorted(item.status_code for item in responses) == [200, 409], [item.text for item in responses]
+    accepted_result = next(item.json()["result"] for item in responses if item.status_code == 200)
+    with Session(engine) as session:
+        assert session.get(Order, order_id).status == "RESULT_NOTIFIED"
+        assert session.get(Inspection, work_id).result == accepted_result
+        certs = session.query(Certificate).filter_by(order_id=order_id).all()
+        assert len(certs) == (1 if accepted_result == "PASS" else 0)
+        assert not certs or certs[0].result == accepted_result
 
 
 def test_result_rejects_evidence_from_another_inspection(world):

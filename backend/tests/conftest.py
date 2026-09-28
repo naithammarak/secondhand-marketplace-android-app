@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 # Load .env first if present
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
+# An HTTPS demo origin for tests that start the FastAPI lifespan. Individual
+# certificate tests override/remove it to exercise deployment validation.
+os.environ.setdefault("PUBLIC_CERTIFICATE_BASE_URL", "https://cert.example.test")
+
 # Safe JWT fallbacks for test execution if not set
 if not os.getenv("SUPABASE_JWT_SECRET"):
     os.environ["SUPABASE_JWT_SECRET"] = "test-secret-key-for-jwt-testing-12345678901234567890"
