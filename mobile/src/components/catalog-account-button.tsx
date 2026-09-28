@@ -2,12 +2,14 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useAuth } from '@/auth/auth-provider';
 import { useTheme } from '@/hooks/use-theme';
+import { Colors } from '@/constants/theme';
 import { MarketplaceIcon } from './marketplace-icon';
 import { ThemedText } from './themed-text';
 
 export function CatalogAccountButton() {
   const { session } = useAuth();
   const theme = useTheme();
+  const isDark = theme.background === Colors.dark.background;
 
   if (session) {
     return (
@@ -18,13 +20,13 @@ export function CatalogAccountButton() {
         style={({ pressed }) => [
           styles.bagButton,
           {
-            backgroundColor: theme.surface,
-            borderColor: theme.border,
+            backgroundColor: isDark ? theme.surface : '#ffffff',
+            borderColor: isDark ? theme.border : '#e1e7ef',
             opacity: pressed ? 0.75 : 1,
           },
         ]}
       >
-        <MarketplaceIcon name="orders" color={theme.text} size={20} />
+        <MarketplaceIcon name="orders" color="#10b981" size={19} />
         <View style={styles.badgeDot} />
       </Pressable>
     );
@@ -38,13 +40,13 @@ export function CatalogAccountButton() {
       style={({ pressed }) => [
         styles.loginButton,
         {
-          borderColor: theme.accent,
-          backgroundColor: theme.surface,
+          borderColor: '#10b981',
+          backgroundColor: isDark ? theme.surface : '#ffffff',
           opacity: pressed ? 0.75 : 1,
         },
       ]}
     >
-      <ThemedText style={[styles.loginText, { color: theme.accent }]}>
+      <ThemedText style={styles.loginText}>
         เข้าสู่ระบบ
       </ThemedText>
     </Pressable>
@@ -53,21 +55,22 @@ export function CatalogAccountButton() {
 
 const styles = StyleSheet.create({
   loginButton: {
-    height: 44,
+    height: 42,
     paddingHorizontal: 16,
-    borderRadius: 14,
+    borderRadius: 21,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loginText: {
-    fontSize: 14,
+    color: '#10b981',
+    fontSize: 13,
     fontWeight: '600',
   },
   bagButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -75,11 +78,11 @@ const styles = StyleSheet.create({
   },
   badgeDot: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 6,
+    right: 6,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: '#f59e0b',
   },
 });
