@@ -44,6 +44,29 @@ test('inspection finalization uses only currently available selected evidence an
   expect(screen.getByText('ตรวจทานและยืนยันผล').parent?.props.accessibilityState?.disabled ?? screen.getByRole('button', { name: 'ตรวจทานและยืนยันผล' }).props.accessibilityState.disabled).toBe(true);
   fireEvent.press(screen.getByRole('checkbox', { name: 'ภาพ 2' }));
   fireEvent.press(screen.getByText('ตรวจทานและยืนยันผล')); expect(finalize).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByText('บันทึกผลการตรวจ'));
+  fireEvent.press(screen.getByText('บันทึกผลและออกใบรับรอง'));
   expect(finalize).toHaveBeenCalledWith(expect.objectContaining({ result: 'PASS', evidence_ids: [2] }));
+});
+
+test('reject reason is optional, trimmed, bounded, and requires confirmation', () => {
+  const decide = jest.fn(); render(<BuyerResultView {...props} outcome="PASS" onDecision={decide} />);
+  fireEvent.press(screen.getByText('ไม่ยอมรับผลตรวจ'));
+  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)'), 'ก'.repeat(501));
+  fireEvent.press(screen.getByText('ยืนยันไม่ยอมรับผลตรวจ'));
+  expect(decide).not.toHaveBeenCalled();
+  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)'), '  สภาพไม่ตรงที่คาด  ');
+  fireEvent.press(screen.getByText('ยืนยันไม่ยอมรับผลตรวจ'));
+  expect(decide).toHaveBeenCalledWith('REJECT', 'สภาพไม่ตรงที่คาด');
+});
+test('shipping accepts the contract boundary of one character after trimming', () => {
+  const submit = jest.fn(); render(<SellerShipView orderId={42} productName="เสื้อ" onSubmit={submit} />);
+  fireEvent.changeText(screen.getByLabelText('ผู้ให้บริการขนส่ง'), ' A ');
+  fireEvent.changeText(screen.getByLabelText('เลขติดตามพัสดุ'), ' 1 ');
+  fireEvent.press(screen.getByText('ยืนยันการจัดส่งเข้าศูนย์'));
+  expect(submit).toHaveBeenCalledWith({ carrier: 'A', tracking_number: '1' });
+});
+
+test('positive decision fails closed when its certificate is absent', () => {
+  render(<BuyerResultView {...props} outcome="PASS" certificate={null} onDecision={jest.fn()} />);
+  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
 });
