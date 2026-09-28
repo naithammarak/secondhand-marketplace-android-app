@@ -1,8 +1,9 @@
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
-import { FlatList, RefreshControl, View } from 'react-native';
+import { FlatList, Platform, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
@@ -44,6 +45,12 @@ export function OrdersListScreen() {
   const { state, store } = useOrdersList();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const customer = auth.account?.source === 'backend' && (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') && !auth.accountError;
+
+  const pullToRefresh = usePullToRefresh({
+    refreshing: state.refreshing,
+    onRefresh: () => { void store.refresh(); },
+  });
+
   useEffect(() => {
     if (!customer) return;
     void store.setView(view === 'seller' && auth.account?.role === 'SELLER' ? 'seller' : 'buyer');
@@ -69,10 +76,21 @@ export function OrdersListScreen() {
         </View>}
         {!customer && <Card><ThemedText>กำลังตรวจสอบสิทธิ์บัญชี หรือบัญชีนี้ไม่สามารถซื้อขายได้</ThemedText></Card>}
         <FlatList
+          testID="orders-flatlist"
           style={{ flex: 1 }}
           data={customer && state.owner === auth.session.user.id ? state.items : []}
           keyExtractor={item => String(item.id)}
-          contentContainerStyle={{ gap: 12, padding: 16 }}
+          contentContainerStyle={{ gap: 12, padding: 16, flexGrow: 1 }}
+          alwaysBounceVertical={true}
+          onScroll={pullToRefresh.handleScroll}
+          scrollEventThrottle={16}
+          {...(Platform.OS === 'web'
+            ? {
+                onWheel: pullToRefresh.handleWheel,
+                onPointerDown: pullToRefresh.handlePointerDown,
+                onPointerUp: pullToRefresh.handlePointerUp,
+              }
+            : {})}
           refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => { void store.refresh(); }} />}
           onEndReachedThreshold={0.3}
           onEndReached={() => { void store.loadMore(); }}
@@ -84,12 +102,11 @@ export function OrdersListScreen() {
           )}
           ListHeaderComponent={
             <View style={{ gap: Spacing.three }}>
-              <Button
-                label={state.refreshing ? 'กำลังรีเฟรช' : 'รีเฟรช'}
-                busy={state.refreshing}
-                disabled={state.loading}
-                onPress={() => { void store.refresh(); }}
-              />
+              {Platform.OS === 'web' && state.refreshing ? (
+                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                  <Loading label="กำลังรีเฟรชคำสั่งซื้อ..." />
+                </View>
+              ) : null}
               {state.error ? (
                 <Card>
                   <ThemedText accessibilityLiveRegion="polite">{errorText(state.error)}</ThemedText>

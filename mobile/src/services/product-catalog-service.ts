@@ -41,6 +41,8 @@ export type ProductListItem = {
   condition: ProductCondition;
   status: ProductStatus;
   mainImage: ProductMainImage | null;
+  brand?: ProductBrand | null;
+  brandName?: string | null;
 };
 
 export type ProductCategory = { id: number; categoryName: string; parentCategoryId: number | null };
@@ -196,6 +198,8 @@ function toListItem(value: unknown): ProductListItem {
     condition: toCondition(data.condition),
     status: toStatus(data.status),
     mainImage: toMainImage(data.main_image),
+    brand: data.brand && typeof data.brand === 'object' ? toBrand(data.brand) : null,
+    brandName: typeof data.brand_name === 'string' ? data.brand_name : null,
   };
 }
 
@@ -295,8 +299,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '1990.00',
     categoryId: 3,
     category: { id: 3, categoryName: 'กระเป๋า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 5,
+    brand: { id: 5, brandName: 'Zara' },
     size: 'ไม่ระบุขนาด',
     condition: 'LIKE_NEW',
     saleType: 'FIXED_PRICE',
@@ -316,8 +320,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '2490.00',
     categoryId: 2,
     category: { id: 2, categoryName: 'รองเท้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 2,
+    brand: { id: 2, brandName: 'Nike' },
     size: '42',
     condition: 'NEW',
     saleType: 'FIXED_PRICE',
@@ -361,8 +365,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '890.00',
     categoryId: 1,
     category: { id: 1, categoryName: 'เสื้อผ้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 3,
+    brand: { id: 3, brandName: 'Adidas' },
     size: 'L',
     condition: 'GOOD',
     saleType: 'FIXED_PRICE',
@@ -382,8 +386,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '450.00',
     categoryId: 1,
     category: { id: 1, categoryName: 'เสื้อผ้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 4,
+    brand: { id: 4, brandName: 'Uniqlo' },
     size: '32',
     condition: 'LIKE_NEW',
     saleType: 'FIXED_PRICE',
@@ -484,6 +488,8 @@ async function mockListProducts(params: ListProductsParams): Promise<ProductPage
     condition: product.condition,
     status: product.status,
     mainImage: product.publicListMainImage,
+    brand: product.brand,
+    brandName: product.brand.brandName,
   }));
 
   return {

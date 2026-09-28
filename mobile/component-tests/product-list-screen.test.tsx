@@ -4,7 +4,8 @@ import { ProductListScreen } from '@/components/product-list-screen';
 import type { ProductCatalogState } from '@/products/product-catalog-store';
 import type { ProductListItem } from '@/services/product-catalog-service';
 
-jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: null }) }));
+let mockSession: unknown = null;
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: mockSession }) }));
 const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
@@ -94,6 +95,7 @@ jest.mock('@/products/product-catalog-instance', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSession = null;
   mockCanGoBack = true;
   mockFocusCallback = null;
   mockState = defaultState();
@@ -292,6 +294,32 @@ describe('ProductListScreen', () => {
     });
   });
 
+  test('renders shopping bag button when authenticated and navigates to /orders', () => {
+    mockSession = { user: { id: 'user-1' } };
+    mockState = defaultState({ loaded: true, items: [] });
+    render(<ProductListScreen />);
 
+    expect(screen.queryByRole('button', { name: 'เข้าสู่ระบบ' })).toBeNull();
+    const bagButton = screen.getByRole('button', { name: 'คำสั่งซื้อ' });
+    expect(bagButton).toBeTruthy();
+    fireEvent.press(bagButton);
+    expect(mockPush).toHaveBeenCalledWith('/orders');
+  });
 
+  test('renders brand name and seller store name on product card', () => {
+    const itemWithBrandAndSeller: ProductListItem = {
+      ...sampleItem1,
+      brand: { id: 10, brandName: 'Bottega Veneta' },
+      seller: { displayName: 'ร้านวนดีช็อป', verified: true },
+    };
+    mockState = defaultState({
+      loaded: true,
+      items: [itemWithBrandAndSeller],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, hasNext: false },
+    });
+    render(<ProductListScreen />);
+
+    expect(screen.getByText('Bottega Veneta')).toBeTruthy();
+    expect(screen.getByText('ร้านวนดีช็อป')).toBeTruthy();
+  });
 });

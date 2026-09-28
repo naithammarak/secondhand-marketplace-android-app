@@ -1,10 +1,11 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useSyncExternalStore } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { FlatList, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
+import { useProductBrand, fetchProductBrand } from '@/hooks/use-product-brand';
 
 import { useTheme } from '@/hooks/use-theme';
-import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
 import { MarketplaceIcon } from './marketplace-icon';
 import { CatalogAccountButton } from './catalog-account-button';
@@ -12,10 +13,10 @@ import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState, Skeleton } from './wondee/primitives';
-import { Fonts, MaxContentWidth } from '@/constants/theme';
+import { Colors, Fonts, MaxContentWidth } from '@/constants/theme';
 import { formatBaht } from '@/orders/order-format';
 import { productCatalogStore } from '@/products/product-catalog-instance';
-import { conditionLabels, type ProductListItem } from '@/services/product-catalog-service';
+import { conditionLabels, type ProductListItem, type ProductCondition } from '@/services/product-catalog-service';
 
 const catalogErrorMessages: Record<string, string> = {
   'network-error': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
@@ -26,25 +27,85 @@ const catalogErrorMessages: Record<string, string> = {
   'validation-error': 'คำขอไม่ถูกต้อง',
 };
 
+const conditionBadgeTheme: Record<ProductCondition, { bg: string; text: string }> = {
+  NEW: { bg: '#0d9569', text: '#ffffff' },        // เขียวสดใส (ตาม image_00 Card 1, 4)
+  LIKE_NEW: { bg: '#0d9569', text: '#ffffff' },   // เขียวเหมือนใหม่ (ตาม image_00 Card 1, 4)
+  GOOD: { bg: '#364356', text: '#ffffff' },       // สีเนวี่เข้ม "สภาพดี" (ตาม image_00 Card 3)
+  FAIR: { bg: '#eaa131', text: '#161d2e' },       // สีเหลืองส้มอำพัน (ตาม image_00 Card 2)
+  UNKNOWN: { bg: '#6b7280', text: '#ffffff' },    // เทา
+};
+
 function ProductCard({ item, onPress }: { item: ProductListItem; onPress(): void }) {
   const theme = useTheme();
   const { width, fontScale } = useWindowDimensions();
+  const [hovered, setHovered] = useState(false);
   const columns = fontScale >= 1.5 ? 1 : 2;
   const imageSize = (Math.min(width, MaxContentWidth) - 32 - (columns - 1) * 12) / columns;
+  const brandText = useProductBrand(item);
+  const rawShopName = item.seller?.displayName;
+  const shopName = (!rawShopName || rawShopName === 'ร้านค้าที่ได้รับอนุมัติ') ? 'ร้านวนดีช็อป' : rawShopName;
+  const badgeTheme = conditionBadgeTheme[item.condition] ?? conditionBadgeTheme.UNKNOWN;
+
+  const isDark = theme.background === Colors.dark.background;
+
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={item.productName} onPress={onPress}
-      style={({ pressed }) => [styles.productCard, { width: columns === 1 ? '100%' : '48%', maxWidth: columns === 1 ? '100%' : '50%', borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.75 : 1 }]}>
-      <ProductImage uri={item.mainImage?.imageUrl} width="100%" height={imageSize} borderRadius={0}
-        accessibilityLabel={`รูปสินค้า ${item.productName}`} />
-      <View style={styles.productInfo}>
-        <ThemedText numberOfLines={2} style={styles.productName}>{item.productName}</ThemedText>
-        <View style={styles.priceRow}>
-          <ThemedText type="smallBold" style={{ fontSize: 17, color: theme.accent }}>{formatBaht(item.price)}</ThemedText>
-          <View style={[styles.condition, { backgroundColor: theme.backgroundSelected }]}>
-            <ThemedText type="small" style={{ color: theme.accent }}>{conditionLabels[item.condition]}</ThemedText>
-          </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={item.productName}
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+        style={({ pressed }) => [
+        styles.productCard,
+        {
+          width: columns === 1 ? '100%' : '48%',
+          maxWidth: columns === 1 ? '100%' : '50%',
+          borderColor: isDark ? theme.border : '#e1e7ef',
+          backgroundColor: isDark ? theme.surface : '#ffffff',
+          opacity: pressed ? 0.75 : 1,
+        },
+      ]}
+    >
+      <View style={styles.imageWrapper}>
+        <ProductImage
+          uri={item.mainImage?.imageUrl}
+          width="100%"
+          height={imageSize}
+          borderRadius={0}
+          hovered={hovered}
+          accessibilityLabel={`รูปสินค้า ${item.productName}`}
+        />
+        <View style={[styles.conditionBadge, { backgroundColor: badgeTheme.bg }]}>
+          <ThemedText style={[styles.conditionBadgeText, { color: badgeTheme.text }]}>
+            {conditionLabels[item.condition]}
+          </ThemedText>
         </View>
-        {item.seller && <ThemedText type="small" themeColor="textSecondary">{item.seller.verified ? '✓ ' : ''}{item.seller.displayName}</ThemedText>}
+      </View>
+      <View style={styles.productInfo}>
+        <ThemedText numberOfLines={1} type="small" style={[styles.brandName, { color: isDark ? theme.textSecondary : '#8fa0b5' }]}>
+          {brandText}
+        </ThemedText>
+        <ThemedText numberOfLines={2} style={[styles.productName, { color: isDark ? theme.text : '#161d2e' }]}>
+          {item.productName}
+        </ThemedText>
+        <View style={styles.priceRow}>
+          <ThemedText type="smallBold" style={styles.productPrice}>
+            {formatBaht(item.price)}
+          </ThemedText>
+        </View>
+        {shopName ? (
+          <>
+            <View style={[styles.productDivider, { backgroundColor: isDark ? theme.border : '#e1e7ef' }]} />
+            <View style={styles.shopRow}>
+              <View style={styles.checkCircle}>
+                <MarketplaceIcon name="check" size={7} color="#ffffff" />
+              </View>
+              <ThemedText numberOfLines={1} style={[styles.shopName, { color: isDark ? theme.textSecondary : '#64748b' }]}>
+                {shopName}
+              </ThemedText>
+            </View>
+          </>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -54,6 +115,7 @@ export function ProductListScreen() {
   const { fontScale } = useWindowDimensions();
   const columns = fontScale >= 1.5 ? 1 : 2;
   const theme = useTheme();
+  const isDark = theme.background === Colors.dark.background;
   const returningFromDetail = useRef(false);
   const state = useSyncExternalStore(
     productCatalogStore.subscribe, productCatalogStore.getSnapshot, productCatalogStore.getSnapshot,
@@ -70,26 +132,67 @@ export function ProductListScreen() {
     else void productCatalogStore.load();
   }, []));
 
+  useEffect(() => {
+    state.items.forEach(item => {
+      if (!item.brand?.brandName && !item.brandName) {
+        void fetchProductBrand(item.id);
+      }
+    });
+  }, [state.items]);
+
   const emptyMessage = state.query.trim() ? 'ไม่พบสินค้าตามคำค้น' : 'ยังไม่มีสินค้า';
+
+  const pullToRefresh = usePullToRefresh({
+    refreshing: state.refreshing,
+    onRefresh: () => { void productCatalogStore.refresh(); },
+  });
 
   return (
     <Screen>
       <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.background }]}>
-        <MarketplaceHeader title="ค้นหาสินค้า" trailing={<CatalogAccountButton />} />
-        <View style={styles.searchArea}>
-          <View style={[styles.searchBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-            <MarketplaceIcon name="search" size={19} />
-            <TextInput style={[styles.searchInput, { color: theme.text }]} value={state.query}
-              onChangeText={text => productCatalogStore.setQuery(text)} placeholder="ค้นหาชื่อสินค้า"
-              placeholderTextColor={theme.textSecondary} accessibilityLabel="ค้นหาชื่อสินค้า" returnKeyType="search" />
+        <View
+          style={styles.searchArea}
+          {...(Platform.OS === 'web'
+            ? {
+                onWheel: pullToRefresh.handleWheel,
+                onPointerDown: pullToRefresh.handlePointerDown,
+                onPointerUp: pullToRefresh.handlePointerUp,
+              }
+            : {})}
+        >
+          <View style={styles.searchRow}>
+            <View style={[styles.searchBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+              <MarketplaceIcon name="search" size={19} />
+              <TextInput style={[styles.searchInput, { color: theme.text }]} value={state.query}
+                onChangeText={text => productCatalogStore.setQuery(text)} placeholder="ค้นหาชื่อสินค้า"
+                placeholderTextColor={theme.textSecondary} accessibilityLabel="ค้นหาชื่อสินค้า" returnKeyType="search" />
+            </View>
+            <CatalogAccountButton />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {[{ id: null, categoryName: 'ทั้งหมด' }, ...state.categories].map(category => {
               const selected = state.categoryId === category.id;
               return <Pressable key={String(category.id)} accessibilityRole="button" accessibilityLabel={category.categoryName}
                 accessibilityState={{ selected }} onPress={() => { void productCatalogStore.setCategory(category.id); }}
-                style={[styles.chip, { borderColor: selected ? theme.primary : theme.border, backgroundColor: selected ? theme.primary : theme.surface }]}>
-                <ThemedText type="small" style={{ color: selected ? theme.onPrimary : theme.textSecondary }}>{category.categoryName}</ThemedText>
+                style={[
+                  styles.chip,
+                  {
+                    borderColor: selected ? '#0d9569' : (isDark ? theme.border : '#e1e7ef'),
+                    backgroundColor: selected ? '#0d9569' : (isDark ? theme.surface : '#ffffff'),
+                  },
+                ]}>
+                <ThemedText
+                  type="small"
+                  style={[
+                    styles.chipText,
+                    {
+                      color: selected ? '#ffffff' : (isDark ? theme.textSecondary : '#64748b'),
+                      fontWeight: selected ? '600' : '400',
+                    },
+                  ]}
+                >
+                  {category.categoryName}
+                </ThemedText>
               </Pressable>;
             })}
           </ScrollView>
@@ -103,7 +206,17 @@ export function ProductListScreen() {
           data={state.items}
           keyExtractor={item => String(item.id)}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingBottom: 24 }}
+          contentContainerStyle={{ gap: 12, paddingHorizontal: 16, paddingBottom: 24, flexGrow: 1 }}
+          alwaysBounceVertical={true}
+          onScroll={pullToRefresh.handleScroll}
+          scrollEventThrottle={16}
+          {...(Platform.OS === 'web'
+            ? {
+                onWheel: pullToRefresh.handleWheel,
+                onPointerDown: pullToRefresh.handlePointerDown,
+                onPointerUp: pullToRefresh.handlePointerUp,
+              }
+            : {})}
           refreshControl={
             <RefreshControl refreshing={state.refreshing} onRefresh={() => { void productCatalogStore.refresh(); }} />
           }
@@ -119,15 +232,21 @@ export function ProductListScreen() {
             />
           )}
           ListHeaderComponent={
-            // แสดงเฉพาะกรณียังไม่เคยโหลดสำเร็จเลย (list error) ต่างจาก footer error ของ loadMore ที่แสดงท้ายรายการแทน
-            !state.loaded && state.error ? (
-              <Card>
-                <ThemedText accessibilityLiveRegion="polite">
-                  {catalogErrorMessages[state.error] ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่'}
-                </ThemedText>
-                <Button label="ลองใหม่อีกครั้ง" onPress={() => { void productCatalogStore.retry(); }} />
-              </Card>
-            ) : null
+            <View style={{ gap: 12 }}>
+              {Platform.OS === 'web' && state.refreshing ? (
+                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                  <Loading label="กำลังรีเฟรชสินค้า..." />
+                </View>
+              ) : null}
+              {!state.loaded && state.error ? (
+                <Card>
+                  <ThemedText accessibilityLiveRegion="polite">
+                    {catalogErrorMessages[state.error] ?? 'เกิดข้อผิดพลาด กรุณาลองใหม่'}
+                  </ThemedText>
+                  <Button label="ลองใหม่อีกครั้ง" onPress={() => { void productCatalogStore.retry(); }} />
+                </Card>
+              ) : null}
+            </View>
           }
           ListEmptyComponent={
             state.loading ? <View style={{ gap: 12 }}><View style={{ flexDirection: 'row', gap: 12 }}>{Array.from({ length: columns }, (_, index) => <View key={index} style={{ flex: 1, gap: 12 }}><Skeleton height={210} label="กำลังโหลดสินค้า" /><Skeleton height={40} /></View>)}</View><ThemedText type="small">กำลังโหลดสินค้า</ThemedText></View>
@@ -156,14 +275,24 @@ export function ProductListScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, alignSelf: 'center', gap: 0, width: '100%' },
-  searchArea: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 12 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 24, paddingHorizontal: 12 },
-  searchInput: { flex: 1, minWidth: 0, minHeight: 48, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 10 },
+  searchArea: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, gap: 10 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 22, paddingHorizontal: 12, height: 44 },
+  searchInput: { flex: 1, minWidth: 0, height: 44, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 0 },
   chips: { gap: 8 },
-  chip: { borderWidth: 1, borderRadius: 24, paddingHorizontal: 15, minHeight: 48, justifyContent: 'center' },
+  chip: { borderWidth: 1, borderRadius: 17, paddingHorizontal: 14, minHeight: 34, height: 34, justifyContent: 'center', alignItems: 'center' },
+  chipText: { fontSize: 13, lineHeight: 18 },
   productCard: { width: '48%', flexGrow: 1, maxWidth: '50%', borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  productInfo: { padding: 10, gap: 8 },
-  productName: { fontSize: 14, lineHeight: 22, minHeight: 44 },
-  priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  condition: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+  imageWrapper: { position: 'relative', width: '100%', overflow: 'hidden' },
+  conditionBadge: { position: 'absolute', top: 8, left: 8, zIndex: 2, backgroundColor: '#059669', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  conditionBadgeText: { color: '#ffffff', fontSize: 11, fontWeight: '700', lineHeight: 15 },
+  productInfo: { padding: 10, gap: 2 },
+  brandName: { fontSize: 11, lineHeight: 15, fontWeight: '500' },
+  productName: { fontSize: 13, lineHeight: 18, fontWeight: '600', marginTop: 1 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  productPrice: { fontSize: 16, fontWeight: '700', color: '#37d298' },
+  productDivider: { height: 1, marginVertical: 6 },
+  shopRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  checkCircle: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#37d298', alignItems: 'center', justifyContent: 'center' },
+  shopName: { fontSize: 11, lineHeight: 15, flex: 1 },
 });

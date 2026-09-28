@@ -47,3 +47,15 @@ test('does not render another account orders during an account transition', () =
   render(<OrdersListScreen />);
   expect(screen.queryByText('สินค้าทดสอบ')).toBeNull();
 });
+
+test('does not render explicit refresh button and triggers refresh on pull-to-refresh', () => {
+  render(<OrdersListScreen />);
+  expect(screen.queryByRole('button', { name: 'รีเฟรช' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'กำลังรีเฟรช' })).toBeNull();
+
+  const flatList = screen.getByTestId('orders-flatlist');
+  const { refreshControl } = flatList.props;
+  expect(refreshControl).toBeTruthy();
+  refreshControl.props.onRefresh();
+  expect(mockStore.refresh).toHaveBeenCalled();
+});
