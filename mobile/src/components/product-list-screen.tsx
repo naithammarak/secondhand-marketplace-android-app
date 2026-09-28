@@ -161,11 +161,25 @@ export function ProductListScreen() {
             : {})}
         >
           <View style={styles.searchRow}>
-            <View style={[styles.searchBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
-              <MarketplaceIcon name="search" size={19} />
-              <TextInput style={[styles.searchInput, { color: theme.text }]} value={state.query}
-                onChangeText={text => productCatalogStore.setQuery(text)} placeholder="ค้นหาชื่อสินค้า"
-                placeholderTextColor={theme.textSecondary} accessibilityLabel="ค้นหาชื่อสินค้า" returnKeyType="search" />
+            <View
+              style={[
+                styles.searchBox,
+                {
+                  borderColor: isDark ? theme.border : '#e1e7ef',
+                  backgroundColor: isDark ? theme.surface : '#ffffff',
+                },
+              ]}
+            >
+              <MarketplaceIcon name="search" size={18} color="#10b981" />
+              <TextInput
+                style={[styles.searchInput, { color: isDark ? theme.text : '#161d2e' }]}
+                value={state.query}
+                onChangeText={text => productCatalogStore.setQuery(text)}
+                placeholder="ค้นหาชื่อสินค้า"
+                placeholderTextColor={isDark ? theme.textSecondary : '#94a3b8'}
+                accessibilityLabel="ค้นหาชื่อสินค้า"
+                returnKeyType="search"
+              />
             </View>
             <CatalogAccountButton />
           </View>
@@ -277,8 +291,8 @@ const styles = StyleSheet.create({
   page: { flex: 1, alignSelf: 'center', gap: 0, width: '100%' },
   searchArea: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, gap: 10 },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 22, paddingHorizontal: 12, height: 44 },
-  searchInput: { flex: 1, minWidth: 0, height: 44, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 0 },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 21, paddingHorizontal: 14, height: 42 },
+  searchInput: { flex: 1, minWidth: 0, height: 42, fontFamily: Fonts.sans, fontSize: 13, paddingVertical: 0 },
   chips: { gap: 8 },
   chip: { borderWidth: 1, borderRadius: 17, paddingHorizontal: 14, minHeight: 34, height: 34, justifyContent: 'center', alignItems: 'center' },
   chipText: { fontSize: 13, lineHeight: 18 },
