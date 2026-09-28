@@ -18,7 +18,7 @@ This backend branch implements Seller → Courier → Inspector → Buyer agains
 | Inspector | `POST /inspections/{id}/evidence` | Validates and stores a private JPEG/PNG/WebP image, max 5 MiB and 5 images |
 | Inspector | `POST /inspections/{id}/result` | One final result; 1–5 selected images; `PASS`/`MINOR_ISSUE` issue a Certificate in the same transaction, or roll back with `503 certificate_unavailable` |
 | Buyer | `GET /orders/{id}/inspection`, `GET /inspection-evidence/{id}` | Reads own final result and selected image bytes only; image response has `Cache-Control: no-store` |
-| Public | `GET /certificates/{token}` | Only `certificate_no`, `result` and `issued_at` for a random public token; no buyer identity, private image or user-entered product name |
+| Public | `GET /certificates/{token}` | หน้า HTML สาธารณะจาก token สุ่ม แสดงเพียงเลขใบรับรอง สถานะ ผลตรวจ และวันออก; ไม่มีข้อมูลผู้ซื้อ รูปส่วนตัว หรือชื่อสินค้าที่ผู้ใช้กรอก |
 
 Mutations require the Order-style `Idempotency-Key`. PostgreSQL row locks serialize transitions and proof quota; an identical key/payload replays the saved response, a changed payload returns `409`, and a new key after completion cannot create a second shipment/result/Certificate. Courier proof keys use the `courier/{shipment_id}/` prefix in the same private bucket, separate from `inspections/{inspection_id}/` evidence. The database enforces proof ownership and prevents changing assignment or proofs after confirmation. Inspector work detail hides buyer identity/address. Seller cannot read Buyer-only final evidence. The Certificate table is a narrow implementation of the atomic gate in #54; its public presentation and QR experience still need the separately approved CERT contract.
 

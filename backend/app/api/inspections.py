@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from app.services import inspection_storage
 from app.services.certificate_urls import public_certificate_base_url
+from app.services.certificate_page import render_certificate_page
 
 
 router = APIRouter(tags=["Inspections"])
@@ -601,9 +603,7 @@ def read_evidence(evidence_id: int, actor: User = Depends(get_current_user), db:
     return Response(content=inspection_storage.download_object(photo.object_key), media_type=photo.mime_type, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/certificates/{token}")
-def public_certificate(token: str, db: Session = Depends(get_db)):
+@router.get("/certificates/{token}", response_class=HTMLResponse)
+def public_certificate(token: str, db: Session = Depends(get_db)) -> HTMLResponse:
     cert = db.scalar(select(Certificate).where(Certificate.public_token == token))
-    if cert is None:
-        raise api_error(404, "certificate_not_found", "Certificate not found")
-    return {"certificate_no": cert.certificate_no, "result": cert.result, "issued_at": cert.issued_at}
+    return render_certificate_page(cert)

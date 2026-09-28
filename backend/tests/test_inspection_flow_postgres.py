@@ -173,8 +173,16 @@ def test_seller_inspector_buyer_flow(world, result):
         token = buyer_view.json()["certificate"]["public_url"].rsplit("/", 1)[-1]
         public = client.get(f"/certificates/{token}")
         assert public.status_code == 200
-        assert set(public.json()) == {"certificate_no", "result", "issued_at"}
-        assert public.json()["result"] == result
+        assert public.headers["content-type"].startswith("text/html")
+        assert public.headers["cache-control"] == "no-store"
+        assert public.headers["referrer-policy"] == "no-referrer"
+        assert public.headers["x-robots-tag"] == "noindex"
+        assert buyer_view.json()["certificate"]["certificate_no"] in public.text
+        assert result in public.text
+        assert token not in public.text
+        assert "The item was inspected against its Order snapshot." not in public.text
+        assert "<script" not in public.text and "<img" not in public.text
+        assert "storage/v1/object" not in public.text
     with Session(engine) as session:
         assert session.scalar(select(Order).where(Order.id == order_id)).status == "RESULT_NOTIFIED"
         recorded = session.scalar(select(Inspection).where(Inspection.id == work_id))
@@ -190,6 +198,48 @@ def test_seller_inspector_buyer_flow(world, result):
             assert certificate.issued_at is not None
             assert certificate.public_token not in {str(order_id), certificate.certificate_no}
             assert len(certificate.public_token) >= 22  # >= 128 bits after URL-safe encoding.
+
+
+def test_public_certificate_missing_and_revoked(world):
+    client, engine, _, _, inspector, _, _, _, _, _ = world
+    missing = client.get("/certificates/not-a-real-public-token")
+    assert missing.status_code == 404
+    assert missing.headers["content-type"].startswith("text/html")
+    assert missing.headers["cache-control"] == "no-store"
+    assert missing.headers["referrer-policy"] == "no-referrer"
+    assert missing.headers["x-robots-tag"] == "noindex"
+    assert "not-a-real-public-token" not in missing.text
+    assert "ไม่พบใบรับรอง" in missing.text
+
+    order_id, work_id = started_work(world)
+    uploaded = client.post(
+        f"/inspections/{work_id}/evidence",
+        files={"file": ("photo.png", image_bytes(), "image/png")},
+        headers=request_headers(inspector),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    saved = client.post(
+        f"/inspections/{work_id}/result",
+        json={"result": "PASS", "summary": "Private inspection note", "evidence_ids": [uploaded.json()["evidence"]["id"]]},
+        headers=request_headers(inspector),
+    )
+    assert saved.status_code == 200, saved.text
+    with Session(engine) as session:
+        cert = session.scalar(select(Certificate).where(Certificate.order_id == order_id))
+        token = cert.public_token
+        cert.status = "REVOKED"
+        cert.revoked_at = cert.issued_at
+        cert.revocation_reason = "Private revocation reason"
+        session.commit()
+
+    revoked = client.get(f"/certificates/{token}")
+    assert revoked.status_code == 200
+    assert "เพิกถอนแล้ว" in revoked.text
+    assert "ไม่สามารถใช้ยืนยันผลตรวจได้" in revoked.text
+    assert "ใช้งานได้</span>" not in revoked.text
+    assert "Private revocation reason" not in revoked.text
+    assert "Private inspection note" not in revoked.text
+    assert revoked.headers["cache-control"] == "no-store"
 
 
 def test_certificate_failure_rolls_back_and_same_key_can_retry(world, monkeypatch):
