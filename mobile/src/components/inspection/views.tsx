@@ -13,9 +13,9 @@ import { ConfirmationSheet, EmptyState, ImageViewer, TextField } from '../wondee
 export type InspectionOutcome = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export const outcomes: Record<InspectionOutcome, { label: string; variant: MascotVariant; tone: 'success' | 'warning' | 'info' | 'danger' }> = {
   PASS: { label: 'ผ่านการตรวจตามรายงาน', variant: 'pass', tone: 'success' },
-  MINOR_ISSUE: { label: 'พบตำหนิเล็กน้อย', variant: 'minor', tone: 'warning' },
-  NOT_AS_DESCRIBED: { label: 'สินค้าไม่ตรงตามประกาศ', variant: 'discrepancy', tone: 'info' },
-  FAKE: { label: 'ตรวจพบว่าไม่ใช่ของแท้', variant: 'fake', tone: 'danger' },
+  MINOR_ISSUE: { label: 'ผ่านการตรวจ พบข้อสังเกต', variant: 'minor', tone: 'warning' },
+  NOT_AS_DESCRIBED: { label: 'พบข้อมูลไม่ตรงประกาศ', variant: 'discrepancy', tone: 'info' },
+  FAKE: { label: 'ผลตรวจระบุว่าไม่ผ่านการตรวจความแท้', variant: 'fake', tone: 'danger' },
 };
 export type InspectionPhoto = { id: number; source: ImageSource; label: string };
 export type CertificateData = { number: string; publicUrl: string; qrSource?: ImageSource; issuedAt: string };
@@ -29,14 +29,14 @@ export function SellerShipView({ orderId, productName, deadline, busy = false, e
   const [carrier, setCarrier] = useState('');
   const [tracking, setTracking] = useState('');
   const [attempted, setAttempted] = useState(false);
-  const valid = carrier.trim().length >= 2 && carrier.trim().length <= 100 && tracking.trim().length >= 2 && tracking.trim().length <= 100;
+  const valid = [...carrier.trim()].length >= 1 && [...carrier.trim()].length <= 100 && [...tracking.trim()].length >= 1 && [...tracking.trim()].length <= 100;
   return <View style={{ gap: 16 }}><Card>
     <View style={{ alignItems: 'center', gap: 12 }}><WondeeMascot size={96} variant="courier" /><ThemedText type="title">ส่งของรักเข้าศูนย์ตรวจ</ThemedText></View>
     <ThemedText>คำสั่งซื้อ #{orderId} · {productName}</ThemedText><ThemedText themeColor="textSecondary">แพ็กสินค้าให้เหมาะสมและเก็บหลักฐานการจัดส่ง ระบุผู้ขนส่งและเลขติดตามจากพัสดุจริง</ThemedText>
     {deadline ? <Row label="กำหนดส่งจากระบบ" value={new Date(deadline).toLocaleString('th-TH')} /> : <ThemedText type="small">ยังไม่มีข้อมูลกำหนดส่งจากระบบ</ThemedText>}
   </Card><Card>
-    <TextField label="ผู้ให้บริการขนส่ง" value={carrier} onChangeText={setCarrier} placeholder="เช่น ไปรษณีย์ไทย" editable={!busy} error={attempted && carrier.trim().length < 2 ? 'กรุณาระบุผู้ขนส่ง' : undefined} />
-    <TextField label="เลขติดตามพัสดุ" value={tracking} onChangeText={setTracking} placeholder="เลขจากใบรับพัสดุ" editable={!busy} error={attempted && !valid ? 'กรุณาตรวจสอบข้อมูล ทั้งสองช่องต้องมี 2–100 ตัวอักษร' : undefined} />
+    <TextField label="ผู้ให้บริการขนส่ง" value={carrier} onChangeText={setCarrier} placeholder="เช่น ไปรษณีย์ไทย" editable={!busy} error={attempted && !valid ? 'ทั้งสองช่องต้องมี 1–100 ตัวอักษร' : undefined} />
+    <TextField label="เลขติดตามพัสดุ" value={tracking} onChangeText={setTracking} placeholder="เลขจากใบรับพัสดุ" editable={!busy} error={attempted && !valid ? 'กรุณาตรวจสอบข้อมูล ทั้งสองช่องต้องมี 1–100 ตัวอักษร' : undefined} />
     {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
     <Button label="ยืนยันการจัดส่งเข้าศูนย์" variant="primary" disabled={!onSubmit} busy={busy} onPress={() => { setAttempted(true); if (valid) onSubmit?.({ carrier: carrier.trim(), tracking_number: tracking.trim() }); }} />
     {!onSubmit && <ThemedText type="small" themeColor="textSecondary">บริการแจ้งส่งยังไม่พร้อมใช้งาน</ThemedText>}
@@ -81,7 +81,7 @@ export function InspectorWorkView({ productName, step, photos = [], busy, error,
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       <Button label="ตรวจทานและยืนยันผล" variant="primary" disabled={!valid || !onFinalize} busy={busy} onPress={() => setConfirm(true)} />
     </Card>}
-    <ConfirmationSheet visible={confirm} title="ยืนยันผลการตรวจ" onClose={() => setConfirm(false)}><ThemedText>{result ? outcomes[result].label : ''}</ThemedText><ThemedText>{summary}</ThemedText><ThemedText>เมื่อบันทึกแล้วจะเปลี่ยนผลผ่านหน้านี้ไม่ได้ กรุณาตรวจหลักฐานให้ครบ</ThemedText><Button label="บันทึกผลการตรวจ" variant="primary" disabled={!valid || !onFinalize} busy={busy} onPress={() => { if (valid && result) { onFinalize?.({ result, summary: summary.trim(), evidence_ids: chosen }); setConfirm(false); } }} /></ConfirmationSheet>
+    <ConfirmationSheet visible={confirm} title="ยืนยันผลการตรวจ" onClose={() => setConfirm(false)}><ThemedText>{result ? outcomes[result].label : ''}</ThemedText><ThemedText>{summary}</ThemedText><ThemedText>หลักฐานที่เลือก {chosen.length} ภาพ</ThemedText><ThemedText>เมื่อบันทึกแล้วจะเปลี่ยนผลผ่านหน้านี้ไม่ได้ กรุณาตรวจหลักฐานให้ครบ</ThemedText><Button label={result === 'PASS' || result === 'MINOR_ISSUE' ? 'บันทึกผลและออกใบรับรอง' : 'บันทึกผลตรวจ'} variant="primary" disabled={!valid || !onFinalize} busy={busy} onPress={() => { if (valid && result) { onFinalize?.({ result, summary: summary.trim(), evidence_ids: chosen }); setConfirm(false); } }} /></ConfirmationSheet>
   </View>;
 }
 export function CertificateSheet({ certificate, outcome, enabled, visible, onClose }: {
@@ -100,25 +100,37 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   outcome: InspectionOutcome; summary: string; inspectedAt: string; photos?: InspectionPhoto[];
   certificate?: CertificateData | null; nextAction: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | null;
   certificatePublicHtml?: boolean; certificateDecision?: boolean; canDecide?: boolean; busy?: boolean; error?: string;
-  onDecision?(decision: 'CONFIRM' | 'REJECT'): void;
+  onDecision?(decision: 'CONFIRM' | 'REJECT', reason?: string | null): void;
 }) {
   const theme = useTheme();
   const info = outcomes[outcome];
   const [showCertificate, setCertificate] = useState(false);
   const [photo, setPhoto] = useState<InspectionPhoto | null>(null);
   const [decision, setDecision] = useState<'CONFIRM' | 'REJECT' | null>(null);
+  const [reason, setReason] = useState('');
+  const validReason = [...reason.trim()].length <= 500;
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
-  const allowed = positive && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
+  const allowed = positive && !!certificate && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
   return <View style={{ gap: 16 }}><Card><View style={{ alignItems: 'center', gap: 16 }}><WondeeMascot size={96} variant={info.variant} /><ThemedText type="title" style={{ color: theme[info.tone], textAlign: 'center' }}>{info.label}</ThemedText><ThemedText type="small" themeColor="textSecondary">ตรวจเมื่อ {new Date(inspectedAt).toLocaleString('th-TH')}</ThemedText></View></Card>
     <Card><ThemedText type="subtitle">รายงานการตรวจ</ThemedText><ThemedText>{summary}</ThemedText><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{photos.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`ขยาย${item.label}`} onPress={() => setPhoto(item)}><Image source={item.source} style={{ width: 96, height: 96, borderRadius: 12 }} accessibilityLabel={item.label} /></Pressable>)}</View></Card>
     {positive && certificate && <Card><Button label="ดูใบรับรองผลการตรวจ" onPress={() => setCertificate(true)} /></Card>}
     <Card><ThemedText type="subtitle">ขั้นตอนถัดไป</ThemedText><ThemedText>{nextAction === 'RETURN_TO_SELLER' ? 'ระบบอยู่ระหว่างขั้นตอนส่งคืนผู้ขาย ติดตามสถานะการคืนเงินจากคำสั่งซื้อ' : nextAction === 'WAIT_BUYER_DECISION' ? 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ' : 'ยังไม่มีข้อมูลขั้นตอนถัดไปจากระบบ'}</ThemedText>
-      {allowed ? <><Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} /><Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => setDecision('REJECT')} /></> : positive && <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>}
+      {allowed ? <><Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} /><Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} /></> : positive && <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
     </Card>
     <CertificateSheet certificate={positive ? certificate : null} outcome={outcome} enabled={certificatePublicHtml} visible={showCertificate && positive} onClose={() => setCertificate(false)} />
     <ImageViewer source={photo?.source} label={photo?.label ?? 'หลักฐานการตรวจ'} onClose={() => setPhoto(null)} />
-    <ConfirmationSheet visible={!!decision && allowed} title="ยืนยันการตัดสินผลตรวจ" onClose={() => setDecision(null)}><ThemedText>การตัดสินใจนี้เกี่ยวกับผลตรวจเท่านั้น ไม่ใช่การยืนยันรับสินค้า</ThemedText><Button label={decision === 'CONFIRM' ? 'ยืนยันยอมรับผลตรวจ' : 'ยืนยันไม่ยอมรับผลตรวจ'} variant="primary" busy={busy} onPress={() => { if (decision && allowed) { onDecision?.(decision); setDecision(null); } }} /></ConfirmationSheet>
+    <ConfirmationSheet visible={!!decision && allowed} title="ยืนยันการตัดสินผลตรวจ" onClose={() => setDecision(null)}>
+      <ThemedText>การตัดสินใจนี้เกี่ยวกับผลตรวจเท่านั้น ไม่ใช่การยืนยันรับสินค้า</ThemedText>
+      {decision === 'REJECT' && <TextField label="เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)" value={reason} onChangeText={setReason} multiline editable={!busy} error={!validReason ? 'เหตุผลต้องไม่เกิน 500 ตัวอักษร' : undefined} />}
+      <Button label={decision === 'CONFIRM' ? 'ยืนยันยอมรับผลตรวจ' : 'ยืนยันไม่ยอมรับผลตรวจ'} variant="primary" disabled={decision === 'REJECT' && !validReason} busy={busy} onPress={() => {
+        if (decision && allowed && (decision !== 'REJECT' || validReason)) {
+          if (decision === 'REJECT') onDecision?.(decision, reason.trim() || null);
+          else onDecision?.(decision);
+          setDecision(null);
+        }
+      }} />
+    </ConfirmationSheet>
   </View>;
 }
 export function OrderTimeline({ events }: { events: { label: string; at: string; detail?: ReactNode }[] }) {
