@@ -9,12 +9,12 @@ import { Spacing } from '@/constants/theme';
 
 export default function AuthCallbackScreen() {
   const { session, initializing } = useAuth();
-  useEffect(() => { if (session) router.replace('/'); }, [session]);
+  useEffect(() => { if (session) router.replace('/profile'); }, [session]);
   return <ThemedView style={styles.container}>
     <SafeAreaView style={styles.content}>
       {(initializing || !session) && <ActivityIndicator />}
       <ThemedText>{session ? 'เข้าสู่ระบบสำเร็จ' : 'กำลังประมวลผลการเข้าสู่ระบบ'}</ThemedText>
-      {!initializing && !session && <Button title="กลับไปลองใหม่" onPress={() => router.replace('/')} />}
+      {!initializing && !session && <Button title="กลับไปลองใหม่" onPress={() => router.replace('/profile')} />}
     </SafeAreaView>
   </ThemedView>;
 }

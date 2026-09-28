@@ -1,5 +1,1 @@
-import { LoginScreen } from '@/components/login-screen';
-
-export default function HomeScreen() {
-  return <LoginScreen />;
-}
+export { ProductListScreen as default } from '@/components/product-list-screen';

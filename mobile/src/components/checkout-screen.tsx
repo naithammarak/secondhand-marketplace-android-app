@@ -1,3 +1,4 @@
+import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
@@ -50,7 +51,8 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
     }
   }, [router, state.createdOrderId]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
+  if (!auth.session) return productId === null ? <Redirect href="/login" /> : <MarketplaceLoginRequired destination={{ kind: 'checkout', productId }} />;
 
   const busy = state.submitting;
   const locked = busy || state.uncertain;
@@ -110,7 +112,7 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
                     <View key={field} style={styles.field}>
                       <ThemedText type="smallBold">{label}</ThemedText>
                       <TextInput
-                        style={[styles.input, { color: theme.text, borderColor: error ? '#C53030' : theme.backgroundSelected }]}
+                        style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: error ? theme.danger : theme.border }]}
                         value={values[field]}
                         onChangeText={text => update(field, text)}
                         placeholder={placeholder}
