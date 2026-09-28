@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { WondeeMascot } from './wondee/brand';
+import { GeometricMascot } from './wondee/brand';
 import { router, useFocusEffect } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
@@ -28,7 +28,13 @@ export function MarketplaceNav({ selected }: { selected: 'home' | 'orders' | 'se
         style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.65 : 1 }]}>
         <View style={styles.icon}>
           {tab.key === 'profile' ? (
-            <WondeeMascot size={22} outline={!active} animate={active && focused} />
+            <GeometricMascot
+              shape="circle"
+              size={24}
+              color={active ? activeColor : inactiveColor}
+              eyeColor={active ? '#022c22' : '#334155'}
+              animate={focused}
+            />
           ) : (
             <MarketplaceIcon name={iconName} color={color} size={22} />
           )}
