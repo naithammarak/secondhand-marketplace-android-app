@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin_orders import router as admin_orders_router
@@ -29,6 +29,18 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def private_inspection_no_store(request: Request, call_next):
+    """Keep buyer inspection details and error responses out of shared caches."""
+    parts = request.url.path.strip("/").split("/")
+    private = (len(parts) in {3, 4} and parts[0] == "orders" and parts[2] == "inspection"
+               and (len(parts) == 3 or parts[3] == "decision"))
+    response = await call_next(request)
+    if private:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 # Allow the Expo mobile app to call the API during development.
 app.add_middleware(

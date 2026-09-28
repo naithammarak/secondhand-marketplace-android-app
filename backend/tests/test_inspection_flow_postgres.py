@@ -18,8 +18,9 @@ from app.api import inspections as inspect_api
 from app.database import get_db
 from app.main import app
 from app.models.certificate import Certificate
+from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
-from app.models.order import Order
+from app.models.order import Escrow, Order
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from tests.order_helpers import create_product, create_user, new_key, order_body, patch_auth
@@ -87,6 +88,17 @@ def image_bytes():
     output = BytesIO()
     Image.new("RGB", (8, 8), "blue").save(output, format="PNG")
     return output.getvalue()
+
+
+def completed_work(world, result="PASS"):
+    client, _, _, _, inspector, _, _, _, _, _ = world
+    order_id, work_id = started_work(world)
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    assert uploaded.status_code == 201, uploaded.text
+    photo_id = uploaded.json()["evidence"]["id"]
+    saved = client.post(f"/inspections/{work_id}/result", json={"result": result, "summary": "The expert inspected this item and recorded the final result.", "evidence_ids": [photo_id]}, headers=request_headers(inspector))
+    assert saved.status_code == 200, saved.text
+    return order_id, work_id, photo_id
 
 
 def started_work(world):
@@ -526,3 +538,142 @@ def test_courier_proof_limits_replay_and_storage_failure(world, tmp_path):
     with Session(engine) as session:
         assert session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment_id).count() == 3
         assert session.get(Shipment, shipment_id).courier_delivered_at is not None
+
+
+@pytest.mark.parametrize("result,answer,reason,next_action", [
+    ("PASS", "CONFIRM", None, "SHIP_TO_BUYER"),
+    ("MINOR_ISSUE", "REJECT", "  สภาพไม่ตรงที่คาด  ", "RETURN_TO_SELLER"),
+    ("PASS", "REJECT", "   ", "RETURN_TO_SELLER"),
+])
+def test_buyer_decision_once_and_identical_replay(world, result, answer, reason, next_action):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, photo_id = completed_work(world, result)
+    url = f"/orders/{order_id}/inspection"
+    initial = client.get(url, headers=buyer)
+    assert initial.status_code == 200 and initial.headers["cache-control"] == "no-store", initial.text
+    assert initial.json()["can_decide"] is True and initial.json()["decision"] is None
+    assert initial.json()["evidence"] == [{"id": photo_id, "url": f"/inspection-evidence/{photo_id}", "expires_at": None}]
+    assert initial.json()["next_action"] == "WAIT_BUYER_DECISION"
+    payload = {"decision": answer, "reason": reason}
+    recorded = client.post(f"{url}/decision", json=payload, headers=buyer)
+    assert recorded.status_code == 200 and recorded.headers["cache-control"] == "no-store", recorded.text
+    normalized_reason = (reason.strip() or None) if reason is not None else None
+    assert recorded.json()["decision"]["reason"] == normalized_reason
+    assert recorded.json()["next_action"] == next_action
+    repeated = client.post(f"{url}/decision", json={"decision": answer, "reason": normalized_reason}, headers=buyer)
+    assert repeated.status_code == 200 and repeated.json() == recorded.json(), repeated.text
+    opposite = client.post(f"{url}/decision", json={"decision": "REJECT" if answer == "CONFIRM" else "CONFIRM"}, headers=buyer)
+    assert opposite.status_code == 409 and opposite.json()["detail"]["code"] == "decision_already_recorded"
+    if answer == "REJECT":
+        changed = client.post(f"{url}/decision", json={"decision": "REJECT", "reason": "different"}, headers=buyer)
+        assert changed.status_code == 409 and changed.json()["detail"]["code"] == "decision_already_recorded"
+    after = client.get(url, headers=buyer)
+    assert after.status_code == 200 and after.json()["can_decide"] is False
+    assert after.json()["decision"] == recorded.json()["decision"] and after.json()["next_action"] == next_action
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+        assert session.get(Order, order_id).status == "RESULT_NOTIFIED"
+        assert session.query(Shipment).filter_by(order_id=order_id).count() == 1
+        assert session.query(Escrow).filter_by(order_id=order_id).one().status == "HELD"
+
+
+@pytest.mark.parametrize("result", ["FAKE", "NOT_AS_DESCRIBED"])
+def test_negative_result_is_readable_but_cannot_be_decided(world, result):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world, result)
+    url = f"/orders/{order_id}/inspection"
+    view = client.get(url, headers=buyer)
+    assert view.status_code == 200 and view.json()["certificate"] is None
+    assert view.json()["can_decide"] is False and view.json()["next_action"] == "RETURN_TO_SELLER"
+    rejected = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert rejected.status_code == 409 and rejected.json()["detail"]["code"] == "decision_not_allowed"
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+
+
+def test_decision_permissions_read_after_suspension_and_validation(world):
+    client, engine, buyer, seller, inspector, other, _, _, _, admin = world
+    order_id, work_id = started_work(world)
+    url = f"/orders/{order_id}/inspection"
+    waiting = client.get(url, headers=buyer)
+    assert waiting.status_code == 404 and waiting.json()["detail"]["code"] == "inspection_not_ready"
+    assert waiting.headers["cache-control"] == "no-store"
+    assert client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer).json()["detail"]["code"] == "inspection_not_ready"
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(inspector))
+    photo_id = uploaded.json()["evidence"]["id"]
+    assert client.post(f"/inspections/{work_id}/result", json={"result": "PASS", "summary": "A valid expert inspection result was recorded.", "evidence_ids": [photo_id]}, headers=request_headers(inspector)).status_code == 200
+    for method, suffix in [(client.get, ""), (lambda path, headers: client.post(path, json={"decision": "CONFIRM"}, headers=headers), "/decision")]:
+        assert method(url + suffix, headers=other).status_code == 404
+        assert method(url + suffix, headers=admin).status_code == 404
+        assert method(url + suffix, headers=inspector).status_code == 404
+        assert method(url + suffix, headers=seller).status_code == 403
+        assert method(url + suffix, headers={}).status_code == 401
+    for body in [{"decision": "MAYBE"}, {"decision": "CONFIRM", "reason": ""},
+                 {"decision": "REJECT", "reason": "x" * 501}, {"decision": "REJECT", "next_action": "SHIP_TO_BUYER"}]:
+        invalid = client.post(f"{url}/decision", json=body, headers=buyer)
+        assert invalid.status_code == 422 and invalid.json()["detail"]["code"] == "validation_error", invalid.text
+        assert invalid.headers["cache-control"] == "no-store"
+    with Session(engine) as session:
+        session.get(User, session.get(Order, order_id).buyer_id).status = UserStatus.SUSPENDED
+        session.commit()
+    assert client.get(url, headers=buyer).status_code == 200
+    inactive = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert inactive.status_code == 403 and inactive.json()["detail"]["code"] == "account_inactive"
+
+
+def test_missing_certificate_fails_closed_and_concurrent_decisions_choose_once(world, monkeypatch):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    url = f"/orders/{order_id}/inspection"
+    original = inspect_api._certificate
+    monkeypatch.setattr(inspect_api, "_certificate", lambda *_: None)
+    assert client.get(url, headers=buyer).json()["detail"]["code"] == "inspection_not_ready"
+    assert client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer).json()["detail"]["code"] == "inspection_not_ready"
+    monkeypatch.setattr(inspect_api, "_certificate", original)
+
+    def decide(answer):
+        return client.post(f"{url}/decision", json={"decision": answer}, headers=buyer)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(decide, ["CONFIRM", "REJECT"]))
+    assert sorted(item.status_code for item in responses) == [200, 409], [item.text for item in responses]
+    winner = next(item for item in responses if item.status_code == 200).json()
+    assert winner["next_action"] == ("SHIP_TO_BUYER" if winner["decision"]["decision"] == "CONFIRM" else "RETURN_TO_SELLER")
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+
+
+def test_buyer_suspended_after_auth_cannot_decide(world, monkeypatch):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    original = inspect_api.load_order_for
+
+    def suspend_after_auth(db, requested_order_id, actor, lock=False):
+        order, role = original(db, requested_order_id, actor, lock=lock)
+        with Session(engine) as other_session:
+            other_session.get(User, actor.id).status = UserStatus.SUSPENDED
+            other_session.commit()
+        return order, role
+
+    monkeypatch.setattr(inspect_api, "load_order_for", suspend_after_auth)
+    denied = client.post(f"/orders/{order_id}/inspection/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert denied.status_code == 403 and denied.json()["detail"]["code"] == "account_inactive", denied.text
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+
+
+def test_revoked_certificate_cannot_be_decided(world):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    with Session(engine) as session:
+        cert = session.scalar(select(Certificate).where(Certificate.order_id == order_id))
+        cert.status = "REVOKED"
+        cert.revoked_at = cert.issued_at
+        cert.revocation_reason = "Certificate revoked for test"
+        session.commit()
+    url = f"/orders/{order_id}/inspection"
+    view = client.get(url, headers=buyer)
+    assert view.status_code == 200 and view.json()["certificate"]["status"] == "REVOKED"
+    assert view.json()["can_decide"] is False
+    denied = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert denied.status_code == 409 and denied.json()["detail"]["code"] == "decision_not_allowed"
