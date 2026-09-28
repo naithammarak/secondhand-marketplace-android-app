@@ -6,10 +6,10 @@ import { useAuth } from '@/auth/auth-provider';
 import { marketplaceReturn } from '@/auth/marketplace-return-instance';
 import { useVerification } from '@/verification/verification-provider';
 import { useTheme } from '@/hooks/use-theme';
-import { useThemePreference, type ThemePreference } from '@/theme/theme-provider';
+import { useThemePreference } from '@/theme/theme-provider';
 import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
-import { Button, Card, Loading, Screen } from './order-ui';
+import { Button, Loading, Screen } from './order-ui';
 import { ThemedText } from './themed-text';
 import { WondeeMascot, type MascotVariant } from './wondee/brand';
 
@@ -31,7 +31,8 @@ const MASCOT_OPTIONS: { variant: MascotVariant; name: string }[] = [
 export function ProfileScreen() {
   const auth = useAuth();
   const theme = useTheme();
-  const { preference, setPreference } = useThemePreference();
+  const { preference, scheme, setPreference } = useThemePreference();
+  const isDark = scheme === 'dark';
   const { state, store } = useVerification();
   const [logoutError, setLogoutError] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -95,7 +96,12 @@ export function ProfileScreen() {
               <View
                 style={[
                   styles.card,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                    shadowColor: '#0F172A',
+                    shadowOpacity: isDark ? 0.25 : 0.06,
+                  },
                 ]}>
                 <View style={styles.identityRow}>
                   {/* Mascot Avatar with Cycle Button */}
@@ -107,7 +113,14 @@ export function ProfileScreen() {
                       styles.avatarWrapper,
                       { opacity: pressed ? 0.85 : 1 },
                     ]}>
-                    <View style={styles.avatarCircle}>
+                    <View
+                      style={[
+                        styles.avatarCircle,
+                        {
+                          backgroundColor: isDark ? '#07241D' : '#ECFDF5',
+                          borderColor: '#10B981',
+                        },
+                      ]}>
                       <WondeeMascot
                         size={46}
                         variant={currentMascot.variant}
@@ -125,21 +138,23 @@ export function ProfileScreen() {
                       <ThemedText style={[styles.nameText, { color: theme.text }]} numberOfLines={1}>
                         {displayName}
                       </ThemedText>
-                      <View style={styles.roleBadge}>
-                        <ThemedText style={styles.roleBadgeText}>{roleText}</ThemedText>
+                      <View
+                        style={[
+                          styles.roleBadge,
+                          isDark ? styles.roleBadgeDark : styles.roleBadgeLight,
+                        ]}>
+                        <ThemedText
+                          style={[
+                            styles.roleBadgeText,
+                            isDark ? styles.roleBadgeTextDark : styles.roleBadgeTextLight,
+                          ]}>
+                          {roleText}
+                        </ThemedText>
                       </View>
                     </View>
 
-                    <ThemedText style={styles.mascotSubtitleText}>
-                      มาสคอต : {currentMascot.name}  ( แตะรูปเพื่อสลับ )
-                    </ThemedText>
-
                     <View style={styles.memberStatusRow}>
                       <ThemedText style={styles.memberDateText}>สมาชิก ก.ย. 2026</ThemedText>
-                      <ThemedText style={styles.memberDotText}> • </ThemedText>
-                      <ThemedText style={styles.verifiedText}>
-                        {auth.session ? 'ยืนยันอีเมลแล้ว' : 'เข้าสู่ระบบเพื่อใช้งาน'}
-                      </ThemedText>
                     </View>
                   </View>
                 </View>
@@ -173,25 +188,49 @@ export function ProfileScreen() {
 
               {/* Card 2: Open Shop Banner (Buyer/Guest) OR Approved Seller Management */}
               {customer && !approved && (
-                <View style={styles.sellerBanner}>
+                <View
+                  style={[
+                    styles.sellerBanner,
+                    isDark ? styles.sellerBannerDark : styles.sellerBannerLight,
+                  ]}>
                   <View style={styles.sellerBannerHeader}>
-                    <View style={styles.opportunityBadge}>
-                      <ThemedText style={styles.opportunityBadgeText}>
+                    <View
+                      style={[
+                        styles.opportunityBadge,
+                        isDark ? styles.opportunityBadgeDark : styles.opportunityBadgeLight,
+                      ]}>
+                      <ThemedText
+                        style={[
+                          styles.opportunityBadgeText,
+                          isDark ? styles.opportunityBadgeTextDark : styles.opportunityBadgeTextLight,
+                        ]}>
                         ✨ {waitingSellerAccess ? 'อนุมัติแล้ว' : 'โอกาสสำหรับคุณ'}
                       </ThemedText>
                     </View>
-                    <View style={styles.tagIconCircle}>
+                    <View
+                      style={[
+                        styles.tagIconCircle,
+                        isDark ? styles.tagIconCircleDark : styles.tagIconCircleLight,
+                      ]}>
                       <ThemedText style={{ fontSize: 18 }}>🏷️</ThemedText>
                     </View>
                   </View>
 
-                  <ThemedText style={styles.sellerBannerTitle}>
+                  <ThemedText
+                    style={[
+                      styles.sellerBannerTitle,
+                      isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight,
+                    ]}>
                     {waitingSellerAccess
                       ? 'คำขอร้านได้รับอนุมัติแล้ว'
                       : 'ต้องการเปิดร้านขายสินค้า?'}
                   </ThemedText>
 
-                  <ThemedText style={styles.sellerBannerSubtitle}>
+                  <ThemedText
+                    style={[
+                      styles.sellerBannerSubtitle,
+                      isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight,
+                    ]}>
                     {waitingSellerAccess
                       ? 'บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล'
                       : 'ยกระดับบัญชีเป็นผู้ขาย ส่งต่อของรัก สร้างรายได้ง่ายๆ พร้อมระบบคุ้มครอง'}
@@ -203,10 +242,21 @@ export function ProfileScreen() {
                     </ThemedText>
                   )}
 
-                  <View style={styles.sellerBannerDivider} />
+                  <View
+                    style={[
+                      styles.sellerBannerDivider,
+                      isDark ? styles.sellerBannerDividerDark : styles.sellerBannerDividerLight,
+                    ]}
+                  />
 
                   <View style={styles.sellerBannerFooter}>
-                    <ThemedText style={styles.idCardNotice}>ยืนยันตัวตนด้วยบัตร ปชช.</ThemedText>
+                    <ThemedText
+                      style={[
+                        styles.idCardNotice,
+                        isDark ? styles.idCardNoticeDark : styles.idCardNoticeLight,
+                      ]}>
+                      ยืนยันตัวตนด้วยบัตร ปชช.
+                    </ThemedText>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={openShopBtnLabel}
@@ -216,6 +266,7 @@ export function ProfileScreen() {
                       }}
                       style={({ pressed }) => [
                         styles.openShopButton,
+                        isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
                         { opacity: pressed ? 0.85 : 1 },
                       ]}>
                       <ThemedText style={styles.openShopButtonText}>
@@ -231,7 +282,12 @@ export function ProfileScreen() {
                 <View
                   style={[
                     styles.card,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.25 : 0.06,
+                    },
                   ]}>
                   <View style={styles.sellerApprovedHeader}>
                     <View style={styles.opportunityBadge}>
@@ -275,7 +331,9 @@ export function ProfileScreen() {
                     styles.statCard,
                     {
                       backgroundColor: theme.surface,
-                      borderColor: theme.border,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.2 : 0.06,
                       opacity: pressed ? 0.85 : 1,
                     },
                   ]}>
@@ -292,7 +350,9 @@ export function ProfileScreen() {
                     styles.statCard,
                     {
                       backgroundColor: theme.surface,
-                      borderColor: theme.border,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.2 : 0.06,
                       opacity: pressed ? 0.85 : 1,
                     },
                   ]}>
@@ -309,11 +369,13 @@ export function ProfileScreen() {
                     styles.statCard,
                     {
                       backgroundColor: theme.surface,
-                      borderColor: theme.border,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.2 : 0.06,
                       opacity: pressed ? 0.85 : 1,
                     },
                   ]}>
-                  <ThemedText style={[styles.statNumber, { color: '#10b981' }]}>1</ThemedText>
+                  <ThemedText style={[styles.statNumber, { color: '#10B981' }]}>1</ThemedText>
                   <ThemedText style={styles.statLabel}>คูปองส่วนลด</ThemedText>
                 </Pressable>
               </View>
@@ -322,23 +384,49 @@ export function ProfileScreen() {
               <View
                 style={[
                   styles.card,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                    shadowColor: '#0F172A',
+                    shadowOpacity: isDark ? 0.25 : 0.06,
+                  },
                 ]}>
                 {/* Hub Header */}
                 <View style={styles.hubHeaderRow}>
-                  <View style={styles.shieldIconContainer}>
+                  <View
+                    style={[
+                      styles.shieldIconContainer,
+                      {
+                        backgroundColor: isDark ? '#0D2822' : '#ECFDF5',
+                        borderColor: isDark ? 'transparent' : '#A7F3D0',
+                        borderWidth: isDark ? 0 : 1,
+                      },
+                    ]}>
                     <ThemedText style={{ fontSize: 18 }}>🛡️</ThemedText>
                   </View>
                   <View style={styles.hubTitleContainer}>
                     <ThemedText style={[styles.hubTitleText, { color: theme.text }]}>
                       Wondee Inspection Hub
                     </ThemedText>
-                    <ThemedText style={styles.hubSubtitleText}>
+                    <ThemedText style={[styles.hubSubtitleText, { color: isDark ? '#2DD4BF' : '#0D9488' }]}>
                       ศูนย์ตรวจสอบสภาพ & ออกใบรับรอง
                     </ThemedText>
                   </View>
-                  <View style={styles.officialBadge}>
-                    <ThemedText style={styles.officialBadgeText}>Official</ThemedText>
+                  <View
+                    style={[
+                      styles.officialBadge,
+                      {
+                        backgroundColor: isDark ? '#092D27' : '#CCFBF1',
+                        borderColor: isDark ? 'rgba(15, 118, 110, 0.3)' : '#5EEAD4',
+                      },
+                    ]}>
+                    <ThemedText
+                      style={[
+                        styles.officialBadgeText,
+                        { color: isDark ? '#2DD4BF' : '#0F766E' },
+                      ]}>
+                      Official
+                    </ThemedText>
                   </View>
                 </View>
 
@@ -354,8 +442,8 @@ export function ProfileScreen() {
                     style={({ pressed }) => [
                       styles.hubSubButton,
                       {
-                        backgroundColor: theme.backgroundElement ?? '#10151f',
-                        borderColor: theme.border,
+                        backgroundColor: isDark ? '#10151F' : '#F8FAFC',
+                        borderColor: isDark ? '#1E293B' : '#E2E8F0',
                         opacity: pressed ? 0.8 : 1,
                       },
                     ]}>
@@ -380,8 +468,8 @@ export function ProfileScreen() {
                     style={({ pressed }) => [
                       styles.hubSubButton,
                       {
-                        backgroundColor: theme.backgroundElement ?? '#10151f',
-                        borderColor: theme.border,
+                        backgroundColor: isDark ? '#10151F' : '#F8FAFC',
+                        borderColor: isDark ? '#1E293B' : '#E2E8F0',
                         opacity: pressed ? 0.8 : 1,
                       },
                     ]}>
@@ -404,13 +492,27 @@ export function ProfileScreen() {
                   onPress={() => router.push('/inspections')}
                   style={({ pressed }) => [
                     styles.inspectorButton,
-                    { opacity: pressed ? 0.85 : 1 },
+                    {
+                      backgroundColor: isDark ? '#0C2624' : '#F0FDFA',
+                      borderColor: isDark ? 'rgba(15, 118, 110, 0.3)' : '#99F6E4',
+                      opacity: pressed ? 0.85 : 1,
+                    },
                   ]}>
                   <ThemedText style={{ fontSize: 16 }}>🔬</ThemedText>
-                  <ThemedText style={styles.inspectorButtonText}>
+                  <ThemedText
+                    style={[
+                      styles.inspectorButtonText,
+                      { color: isDark ? '#2DD4BF' : '#0D9488' },
+                    ]}>
                     เข้าสู่มุมมองเจ้าหน้าที่ตรวจ (INS-042)
                   </ThemedText>
-                  <ThemedText style={styles.inspectorChevron}>›</ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.inspectorChevron,
+                      { color: isDark ? '#2DD4BF' : '#0D9488' },
+                    ]}>
+                    ›
+                  </ThemedText>
                 </Pressable>
               </View>
 
@@ -419,7 +521,12 @@ export function ProfileScreen() {
                 <View
                   style={[
                     styles.card,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.25 : 0.06,
+                    },
                   ]}>
                   <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
                     เมนูผู้ดูแลระบบ (Admin)
@@ -438,7 +545,12 @@ export function ProfileScreen() {
                 <View
                   style={[
                     styles.card,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.25 : 0.06,
+                    },
                   ]}>
                   <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
                     เมนูผู้ขนส่ง (Courier)
@@ -450,7 +562,12 @@ export function ProfileScreen() {
                 <View
                   style={[
                     styles.card,
-                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                      shadowColor: '#0F172A',
+                      shadowOpacity: isDark ? 0.25 : 0.06,
+                    },
                   ]}>
                   <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
                     เมนูเจ้าหน้าที่ตรวจสอบ (Inspector)
@@ -463,7 +580,13 @@ export function ProfileScreen() {
               <View
                 style={[
                   styles.card,
-                  { backgroundColor: theme.surface, borderColor: theme.border, padding: 0 },
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                    shadowColor: '#0F172A',
+                    shadowOpacity: isDark ? 0.25 : 0.06,
+                    padding: 0,
+                  },
                 ]}>
                 {/* Menu Item 1: Order History */}
                 <Pressable
@@ -483,7 +606,7 @@ export function ProfileScreen() {
                   <ThemedText style={styles.menuItemChevron}>›</ThemedText>
                 </Pressable>
 
-                <View style={[styles.menuDivider, { backgroundColor: theme.border }]} />
+                <View style={[styles.menuDivider, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]} />
 
                 {/* Menu Item 2: Shipping Address */}
                 <Pressable
@@ -508,7 +631,12 @@ export function ProfileScreen() {
               <View
                 style={[
                   styles.card,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                    shadowColor: '#0F172A',
+                    shadowOpacity: isDark ? 0.25 : 0.06,
+                  },
                 ]}>
                 <View style={styles.themeHeaderRow}>
                   <ThemedText style={[styles.themeTitleText, { color: theme.text }]}>
@@ -527,7 +655,11 @@ export function ProfileScreen() {
                 <View
                   style={[
                     styles.themeSegmentContainer,
-                    { backgroundColor: theme.backgroundElement ?? '#0f141d' },
+                    {
+                      backgroundColor: isDark ? '#0F141D' : '#F1F5F9',
+                      borderWidth: isDark ? 0 : 1,
+                      borderColor: '#E2E8F0',
+                    },
                   ]}>
                   {([
                     { key: 'dark', label: 'มืด', icon: '🌙' },
@@ -576,9 +708,13 @@ export function ProfileScreen() {
                   style={({ pressed }) => [
                     styles.logoutButton,
                     {
-                      borderColor: '#ef444444',
-                      backgroundColor: pressed ? '#ef444415' : 'transparent',
-                      opacity: pressed ? 0.8 : 1,
+                      borderColor: isDark ? '#EF444444' : '#FECACA',
+                      backgroundColor: pressed
+                        ? isDark ? '#EF444420' : '#FEE2E2'
+                        : isDark ? 'transparent' : '#FEF2F2',
+                      shadowColor: '#EF4444',
+                      shadowOpacity: isDark ? 0 : 0.05,
+                      opacity: pressed ? 0.85 : 1,
                     },
                   ]}>
                   <ThemedText style={styles.logoutButtonText}>ออกจากระบบ</ThemedText>
@@ -627,6 +763,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     gap: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 3,
   },
   identityRow: {
     flexDirection: 'row',
@@ -640,9 +779,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    borderWidth: 2,
-    borderColor: '#10b981',
-    backgroundColor: '#07241d',
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -655,11 +792,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 7,
     paddingVertical: 2,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1,
+    elevation: 3,
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
   },
   switchBadgeText: {
     fontSize: 9,
@@ -680,31 +817,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   roleBadge: {
-    backgroundColor: '#064e3b',
     borderRadius: 6,
     paddingHorizontal: 7,
     paddingVertical: 2,
+    borderWidth: 1,
+  },
+  roleBadgeDark: {
+    backgroundColor: '#064e3b',
+    borderColor: '#047857',
+  },
+  roleBadgeLight: {
+    backgroundColor: '#d1fae5',
+    borderColor: '#a7f3d0',
   },
   roleBadgeText: {
     fontSize: 10,
     fontWeight: '700',
+  },
+  roleBadgeTextDark: {
     color: '#34d399',
   },
-  mascotSubtitleText: {
-    fontSize: 11,
-    color: '#94a3b8',
+  roleBadgeTextLight: {
+    color: '#065f46',
   },
   memberStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 1,
+    marginTop: 2,
   },
   memberDateText: {
-    fontSize: 11,
-    color: '#94a3b8',
-  },
-  memberDotText: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94a3b8',
   },
   verifiedText: {
@@ -717,12 +859,28 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   sellerBanner: {
-    backgroundColor: '#07241d',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.25)',
     padding: 16,
     gap: 8,
+  },
+  sellerBannerDark: {
+    backgroundColor: '#07241d',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  sellerBannerLight: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
   },
   sellerBannerHeader: {
     flexDirection: 'row',
@@ -730,39 +888,71 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   opportunityBadge: {
-    backgroundColor: '#10b981',
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
+  opportunityBadgeDark: {
+    backgroundColor: '#10b981',
+  },
+  opportunityBadgeLight: {
+    backgroundColor: '#10b981',
+  },
   opportunityBadgeText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  opportunityBadgeTextDark: {
     color: '#022c22',
+  },
+  opportunityBadgeTextLight: {
+    color: '#ffffff',
   },
   tagIconCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#0d382d',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tagIconCircleDark: {
+    backgroundColor: '#0d382d',
+  },
+  tagIconCircleLight: {
+    backgroundColor: '#dcfce7',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
   },
   sellerBannerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
     marginTop: 4,
+  },
+  sellerBannerTitleDark: {
+    color: '#FFFFFF',
+  },
+  sellerBannerTitleLight: {
+    color: '#0f172a',
   },
   sellerBannerSubtitle: {
     fontSize: 12,
-    color: '#94a3b8',
     lineHeight: 18,
+  },
+  sellerBannerSubtitleDark: {
+    color: '#94a3b8',
+  },
+  sellerBannerSubtitleLight: {
+    color: '#475569',
   },
   sellerBannerDivider: {
     height: 1,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
     marginVertical: 4,
+  },
+  sellerBannerDividerDark: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  sellerBannerDividerLight: {
+    backgroundColor: '#dcfce7',
   },
   sellerBannerFooter: {
     flexDirection: 'row',
@@ -771,14 +961,30 @@ const styles = StyleSheet.create({
   },
   idCardNotice: {
     fontSize: 12,
-    fontWeight: '500',
+  },
+  idCardNoticeDark: {
     color: '#10b981',
+    fontWeight: '500',
+  },
+  idCardNoticeLight: {
+    color: '#059669',
+    fontWeight: '600',
   },
   openShopButton: {
-    backgroundColor: '#10b981',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  openShopButtonDark: {
+    backgroundColor: '#10b981',
+  },
+  openShopButtonLight: {
+    backgroundColor: '#059669',
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   openShopButtonText: {
     fontSize: 12,
@@ -801,6 +1007,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2,
   },
   statNumber: {
     fontSize: 20,
@@ -820,7 +1029,6 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#0d2822',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -834,12 +1042,9 @@ const styles = StyleSheet.create({
   },
   hubSubtitleText: {
     fontSize: 11,
-    color: '#2dd4bf',
   },
   officialBadge: {
-    backgroundColor: '#092d27',
     borderWidth: 1,
-    borderColor: 'rgba(15, 118, 110, 0.3)',
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -847,7 +1052,6 @@ const styles = StyleSheet.create({
   officialBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#2dd4bf',
   },
   hubActionsRow: {
     flexDirection: 'row',
@@ -872,9 +1076,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   inspectorButton: {
-    backgroundColor: '#0c2624',
     borderWidth: 1,
-    borderColor: 'rgba(15, 118, 110, 0.3)',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -884,14 +1086,12 @@ const styles = StyleSheet.create({
   inspectorButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2dd4bf',
     flex: 1,
     marginLeft: 8,
   },
   inspectorChevron: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#2dd4bf',
   },
   menuSectionTitle: {
     fontSize: 13,
@@ -945,10 +1145,10 @@ const styles = StyleSheet.create({
   },
   themeSegmentItemActive: {
     backgroundColor: '#10b981',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
     elevation: 2,
   },
   themeSegmentText: {
@@ -965,6 +1165,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 1,
   },
   logoutButtonText: {
     fontSize: 13,
@@ -984,4 +1187,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
+
 
