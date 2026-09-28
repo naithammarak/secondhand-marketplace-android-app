@@ -9,6 +9,7 @@ Issue [#102](https://github.com/naithammarak/secondhand-marketplace-android-app/
 - ORDER มี paid Order, Payment, Escrow และ API จำลองชำระเงินสำหรับ integration test; INSPECT-03 มี Seller→Courier→Inspector flow จริงใน PostgreSQL ทดสอบแยก
 - `feat/cert-01-storage` และ `feat/inspect-01-storage` ยังเป็น PR ที่เปิดอยู่ในขณะทำ CERT-02; เปลี่ยน base PR ตามลำดับเมื่อ upstream merge แล้ว
 - งานนี้ต่อเติม route `POST /inspections/{inspection_id}/result` เดิม ไม่สร้าง route ออกใบรับรองซ้ำ
+- Mobile Order service/list/detail รับสถานะ `SHIPPING_TO_CENTER`, `RECEIVED_AT_CENTER`, `INSPECTING`, `RESULT_NOTIFIED` ตาม backend และแสดงข้อความภาษาไทยตรงสถานะ; สถานะในอนาคตยังมี fallback `UNKNOWN`
 
 ## พฤติกรรม
 

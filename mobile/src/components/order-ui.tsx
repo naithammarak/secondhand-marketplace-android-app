@@ -9,6 +9,10 @@ import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
 export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: '#B7791F',
   WAITING_SELLER_SHIP: '#2F855A',
+  SHIPPING_TO_CENTER: '#2B6CB0',
+  RECEIVED_AT_CENTER: '#2B6CB0',
+  INSPECTING: '#B7791F',
+  RESULT_NOTIFIED: '#2F855A',
   CANCELLED: '#718096',
   UNKNOWN: '#718096',
 };

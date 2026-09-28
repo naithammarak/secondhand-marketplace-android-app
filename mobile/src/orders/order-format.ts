@@ -4,8 +4,12 @@ import type { CancelReason, OrderStatus, PaymentStatus } from '../services/order
 export const orderStatusLabels: Record<OrderStatus, string> = {
   WAITING_PAYMENT: 'รอชำระเงิน',
   WAITING_SELLER_SHIP: 'ชำระแล้ว รอผู้ขายจัดส่ง',
+  SHIPPING_TO_CENTER: 'กำลังส่งสินค้าไปศูนย์ตรวจ',
+  RECEIVED_AT_CENTER: 'ศูนย์ตรวจได้รับสินค้าแล้ว',
+  INSPECTING: 'กำลังตรวจสินค้า',
+  RESULT_NOTIFIED: 'มีผลตรวจสินค้าแล้ว',
   CANCELLED: 'ยกเลิกแล้ว',
-  // สถานะที่แอปรุ่นนี้ยังไม่รู้จัก (backend เพิ่มสถานะหลังการจัดส่งในรอบถัดไป)
+  // สถานะที่ backend อาจเพิ่มในรอบถัดไป
   UNKNOWN: 'สถานะอื่น ๆ กรุณาอัปเดตแอปเพื่อดูรายละเอียด',
 };
 

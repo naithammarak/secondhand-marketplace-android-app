@@ -287,9 +287,9 @@ test('สถานะใหม่จาก backend ไม่ทำให้ห�
   assert.equal(order.amounts.totalAmount, '1350.00');
 });
 
-test('สถานะใหม่ในรายการคำสั่งซื้อก็กลายเป็น UNKNOWN เหมือนกัน', async () => {
+test('สถานะผลตรวจในรายการคำสั่งซื้อแสดงตรงกับ backend', async () => {
   const item = {
-    id: 41, status: 'RECEIVED_AT_CENTER', payment_status: 'PAID', viewer_role: 'buyer',
+    id: 41, status: 'RESULT_NOTIFIED', payment_status: 'PAID', viewer_role: 'buyer',
     product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
     total_amount: '1350.00', seller_payout: null, currency: 'THB',
     expires_at: null, cancel_reason: null, created_at: '2026-09-18T10:00:00Z', paid_at: '2026-09-18T10:20:00Z',
@@ -300,7 +300,20 @@ test('สถานะใหม่ในรายการคำสั่งซ�
   });
 
   const page = await service.listOrders('tok', {});
-  assert.equal(page.items[0].status, 'UNKNOWN');
+  assert.equal(page.items[0].status, 'RESULT_NOTIFIED');
+  assert.equal(orderStatusLabel(page.items[0].status), 'มีผลตรวจสินค้าแล้ว');
+});
+
+test('หน้ารายละเอียดอ่านสถานะตั้งแต่ส่งเข้าศูนย์จนแจ้งผลตรวจได้', async () => {
+  for (const status of ['SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED']) {
+    const service = createOrderService({
+      baseUrl: 'https://api.test',
+      fetch: async () => json(200, detail({ status, payment_status: 'PAID', paid_at: '2026-09-18T10:20:00Z' })),
+    });
+    const order = await service.getOrder('tok', 41);
+    assert.equal(order.status, status);
+    assert.notEqual(orderStatusLabel(order.status), orderStatusLabels.UNKNOWN);
+  }
 });
 
 test('สถานะที่ไม่ใช่ข้อความยังถือว่า backend ตอบผิดรูปแบบ', async () => {
