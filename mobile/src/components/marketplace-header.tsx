@@ -1,3 +1,4 @@
+import { WondeeWordmark } from './wondee/brand';
 import type { ReactNode } from 'react';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -12,11 +13,11 @@ export function MarketplaceHeader({ title, back, trailing }: { title: string; ba
       style={styles.back} onPress={() => router.canGoBack() ? router.back() : router.replace('/')}>
       <MarketplaceIcon name="back" />
     </Pressable>}
-    <ThemedText type="subtitle" accessibilityRole="header" style={styles.title}>{title}</ThemedText>
+    <View style={styles.title}>{title === 'ค้นหาสินค้า' ? <WondeeWordmark /> : <ThemedText type="subtitle" accessibilityRole="header">{title}</ThemedText>}</View>
     {trailing}
   </View>;
 }
 const styles = StyleSheet.create({
   header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1 },
-  title: { flex: 1 }, back: { minWidth: 36, minHeight: 44, justifyContent: 'center' },
+  title: { flex: 1 }, back: { minWidth: 48, minHeight: 48, justifyContent: 'center' },
 });

@@ -173,7 +173,7 @@ def require_idempotency_key(
 
 
 def require_buyer(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.BUYER:
+    if current_user.role not in {UserRole.BUYER, UserRole.SELLER}:
         raise api_error(
             status.HTTP_403_FORBIDDEN, "buyer_role_required", "เฉพาะบัญชีผู้ซื้อเท่านั้นที่สั่งซื้อได้"
         )
@@ -246,6 +246,8 @@ def clean_address(raw: ShippingAddressInput | None) -> tuple[ShippingAddress | N
 
 
 def viewer_role_for(order: Order, user: User) -> ViewerRole | None:
+    if user.role not in {UserRole.BUYER, UserRole.SELLER}:
+        return None
     if order.buyer_id == user.id:
         return ViewerRole.BUYER
     if order.seller_id == user.id:
@@ -254,6 +256,7 @@ def viewer_role_for(order: Order, user: User) -> ViewerRole | None:
 
 
 def load_order_for(db: Session, order_id: int, user: User, lock: bool = False) -> tuple[Order, ViewerRole]:
+    ensure_active(user)
     query = select(Order).where(Order.id == order_id)
     if lock:
         # ล็อกแถว Order ไว้จนจบ transaction ให้คำขอจ่ายเงินของ Order เดียวกันเข้าแถวทีละคำขอ
@@ -626,6 +629,7 @@ def list_orders(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_buyer(current_user)
     if role is None:
         role = {UserRole.BUYER: "buyer", UserRole.SELLER: "seller"}.get(current_user.role)
     if role is None:

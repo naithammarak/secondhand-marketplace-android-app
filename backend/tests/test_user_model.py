@@ -41,7 +41,7 @@ def test_user_model_exposes_the_login_03_schema_contract():
     assert isinstance(columns["role"].type, SqlEnum)
     assert columns["role"].nullable
     assert columns["role"].default is None
-    assert columns["role"].server_default is None
+    assert str(columns["role"].server_default.arg) == "'BUYER'"
     assert isinstance(columns["status"].type, SqlEnum)
     assert not columns["status"].nullable
     assert columns["created_at"].type.timezone

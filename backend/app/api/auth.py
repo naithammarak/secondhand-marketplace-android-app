@@ -193,15 +193,13 @@ def google_login(
         metadata = payload.get("user_metadata", {})
         full_name = metadata.get("full_name") or metadata.get("name") or (email.split("@")[0] if email else "User")
 
-        assigned_role = None
-        if body.role:
-            assigned_role = UserRole(body.role.value)
-
         user = User(
             supabase_user_id=supabase_uid,
             full_name=full_name,
             email=email,
-            role=assigned_role,
+            # The legacy request field never grants permissions. Approval is the
+            # only self-service path from a customer account to a seller.
+            role=UserRole.BUYER,
             status=UserStatus.ACTIVE,
         )
         db.add(user)
@@ -217,6 +215,11 @@ def google_login(
                     detail="Database error during concurrent user creation",
                 )
 
+    if user.role is None:
+        db.execute(update(User).where(User.id == user.id, User.role.is_(None))
+                   .values(role=UserRole.BUYER))
+        db.commit()
+        db.refresh(user)
     return user
 
 
@@ -231,11 +234,11 @@ def set_role(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Set a user's first self-service role exactly once.
-
-    The conditional update is the concurrency boundary: after one request commits,
-    every competing request observes a zero row count and must keep the stored role.
-    """
+    """Compatibility for old clients; seller selection is permanently closed."""
+    if current_user.status != UserStatus.ACTIVE:
+        raise HTTPException(status_code=403, detail="Account is not active")
+    if body.role.value != UserRole.BUYER.value:
+        raise HTTPException(status_code=409, detail={"code": "role_selection_closed"})
     selected_role = UserRole(body.role.value)
     result = db.execute(
         update(User)
@@ -263,5 +266,5 @@ def set_role(
         return current_user
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail="Role has already been selected",
+        detail={"code": "role_selection_closed"},
     )

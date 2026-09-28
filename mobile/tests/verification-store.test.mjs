@@ -6,6 +6,7 @@ import { VerificationServiceError } from '../src/services/verification-service.t
 const record = (status, extra = {}) => ({
   status,
   id: 1,
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารทดสอบ',
   bankAccountName: 'ผู้ขาย ทดสอบ',
   bankAccountLast4: '7890',
@@ -17,6 +18,7 @@ const record = (status, extra = {}) => ({
 });
 
 const validForm = {
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารทดสอบ',
   bankAccountName: 'ผู้ขาย ทดสอบ',
   bankAccountNumber: '1234567890',

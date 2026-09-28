@@ -174,7 +174,7 @@ def test_es256_token_is_verified_with_supabase_public_key(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["email"] == "es256@example.com"
-    assert response.json()["role"] == "SELLER"
+    assert response.json()["role"] == "BUYER"
 
 
 def test_es256_token_with_wrong_public_key_is_rejected(monkeypatch):
@@ -304,16 +304,16 @@ def create_user_without_role(name="New User", user_status=UserStatus.ACTIVE):
 
 
 @pytest.mark.parametrize("role", ["BUYER", "SELLER"])
-def test_user_without_role_can_select_buyer_or_seller(role):
+def test_legacy_role_route_only_normalizes_buyer(role):
     test_uid, headers = create_user_without_role("Role Picker")
 
     response = client.post("/auth/role", json={"role": role}, headers=headers)
 
-    assert response.status_code == 200
-    assert response.json()["full_name"] == "Role Picker"
-    assert response.json()["role"] == role
+    assert response.status_code == (200 if role == "BUYER" else 409)
+    if role == "SELLER":
+        assert response.json()["detail"]["code"] == "role_selection_closed"
     with TestingSessionLocal() as session:
-        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role == UserRole(role)
+        assert session.query(User).filter_by(supabase_user_id=test_uid).one().role == (UserRole.BUYER if role == "BUYER" else None)
 
 
 def test_selecting_same_role_is_idempotent_but_different_role_conflicts():
@@ -421,7 +421,7 @@ def test_different_roles_racing_on_postgresql_have_exactly_one_winner():
         assert sorted(response.status_code for response in responses) == [200, 409]
         with factory() as session:
             saved_role = session.scalar(select(User.role).where(User.supabase_user_id == test_uid))
-            assert saved_role in {UserRole.BUYER, UserRole.SELLER}
+            assert saved_role == UserRole.BUYER
             session.query(User).filter(User.supabase_user_id == test_uid).delete()
             session.commit()
     finally:
@@ -471,3 +471,27 @@ def test_first_login_concurrent_race_condition():
         data = response.json()
         assert data["supabase_user_id"] == test_uid
         assert data["full_name"] == "Concurrent User"
+
+
+@pytest.mark.parametrize("body, expected", [({}, 200), ({"role": "SELLER"}, 200), ({"role": "ADMIN"}, 422)])
+def test_new_account_never_self_elevates(body, expected):
+    uid = uuid.uuid4()
+    headers = {"Authorization": f"Bearer {make_token({'sub': str(uid), 'email': 'customer@example.test'})}"}
+    response = client.post('/auth/google', json=body, headers=headers)
+    assert response.status_code == expected
+    with TestingSessionLocal() as db:
+        user = db.scalar(select(User).where(User.supabase_user_id == uid))
+        assert (user.role == UserRole.BUYER) if expected == 200 else user is None
+
+
+@pytest.mark.parametrize('role', [UserRole.SELLER, UserRole.ADMIN, UserRole.INSPECTOR, None])
+def test_login_preserves_provisioned_role_and_normalizes_legacy_null(role):
+    uid, headers = create_user_without_role()
+    with TestingSessionLocal() as db:
+        db.query(User).filter_by(supabase_user_id=uid).update({'role': role})
+        db.commit()
+    response = client.post('/auth/google', json={'role': 'BUYER'}, headers=headers)
+    assert response.status_code == 200
+    assert response.json()['role'] == (role.value if role else 'BUYER')
+    if role:
+        assert client.post('/auth/role', json={'role': 'SELLER'}, headers=headers).json()['detail']['code'] == 'role_selection_closed'

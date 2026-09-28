@@ -91,7 +91,7 @@ export function Button({
   return (
     <Pressable
       style={({ pressed }) => [
-        { minHeight: 46, opacity: pressed ? 0.75 : 1 },
+        { minHeight: 48, opacity: pressed ? 0.75 : 1 },
         variant === 'secondary' ? styles.secondaryButton : styles.primaryButton,
         { borderColor: variant === 'danger' ? theme.danger : theme.primary, backgroundColor: variant === 'secondary' ? theme.surface : variant === 'danger' ? theme.danger : theme.primary },
         inactive && styles.buttonDisabled,
@@ -101,8 +101,8 @@ export function Button({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       onPress={onPress}>
-      {busy ? <ActivityIndicator color={variant === 'secondary' ? undefined : '#ffffff'} /> : null}
-      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.primary : theme.onPrimary }}>
+      {busy ? <ActivityIndicator color={variant === 'secondary' ? theme.accent : theme.onPrimary} /> : null}
+      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.accent : variant === 'danger' ? theme.onDanger : theme.onPrimary }}>
         {label}
       </ThemedText>
     </Pressable>
@@ -128,26 +128,26 @@ export const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', padding: Spacing.three },
   content: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
   center: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four },
-  card: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  card: { borderWidth: 1, borderRadius: 16, padding: Spacing.three, gap: Spacing.two },
   row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.two, paddingVertical: 7 },
   statusRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 6, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   field: { gap: Spacing.one },
   input: {
     borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 15, fontFamily: Fonts.sans, color: Colors.light.text, backgroundColor: Colors.light.backgroundElement, borderColor: Colors.light.border,
   },
   errorText: { color: Colors.light.danger },
-  noticeBox: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.one },
+  noticeBox: { borderWidth: 1, borderRadius: 12, padding: Spacing.two, gap: Spacing.one },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   primaryButton: {
     flexDirection: 'row',
     gap: Spacing.two,
     backgroundColor: Colors.light.primary,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
@@ -158,7 +158,7 @@ export const styles = StyleSheet.create({
   secondaryButton: {
     flexDirection: 'row',
     gap: Spacing.two,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',

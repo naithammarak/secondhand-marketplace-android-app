@@ -4,8 +4,8 @@
 
 ## อ่านส่วนนี้ก่อน
 
-- ผู้ใช้เลือกบทบาท `SELLER` ตอนเข้าใช้ระบบครั้งแรก แต่ยังลงขายสินค้าไม่ได้จนกว่าคำขอยืนยันตัวตนจะเป็น `APPROVED`
-- ผู้ขายส่งรูปบัตรประชาชน 1 รูป ชื่อธนาคาร ชื่อบัญชี และเลขบัญชี
+- Wondee UX: บัญชีใหม่เริ่มเป็น `BUYER` และสมัครเปิดร้านจากหน้าโปรไฟล์ การอนุมัติคำขอล่าสุดจะตั้ง `APPROVED` และเปลี่ยน role เป็น `SELLER` ใน transaction เดียวกัน
+- ผู้สมัครส่งชื่อร้าน รูปบัตรประชาชน 1 รูป ชื่อธนาคาร ชื่อบัญชี และเลขบัญชี
 - Prototype และข้อมูลทดสอบต้องใช้ข้อมูลสมมติเท่านั้น ห้ามใช้บัตรประชาชนหรือบัญชีธนาคารจริง
 - Admin ตรวจเอกสารด้วยตนเอง แล้วเลือกอนุมัติหรือปฏิเสธพร้อมเหตุผล
 - ผู้ขายที่ถูกปฏิเสธแก้ข้อมูลและส่งคำขอใหม่ได้ ระบบเก็บคำขอเดิมไว้เป็นประวัติ
@@ -13,23 +13,29 @@
 
 ## State flow
 
-![Seller verification state diagram](../diagrams/seller-verification-state.png)
+```mermaid
+stateDiagram-v2
+    [*] --> NOT_SUBMITTED: Active Buyer / legacy Seller
+    NOT_SUBMITTED --> PENDING: Submit shop + private verification
+    PENDING --> APPROVED: Admin approves latest / promote Seller atomically
+    PENDING --> REJECTED: Admin rejects / role unchanged
+    REJECTED --> PENDING: New request; keep history
+```
 
-ไฟล์ต้นฉบับของภาพอยู่ที่ [seller-verification-state.puml](../diagrams/seller-verification-state.puml)
+ภาพ `.png`/`.puml` รุ่นเดิมใน `docs/diagrams` เป็นประวัติ flow ก่อน Wondee; ให้ยึด flow และสิทธิ์ในเอกสารนี้สำหรับ implementation ใหม่.
 
 `NOT_SUBMITTED` ใช้เฉพาะใน API และหน้าจอเมื่อยังไม่มีคำขอ ไม่ได้เก็บในฐานข้อมูล ส่วนค่าที่เก็บจริงมี `PENDING`, `APPROVED` และ `REJECTED`
 
 ## สิทธิ์ของแต่ละบทบาท
 
-| การทำงาน | SELLER | ADMIN | BUYER / INSPECTOR |
+| การทำงาน | BUYER / SELLER | ADMIN | INSPECTOR |
 | --- | --- | --- | --- |
-| ส่งคำขอของตนเอง | ได้ เมื่อบัญชี `ACTIVE` | ไม่ได้ | ไม่ได้ |
-| อ่านสถานะของตนเอง | ได้ | ไม่ได้ | ไม่ได้ |
-| ดูคิวคำขอ | ไม่ได้ | ได้ เมื่อบัญชี `ACTIVE` | ไม่ได้ |
-| เปิดรูปบัตร | ไม่ได้ | ได้ผ่านลิงก์ชั่วคราว | ไม่ได้ |
-| อนุมัติหรือปฏิเสธ | ไม่ได้ | ได้ | ไม่ได้ |
+| ส่งคำขอ/อ่านสถานะตนเอง | ได้ เมื่อบัญชี `ACTIVE` | ไม่ได้ | ไม่ได้ |
+| ดูคิว/เปิดรูปบัตร | ไม่ได้ | ได้ เมื่อบัญชี `ACTIVE`; รูปผ่านลิงก์ชั่วคราว | ไม่ได้ |
+| อนุมัติหรือปฏิเสธ | ไม่ได้ | ได้ เมื่อบัญชีและผู้สมัครยัง `ACTIVE` | ไม่ได้ |
+| ลงขายสินค้า | เฉพาะ `SELLER` และคำขอล่าสุด `APPROVED` | ไม่ได้ | ไม่ได้ |
 
-Backend อ่านตัวตน บทบาท และสถานะบัญชีจาก Token ที่ตรวจแล้วเท่านั้น ห้ามเชื่อ `user_id`, role หรือสถานะที่ Mobile ส่งมา
+Backend ตรวจ Token เพื่อระบุตัวตน แล้วอ่านบทบาทและสถานะบัญชีปัจจุบันจากฐานข้อมูล ห้ามเชื่อ `user_id`, role หรือสถานะที่ Mobile ส่งมา
 
 ## ข้อมูลที่ผู้ขายส่ง
 
@@ -37,6 +43,7 @@ Backend อ่านตัวตน บทบาท และสถานะบ�
 
 | Field | กติกา |
 | --- | --- |
+| `shop_name` | บังคับ ตัดช่องว่างหัวท้าย ความยาว 2–100 ตัวอักษร; คำขอเก่าอาจเป็น null |
 | `bank_name` | บังคับ ความยาว 2-255 ตัวอักษร |
 | `bank_account_name` | บังคับ ความยาว 2-255 ตัวอักษร |
 | `bank_account_number` | บังคับ ระบบตัดขีดและช่องว่างออก แล้วต้องเหลือตัวเลข 10-15 หลัก |
@@ -46,11 +53,11 @@ Backend อ่านตัวตน บทบาท และสถานะบ�
 
 ## API contract
 
-### Seller
+### ผู้สมัคร (Buyer / Seller)
 
 | Method | Path | ผลลัพธ์ |
 | --- | --- | --- |
-| `GET` | `/verifications/me` | สถานะคำขอล่าสุดของ Seller ที่ Login |
+| `GET` | `/verifications/me` | สถานะคำขอล่าสุดของผู้สมัครที่ Login |
 | `POST` | `/verifications` | ส่งคำขอใหม่และได้สถานะ `PENDING` |
 
 ตัวอย่างเมื่อยังไม่เคยส่ง:
@@ -68,6 +75,7 @@ Backend อ่านตัวตน บทบาท และสถานะบ�
 {
   "id": 42,
   "status": "REJECTED",
+  "shop_name": "ร้านวนกลับ",
   "bank_name": "ธนาคารตัวอย่าง",
   "bank_account_name": "ผู้ขาย ทดสอบ",
   "bank_account_last4": "7890",
@@ -76,7 +84,7 @@ Backend อ่านตัวตน บทบาท และสถานะบ�
 }
 ```
 
-Seller ได้รับเลขบัญชีเพียง 4 ตัวท้าย และไม่ได้รับ path หรือ URL ของรูปบัตรกลับมา
+ผู้สมัครได้รับเลขบัญชีเพียง 4 ตัวท้าย และไม่ได้รับ path หรือ URL ของรูปบัตรกลับมา
 
 ### Admin
 
@@ -104,6 +112,8 @@ Seller ได้รับเลขบัญชีเพียง 4 ตัวท�
 }
 ```
 
+การส่งและการตรวจล็อกแถว User ก่อนคำขอ พร้อมอ่าน role/status ใหม่ การเลือกคำขอล่าสุดใช้ `created_at DESC, id DESC` ตรงกับ product eligibility และ public seller projection คำขอที่ไม่ใช่ล่าสุดได้ `409 stale_verification` ไม่มีการเปลี่ยน role จากการ submit/reject และไม่มีการอนุมัติเพียงครึ่งเดียวหาก commit ล้มเหลว
+
 เหตุผลปฏิเสธต้องมี 5-500 ตัวอักษร หาก Admin สองคนตรวจคำขอเดียวกันพร้อมกัน จะสำเร็จเพียงคนเดียว อีกคนได้รับ `409 already_reviewed` พร้อมชื่อผู้ตรวจคนแรก
 
 ## รหัสตอบกลับที่ทีมต้องรองรับ
@@ -113,7 +123,7 @@ Seller ได้รับเลขบัญชีเพียง 4 ตัวท�
 | `401` | ไม่มี Token, Token ผิด หรือหมดอายุ |
 | `403` | บทบาทไม่ตรง หรือบัญชีไม่ `ACTIVE` |
 | `404` | ไม่พบคำขอหรือไม่มีรูปบัตร |
-| `409` | Seller ส่งซ้ำ หรือคำขอถูก Admin คนอื่นตรวจแล้ว |
+| `409` | ผู้สมัครส่งซ้ำ / คำขอไม่ใช่ล่าสุด / ถูก Admin คนอื่นตรวจแล้ว |
 | `422` | ข้อมูลหรือไฟล์ไม่ผ่าน validation |
 | `502` | อัปโหลดหรือเปิดรูปจาก Storage ไม่สำเร็จ |
 | `503` | Backend ยังไม่ได้ตั้งค่า private Storage |
@@ -148,9 +158,17 @@ Seller ได้รับเลขบัญชีเพียง 4 ตัวท�
 - Class Diagram ระบุ `Seller 1 -- 0..1 SellerVerification` แต่ implementation ปัจจุบันเก็บหลายแถวเพื่อรักษาประวัติการส่งใหม่ โดยบังคับเพียงหนึ่ง `PENDING` ต่อ Seller เอกสารนี้ยึด behavior ใน tests และ code ตามกติกา repository
 - ยังไม่มี `AuditLog` สำหรับเหตุการณ์ส่งคำขอและตรวจคำขอ
 - ยังไม่มีงานอัตโนมัติที่ลบรูปเมื่อถึง `purge_at`
-- API ลงขายสินค้าต้องตรวจว่า Seller มีคำขอล่าสุดเป็น `APPROVED` ในงาน PRODUCT-03
+- API ลงขายสินค้าตรวจ `SELLER` + บัญชี `ACTIVE` + คำขอล่าสุด `APPROVED` แล้ว; device และ Storage integration ดูสถานะจริงในรายงานส่งมอบ Wondee
 
 ## เอกสารทดสอบที่เกี่ยวข้อง
 
 - [ทดสอบหน้าส่งคำขอของ Seller](../../mobile/docs/testing/seller-verification.md)
 - [ทดสอบหน้าตรวจคำขอของ Admin](../../mobile/docs/testing/admin-verification-review.md)
+
+## Migration และ compatibility ของ Wondee
+
+Revision `19d4be72a610` ต่อจาก `c93b7e5a1d84`: เพิ่ม `shop_name` nullable สำหรับคำขอเก่า, constraint ชื่อที่ไม่เป็น null ต้อง trim แล้วและยาว 2–100, normalize role null เป็น BUYER และตั้ง DB default BUYER โดยไม่แก้ Seller/Admin/Inspector เดิม
+
+Downgrade เอา shop_name และ default ออก แต่ **ไม่ย้อน BUYER กลับ null** เพราะไม่สามารถแยกบัญชีเดิมกับบัญชีใหม่อย่างปลอดภัย การ upgrade/downgrade ใช้ PostgreSQL ทดสอบแยกแล้ว; ยังไม่ได้รันกับฐานข้อมูลร่วม และต้องตรวจ migration graph อีกครั้งเมื่อรวม INSPECT/CERT
+
+Client เก่าที่ไม่ส่ง shop_name จะได้ `422` จึงต้องปล่อย backend/mobile ที่เข้ากันได้พร้อมกัน ดู role-route compatibility และ seller-as-buyer ใน [UX-01](UX-01-wondee-marketplace.md), ผลทดสอบใน [รายงานส่งมอบ](WONDEE-UI-REDESIGN-DELIVERY.md)

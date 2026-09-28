@@ -28,6 +28,7 @@ class VerificationResponse(BaseModel):
 
     status: VerificationStatus
     id: int | None = None
+    shop_name: str | None = None
     bank_name: str | None = None
     bank_account_name: str | None = None
     bank_account_last4: str | None = None
@@ -59,6 +60,7 @@ class AdminVerificationItem(BaseModel):
     seller_id: int
     seller_name: str
     seller_email: str
+    shop_name: str | None = None
     bank_name: str
     bank_account_name: str
     bank_account_last4: str

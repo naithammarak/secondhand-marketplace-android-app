@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
-from app.api.verifications import id_card_storage_dependency
+from app.api.verifications import id_card_storage_dependency, latest_verification, require_active_customer
 from app.database import get_db
 from app.models.user import User, UserRole, UserStatus
 from app.models.verification import Verification
@@ -55,6 +55,7 @@ def to_item(record: Verification, seller: User, reviewer_name: str | None) -> Ad
         seller_id=seller.id,
         seller_name=seller.full_name,
         seller_email=seller.email,
+        shop_name=record.shop_name,
         bank_name=record.bank_name,
         bank_account_name=record.bank_account_name,
         # ผู้ดูแลเห็นแค่เลขท้ายบัญชีพอให้ตรวจ ไม่ต้องเห็นเลขเต็ม
@@ -211,6 +212,18 @@ def decide_verification(
 ):
     record = get_record(db, verification_id)
 
+    # Shared lock order: users by id, then verification. No role promotion may
+    # commit independently of the decision (including on an exception).
+    users = db.scalars(select(User).where(User.id.in_({admin.id, record.user_id}))
+                       .order_by(User.id).with_for_update()
+                       .execution_options(populate_existing=True)).all()
+    by_id = {user.id: user for user in users}
+    require_admin(by_id[admin.id])
+    target = require_active_customer(by_id[record.user_id])
+    latest = latest_verification(db, target.id)
+    if latest is None or latest.id != record.id:
+        raise HTTPException(status_code=409, detail={"code": "stale_verification"})
+
     approved = body.decision == VerificationDecision.APPROVED
     # ปฏิเสธต้องมีเหตุผลเสมอ ส่วนอนุมัติจะล้างเหตุผลเก่าทิ้ง
     reason = None if approved else clean_reject_reason(body.reject_reason)
@@ -243,6 +256,12 @@ def decide_verification(
                 "reviewed_by_name": reviewer.full_name if reviewer else None,
             },
         )
-    db.commit()
+    if approved:
+        target.role = UserRole.SELLER
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(record)
     return load_item(db, record)

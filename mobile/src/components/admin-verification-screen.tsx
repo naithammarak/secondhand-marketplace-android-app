@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useAuth } from '@/auth/auth-provider';
 import { useTheme } from '@/hooks/use-theme';
 import { MAX_REJECT_REASON_LENGTH } from '@/admin/review-form';
@@ -25,12 +25,7 @@ const statusLabels: Record<VerificationStatus, string> = {
   REJECTED: 'ถูกปฏิเสธ',
 };
 
-const statusColors: Record<VerificationStatus, string> = {
-  NOT_SUBMITTED: '#60646C',
-  PENDING: '#B7791F',
-  APPROVED: '#2F855A',
-  REJECTED: '#C53030',
-};
+
 
 const tabs: { status: ReviewQueueStatus; label: string }[] = [
   { status: 'PENDING', label: 'รอตรวจ' },
@@ -73,20 +68,22 @@ export function AdminVerificationScreen() {
   const auth = useAuth();
   const router = useRouter();
   const theme = useTheme();
+  const styles = makeStyles(theme);
+  const statusColors = { NOT_SUBMITTED: theme.textSecondary, PENDING: theme.warning, APPROVED: theme.success, REJECTED: theme.danger };
   const { state, store } = useReview();
 
-  const isAdmin = auth.account?.role === 'ADMIN';
+  const isAdmin = auth.account?.source === 'backend' && auth.account.role === 'ADMIN' && !auth.accountError;
 
   useEffect(() => {
     // owner ถูกตั้งหลัง effect ของหน้าจอนี้รอบแรก จึงต้องโหลดอีกครั้งเมื่อผูกบัญชีแล้ว
-    if (!state.owner || state.loading || state.refreshing) return;
+    if (!isAdmin || state.owner !== auth.session?.user.id || state.loading || state.refreshing) return;
     if (!state.loaded && !state.loadError) void store.load();
-  }, [state.loadError, state.loaded, state.loading, state.owner, state.refreshing, store]);
+  }, [isAdmin, auth.session?.user.id, state.loadError, state.loaded, state.loading, state.owner, state.refreshing, store]);
 
   if (!auth.session) return <Redirect href="/login" />;
 
   // ระหว่างที่ยังไม่รู้บทบาทจาก backend ต้องไม่แสดงโครงหน้าตรวจคำขอไปก่อน
-  if (!auth.account) {
+  if (!auth.account || auth.accountChecking || auth.accountError || (isAdmin && state.owner !== auth.session.user.id)) {
     return (
       <ThemedView style={styles.screen}>
         <SafeAreaView style={[styles.content, styles.center]}>
@@ -173,6 +170,7 @@ export function AdminVerificationScreen() {
 
         <ThemedText type="smallBold">{item.sellerName}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">{item.sellerEmail}</ThemedText>
+        <ThemedText type="smallBold">ชื่อร้าน {item.shopName ?? 'ไม่ได้ระบุชื่อร้าน'}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">ธนาคาร {item.bankName}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">ชื่อบัญชี {item.bankAccountName}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
@@ -419,53 +417,54 @@ export function AdminVerificationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (theme: ReturnType<typeof useTheme>) => StyleSheet.create({
   screen: { flex: 1 },
   scrollContent: { flexGrow: 1, alignItems: 'center', padding: Spacing.three },
   content: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
   center: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four },
   card: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
-  tabs: { flexDirection: 'row', gap: Spacing.two },
-  tab: { flex: 1, borderWidth: 1, borderRadius: Spacing.two, paddingVertical: Spacing.two, alignItems: 'center' },
-  tabActive: { backgroundColor: '#243a73', borderColor: '#243a73' },
-  tabActiveText: { color: '#ffffff' },
-  listItem: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.half },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  tab: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: Spacing.two, alignItems: 'center' },
+  tabActive: { backgroundColor: theme.primary, borderColor: theme.primary },
+  tabActiveText: { color: theme.onPrimary },
+  listItem: { borderWidth: 1, borderRadius: 12, padding: Spacing.two, gap: Spacing.half },
   listName: { flex: 1 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  reasonBox: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.half },
+  reasonBox: { borderWidth: 1, borderRadius: 12, padding: Spacing.two, gap: Spacing.half },
   field: { gap: Spacing.one },
   input: {
     borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    fontSize: 16,
+    fontFamily: Fonts.sans, backgroundColor: theme.input, color: theme.text, borderColor: theme.inputBorder,
+    fontSize: 14,
     minHeight: 72,
     textAlignVertical: 'top',
   },
-  errorText: { color: '#C53030' },
-  evidence: { width: '100%', height: 220, borderRadius: Spacing.two },
-  actions: { flexDirection: 'row', gap: Spacing.two },
+  errorText: { color: theme.danger },
+  evidence: { width: '100%', height: 220, borderRadius: 12 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   primaryButton: {
     flex: 1,
     flexDirection: 'row',
     gap: Spacing.two,
-    borderRadius: Spacing.two,
-    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    minHeight: 48, paddingVertical: Spacing.two,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  approveButton: { backgroundColor: '#2F855A' },
-  rejectButton: { backgroundColor: '#C53030' },
-  primaryButtonText: { color: '#ffffff' },
+  approveButton: { backgroundColor: theme.primary },
+  rejectButton: { backgroundColor: theme.danger },
+  primaryButtonText: { color: theme.onPrimary },
   secondaryButton: {
-    borderRadius: Spacing.two,
-    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    minHeight: 48, paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#243a73',
+    borderColor: theme.primary,
   },
   buttonDisabled: { opacity: 0.5 },
 });

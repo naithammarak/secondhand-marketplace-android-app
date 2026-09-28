@@ -55,8 +55,9 @@ class User(Base):
             create_constraint=True,
             validate_strings=True,
             length=16,
-        ),
+        ).evaluates_none(),
         nullable=True,
+        server_default=text("'BUYER'"),
     )
     status: Mapped[UserStatus] = mapped_column(
         SqlEnum(

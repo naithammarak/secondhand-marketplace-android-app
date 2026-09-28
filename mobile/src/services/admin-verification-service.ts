@@ -11,6 +11,7 @@ export type ReviewRequest = {
   sellerId: number | null;
   sellerName: string;
   sellerEmail: string;
+  shopName: string | null;
   bankName: string;
   bankAccountName: string;
   bankAccountLast4: string;
@@ -84,6 +85,7 @@ function toRequest(payload: unknown): ReviewRequest {
     sellerId: typeof data.seller_id === 'number' ? data.seller_id : null,
     sellerName: readString(data.seller_name) ?? '',
     sellerEmail: readString(data.seller_email) ?? '',
+    shopName: readString(data.shop_name),
     bankName: readString(data.bank_name) ?? '',
     bankAccountName: readString(data.bank_account_name) ?? '',
     bankAccountLast4: readString(data.bank_account_last4) ?? '',

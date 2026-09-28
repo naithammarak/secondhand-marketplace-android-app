@@ -422,10 +422,10 @@ export function createOrderService(options: { baseUrl?: string; fetch?: FetchLik
 
     async listOrders(
       token: string,
-      page: { limit: number; offset: number },
+      page: { limit: number; offset: number; role?: 'buyer' | 'seller' },
       signal?: AbortSignal,
     ): Promise<OrderPage> {
-      return toPage(await request(`/orders?limit=${page.limit}&offset=${page.offset}`,
+      return toPage(await request(`/orders?limit=${page.limit}&offset=${page.offset}${page.role ? `&role=${page.role}` : ''}`,
         { method: 'GET', headers: auth(token) }, signal));
     },
 

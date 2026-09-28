@@ -10,6 +10,7 @@ let mockCanGoBack = true;
 let mockRouteId = '101';
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
   router: {
     back: () => mockBack(),
     push: (...args: unknown[]) => mockPush(...args),
@@ -105,7 +106,7 @@ describe('ProductDetailScreen', () => {
     expect(screen.getByText('ขนาด')).toBeTruthy();
     expect(screen.getByText('M')).toBeTruthy();
     expect(screen.getByText('สภาพ')).toBeTruthy();
-    expect(screen.getByText('ดี')).toBeTruthy();
+    expect(screen.getAllByText('สภาพดี')).toBeTruthy();
     expect(screen.getByText('เสื้อเชิ้ตมือสองสภาพดี ใส่ไม่กี่ครั้ง')).toBeTruthy();
 
     // Verify out-of-scope elements are absent

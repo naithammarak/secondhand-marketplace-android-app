@@ -1,3 +1,6 @@
+import { OrderTimeline, UnavailableInspection } from './inspection/views';
+import { MarketplaceHeader } from './marketplace-header';
+import { useTheme } from '@/hooks/use-theme';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
@@ -22,6 +25,7 @@ import { CONDITION_LABELS } from '@/services/product-service';
 const DEADLINE_RECHECK_MS = 5000;
 
 export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
+  const theme = useTheme();
   const auth = useAuth();
   const router = useRouter();
   const { state, store } = useOrderDetail();
@@ -31,7 +35,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const [now, setNow] = useState(() => Date.now());
   const lastDeadlineCheck = useRef(0);
 
-  const order = state.orderId === orderId ? state.order : null;
+  const order = state.owner === auth.session?.user.id && state.orderId === orderId ? state.order : null;
   const paying = state.paying !== null;
   const isBuyer = order?.viewerRole === 'buyer';
   // เส้นตายมาจาก server ฝั่งแอปทำแค่แปลงเป็นเวลาที่เหลือให้ดู ไม่ตัดสินสถานะเอง
@@ -86,7 +90,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     <Screen>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <SafeAreaView style={styles.content}>
-          <ThemedText type="subtitle">รายละเอียดคำสั่งซื้อ{order ? ` #${order.id}` : ''}</ThemedText>
+          <MarketplaceHeader title={`รายละเอียดคำสั่งซื้อ${order ? ` #${order.id}` : ''}`} back />
 
           {orderId === null ? <ThemedText>รหัสคำสั่งซื้อไม่ถูกต้อง</ThemedText> : null}
           {state.loading && !order ? <Loading label="กำลังโหลดคำสั่งซื้อ" /> : null}
@@ -103,13 +107,13 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
           {order ? (
             <>
               {state.lastResult === 'succeeded' ? (
-                <View style={[styles.noticeBox, { borderColor: '#2F855A' }]}>
+                <View style={[styles.noticeBox, { borderColor: theme.success }]}>
                   <ThemedText type="smallBold" accessibilityLiveRegion="polite">ชำระเงินสำเร็จ</ThemedText>
-                  <ThemedText type="small">ระบบพักเงินไว้จนกว่าจะได้รับสินค้า</ThemedText>
+                  <ThemedText type="small">เงินจำลองพักไว้ตามขั้นตอนของระบบ</ThemedText>
                 </View>
               ) : null}
               {order.status === 'CANCELLED' ? (
-                <View style={[styles.noticeBox, { borderColor: '#718096' }]}>
+                <View style={[styles.noticeBox, { borderColor: theme.border }]}>
                   <ThemedText type="smallBold" accessibilityLiveRegion="polite">คำสั่งซื้อนี้ถูกยกเลิกแล้ว</ThemedText>
                   {order.cancelReason ? (
                     <ThemedText type="small">{cancelReasonLabels[order.cancelReason]}</ThemedText>
@@ -117,20 +121,26 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                 </View>
               ) : null}
               {state.lastResult === 'failed' ? (
-                <View style={[styles.noticeBox, { borderColor: '#C53030' }]}>
-                  <ThemedText type="smallBold" style={styles.errorText} accessibilityLiveRegion="polite">
+                <View style={[styles.noticeBox, { borderColor: theme.danger }]}>
+                  <ThemedText type="smallBold" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
                     ชำระเงินไม่สำเร็จ
                   </ThemedText>
                   <ThemedText type="small">สินค้ายังถูกจองไว้ให้คุณ สามารถลองชำระใหม่ได้</ThemedText>
                 </View>
               ) : null}
 
+              <OrderTimeline events={[
+                ...(order.createdAt ? [{ label: 'สร้างคำสั่งซื้อ', at: order.createdAt }] : []),
+                ...(order.paidAt ? [{ label: 'ชำระเงินจำลองแล้ว', at: order.paidAt }] : []),
+                ...(order.cancelledAt ? [{ label: 'ยกเลิกคำสั่งซื้อ', at: order.cancelledAt }] : []),
+              ]} />
+              {order.paymentStatus === 'PAID' && <UnavailableInspection />}
               <Card>
                 <StatusBadge status={order.status} label={orderStatusLabel(order.status)} />
                 <Row label="การชำระเงิน" value={paymentStatusLabels[order.paymentStatus]} />
                 {remaining ? <Row label="เหลือเวลาชำระเงิน" value={remaining} /> : null}
                 {deadlinePassed ? (
-                  <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                  <ThemedText type="small" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
                     หมดเวลาชำระเงินแล้ว กำลังตรวจสถานะล่าสุดจากระบบ
                   </ThemedText>
                 ) : null}
@@ -146,14 +156,14 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   onPress={() => { void store.refresh(); }}
                 />
                 {state.loadError && order ? (
-                  <ThemedText type="small" style={styles.errorText}>{errorText(state.loadError)}</ThemedText>
+                  <ThemedText type="small" style={{ color: theme.danger }}>{errorText(state.loadError)}</ThemedText>
                 ) : null}
               </Card>
 
               <Card>
                 <ThemedText type="smallBold">{order.product.name}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  สภาพ {CONDITION_LABELS[order.product.condition] ?? order.product.condition} • ไซซ์ {order.product.size}
+                  {CONDITION_LABELS[order.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} • ไซซ์ {order.product.size}
                 </ThemedText>
                 <Row label="ราคาสินค้า" value={formatBaht(order.amounts.itemPrice)} />
                 {isBuyer ? (
@@ -201,8 +211,8 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   ) : null}
 
                   {state.payError ? (
-                    <View style={[styles.noticeBox, { borderColor: '#C53030' }]}>
-                      <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                    <View style={[styles.noticeBox, { borderColor: theme.danger }]}>
+                      <ThemedText type="small" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
                         {errorText(state.payError, state.payCode)}
                       </ThemedText>
                       {state.uncertain ? (
@@ -273,7 +283,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                     />
                   )}
                   {state.cancelError ? (
-                    <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                    <ThemedText type="small" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
                       {errorText(state.cancelError, state.cancelCode)}
                     </ThemedText>
                   ) : null}
@@ -281,11 +291,11 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
               ) : null}
 
               {isBuyer && !order.canPay && state.payError && !state.uncertain ? (
-                <ThemedText type="small" style={styles.errorText}>{errorText(state.payError, state.payCode)}</ThemedText>
+                <ThemedText type="small" style={{ color: theme.danger }}>{errorText(state.payError, state.payCode)}</ThemedText>
               ) : null}
 
               {isBuyer && !order.canCancel && state.cancelError ? (
-                <ThemedText type="small" style={styles.errorText}>
+                <ThemedText type="small" style={{ color: theme.danger }}>
                   {errorText(state.cancelError, state.cancelCode)}
                 </ThemedText>
               ) : null}

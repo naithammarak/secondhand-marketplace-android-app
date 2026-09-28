@@ -9,6 +9,10 @@ from app.database import Base
 class Verification(Base):
     __tablename__ = "verifications"
     __table_args__ = (
+        CheckConstraint(
+            "shop_name IS NULL OR (shop_name = trim(shop_name) AND length(shop_name) BETWEEN 2 AND 100)",
+            name="ck_verifications_shop_name",
+        ),
         # ผู้ขายหนึ่งคนมีคำขอที่รอตรวจได้ครั้งละหนึ่งใบ กันการกดส่งซ้ำพร้อมกันหลายอุปกรณ์
         Index(
             "uq_verifications_user_pending",
@@ -69,6 +73,8 @@ class Verification(Base):
         String(255),
         nullable=False,
     )
+
+    shop_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     verification_status: Mapped[str] = mapped_column(
         String(20),

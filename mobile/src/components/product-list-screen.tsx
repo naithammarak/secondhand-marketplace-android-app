@@ -11,6 +11,7 @@ import { CatalogAccountButton } from './catalog-account-button';
 import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
+import { EmptyState, Skeleton } from './wondee/primitives';
 import { Fonts, MaxContentWidth } from '@/constants/theme';
 import { formatBaht } from '@/orders/order-format';
 import { productCatalogStore } from '@/products/product-catalog-instance';
@@ -27,27 +28,31 @@ const catalogErrorMessages: Record<string, string> = {
 
 function ProductCard({ item, onPress }: { item: ProductListItem; onPress(): void }) {
   const theme = useTheme();
-  const { width } = useWindowDimensions();
-  const imageSize = (Math.min(width, MaxContentWidth) - 46) / 2;
+  const { width, fontScale } = useWindowDimensions();
+  const columns = fontScale >= 1.5 ? 1 : 2;
+  const imageSize = (Math.min(width, MaxContentWidth) - 32 - (columns - 1) * 12) / columns;
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={item.productName} onPress={onPress}
-      style={({ pressed }) => [styles.productCard, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.75 : 1 }]}>
+      style={({ pressed }) => [styles.productCard, { width: columns === 1 ? '100%' : '48%', maxWidth: columns === 1 ? '100%' : '50%', borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.75 : 1 }]}>
       <ProductImage uri={item.mainImage?.imageUrl} width="100%" height={imageSize} borderRadius={0}
         accessibilityLabel={`รูปสินค้า ${item.productName}`} />
       <View style={styles.productInfo}>
         <ThemedText numberOfLines={2} style={styles.productName}>{item.productName}</ThemedText>
         <View style={styles.priceRow}>
-          <ThemedText type="smallBold" style={{ fontSize: 17 }}>{formatBaht(item.price)}</ThemedText>
+          <ThemedText type="smallBold" style={{ fontSize: 17, color: theme.accent }}>{formatBaht(item.price)}</ThemedText>
           <View style={[styles.condition, { backgroundColor: theme.backgroundSelected }]}>
-            <ThemedText type="small" style={{ color: theme.primary }}>{conditionLabels[item.condition]}</ThemedText>
+            <ThemedText type="small" style={{ color: theme.accent }}>{conditionLabels[item.condition]}</ThemedText>
           </View>
         </View>
+        {item.seller && <ThemedText type="small" themeColor="textSecondary">{item.seller.verified ? '✓ ' : ''}{item.seller.displayName}</ThemedText>}
       </View>
     </Pressable>
   );
 }
 
 export function ProductListScreen() {
+  const { fontScale } = useWindowDimensions();
+  const columns = fontScale >= 1.5 ? 1 : 2;
   const theme = useTheme();
   const returningFromDetail = useRef(false);
   const state = useSyncExternalStore(
@@ -69,7 +74,7 @@ export function ProductListScreen() {
 
   return (
     <Screen>
-      <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.surface }]}>
+      <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.background }]}>
         <MarketplaceHeader title="ค้นหาสินค้า" trailing={<CatalogAccountButton />} />
         <View style={styles.searchArea}>
           <View style={[styles.searchBox, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
@@ -92,8 +97,9 @@ export function ProductListScreen() {
         </View>
         <FlatList
           style={{ flex: 1 }}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 12 }}
+          key={columns}
+          numColumns={columns}
+          columnWrapperStyle={columns === 2 ? { gap: 12 } : undefined}
           data={state.items}
           keyExtractor={item => String(item.id)}
           keyboardShouldPersistTaps="handled"
@@ -124,8 +130,8 @@ export function ProductListScreen() {
             ) : null
           }
           ListEmptyComponent={
-            state.loading ? <Loading label="กำลังโหลดสินค้า" />
-              : state.loaded && !state.error ? <Card><ThemedText>{emptyMessage}</ThemedText></Card>
+            state.loading ? <View style={{ gap: 12 }}><View style={{ flexDirection: 'row', gap: 12 }}>{Array.from({ length: columns }, (_, index) => <View key={index} style={{ flex: 1, gap: 12 }}><Skeleton height={210} label="กำลังโหลดสินค้า" /><Skeleton height={40} /></View>)}</View><ThemedText type="small">กำลังโหลดสินค้า</ThemedText></View>
+              : state.loaded && !state.error ? <EmptyState title={emptyMessage} detail="ลองเปลี่ยนคำค้นหรือหมวดหมู่ แล้วกลับมาเลือกของที่ใช่อีกครั้ง" />
                 : null
           }
           ListFooterComponent={
@@ -142,7 +148,6 @@ export function ProductListScreen() {
               ) : null
           }
         />
-        <Button label="กลับ" onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }} />
         <MarketplaceNav selected="home" />
       </SafeAreaView>
     </Screen>
@@ -152,11 +157,11 @@ export function ProductListScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, alignSelf: 'center', gap: 0, width: '100%' },
   searchArea: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 12 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12 },
-  searchInput: { flex: 1, minWidth: 0, minHeight: 46, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 10 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 24, paddingHorizontal: 12 },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 48, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 10 },
   chips: { gap: 8 },
-  chip: { borderWidth: 1, borderRadius: 24, paddingHorizontal: 15, minHeight: 40, justifyContent: 'center' },
-  productCard: { width: '48%', flexGrow: 1, maxWidth: '50%', borderWidth: 1, borderRadius: 12, overflow: 'hidden' },
+  chip: { borderWidth: 1, borderRadius: 24, paddingHorizontal: 15, minHeight: 48, justifyContent: 'center' },
+  productCard: { width: '48%', flexGrow: 1, maxWidth: '50%', borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
   productInfo: { padding: 10, gap: 8 },
   productName: { fontSize: 14, lineHeight: 22, minHeight: 44 },
   priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },

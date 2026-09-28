@@ -4,6 +4,7 @@ import { OrderDetailScreen } from '@/components/order-detail-screen';
 import { initialOrderDetailState } from '@/orders/order-detail-store';
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
   Redirect: () => null,
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
 }));
@@ -100,4 +101,11 @@ test('ยกเลิกแล้วต้องหยุดถามซ้ำ �
   await act(async () => { jest.advanceTimersByTime(20_000); });
   expect(mockDetailStore.refresh).not.toHaveBeenCalled();
   expect(screen.getByText('คำสั่งซื้อนี้ถูกยกเลิกแล้ว')).toBeTruthy();
+});
+
+test('order data is hidden immediately when the store still belongs to the previous account', () => {
+  mockDetailState = { ...stateWith(order()), owner: 'previous-account' };
+  render(<OrderDetailScreen orderId={41} />);
+  expect(screen.queryByText('เสื้อ')).toBeNull();
+  expect(screen.queryByText('จำลองจ่ายสำเร็จ')).toBeNull();
 });

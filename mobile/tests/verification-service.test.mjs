@@ -16,6 +16,7 @@ const pendingBody = {
 
 const idCard = { uri: 'file:///card.png', name: 'card.png', type: 'image/png' };
 const input = {
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารทดสอบ',
   bankAccountName: 'ผู้ขาย ทดสอบ',
   bankAccountNumber: '1234567890',

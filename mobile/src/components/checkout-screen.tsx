@@ -1,7 +1,9 @@
+import { TextField } from './wondee/primitives';
+import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
@@ -25,6 +27,10 @@ const FIELDS: { field: keyof AddressFormValues; label: string; placeholder: stri
 
 export function CheckoutScreen({ productId }: { productId: number | null }) {
   const auth = useAuth();
+  return <CheckoutContent key={`${auth.session?.user.id ?? 'guest'}:${productId}`} productId={productId} />;
+}
+function CheckoutContent({ productId }: { productId: number | null }) {
+  const auth = useAuth();
   const router = useRouter();
   const theme = useTheme();
   const { state, store } = useCheckout();
@@ -46,17 +52,17 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
 
   useEffect(() => {
     // สร้างสำเร็จแล้วแทนที่หน้านี้ด้วยหน้ารายละเอียด กด Back จะไม่กลับมาหน้ายืนยันซ้ำ
-    if (state.createdOrderId !== null) {
+    if (state.owner === auth.session?.user.id && state.productId === productId && state.createdOrderId !== null) {
       router.replace({ pathname: '/orders/[orderId]', params: { orderId: String(state.createdOrderId) } });
     }
-  }, [router, state.createdOrderId]);
+  }, [router, state.createdOrderId, state.owner, state.productId, auth.session?.user.id, productId]);
 
   if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
   if (!auth.session) return productId === null ? <Redirect href="/login" /> : <MarketplaceLoginRequired destination={{ kind: 'checkout', productId }} />;
 
   const busy = state.submitting;
   const locked = busy || state.uncertain;
-  const quote = state.quote;
+  const quote = state.owner === auth.session.user.id ? state.quote : null;
 
   const update = (field: keyof AddressFormValues, text: string) => {
     setValues(current => ({ ...current, [field]: text }));
@@ -70,9 +76,10 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
 
   return (
     <Screen>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <SafeAreaView style={styles.content}>
-          <ThemedText type="subtitle">ยืนยันการสั่งซื้อ</ThemedText>
+          <MarketplaceHeader title="ยืนยันการสั่งซื้อ" back />
 
           {productId === null ? <ThemedText>รหัสสินค้าไม่ถูกต้อง</ThemedText> : null}
           {state.quoteLoading ? <Loading label="กำลังโหลดราคาสินค้า" /> : null}
@@ -93,7 +100,7 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
               <Card>
                 <ThemedText type="smallBold">{quote.product.name}</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  สภาพ {CONDITION_LABELS[quote.product.condition] ?? quote.product.condition} • ไซซ์ {quote.product.size}
+                  {CONDITION_LABELS[quote.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} • ไซซ์ {quote.product.size}
                 </ThemedText>
                 <Row label="ราคาสินค้า" value={formatBaht(quote.itemPrice)} />
                 <Row label="ค่าจัดส่ง" value={formatBaht(quote.shippingFee)} />
@@ -109,29 +116,15 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
                 {FIELDS.map(({ field, label, placeholder, numeric }) => {
                   const error = state.fieldErrors[field];
                   return (
-                    <View key={field} style={styles.field}>
-                      <ThemedText type="smallBold">{label}</ThemedText>
-                      <TextInput
-                        style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: error ? theme.danger : theme.border }]}
-                        value={values[field]}
-                        onChangeText={text => update(field, text)}
-                        placeholder={placeholder}
-                        placeholderTextColor={theme.textSecondary}
-                        editable={!locked}
-                        keyboardType={numeric ? 'number-pad' : 'default'}
-                        accessibilityLabel={label}
-                        accessibilityHint={error}
-                      />
-                      {error ? (
-                        <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">{error}</ThemedText>
-                      ) : null}
-                    </View>
+                    <TextField key={field} label={label} error={error} value={values[field]}
+                      onChangeText={text => update(field, text)} placeholder={placeholder}
+                      editable={!locked} keyboardType={numeric ? 'number-pad' : 'default'} />
                   );
                 })}
 
                 {state.submitError ? (
-                  <View style={[styles.noticeBox, { borderColor: '#C53030' }]}>
-                    <ThemedText type="small" style={styles.errorText} accessibilityLiveRegion="polite">
+                  <View style={[styles.noticeBox, { borderColor: theme.danger }]}>
+                    <ThemedText type="small" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
                       {errorText(state.submitError, state.submitCode)}
                     </ThemedText>
                     {state.uncertain ? (
@@ -158,9 +151,10 @@ export function CheckoutScreen({ productId }: { productId: number | null }) {
             </>
           ) : null}
 
+          <Card><ThemedText type="smallBold">ชำระเงินจำลอง</ThemedText><ThemedText themeColor="textSecondary">หลังยืนยันคำสั่งซื้อ เลือกชำระเงินจำลองในหน้ารายละเอียด เงินจำลองพักไว้ตามขั้นตอนของระบบ ไม่มีการรับเงินจริง</ThemedText></Card>
           <Button label="กลับ" onPress={() => router.back()} disabled={busy} />
         </SafeAreaView>
-      </ScrollView>
+      </ScrollView></KeyboardAvoidingView>
     </Screen>
   );
 }

@@ -17,7 +17,8 @@ const productService = createProductService({
 });
 
 export default function EditProductScreen() {
-  const styles = makeStyles(useTheme());
+  const theme = useTheme();
+  const styles = makeStyles(theme);
   const { session } = useAuth();
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -61,7 +62,7 @@ export default function EditProductScreen() {
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.card}>
             <Text style={styles.title}>แก้ไขสินค้า</Text>
-            {state.loading && <ActivityIndicator accessibilityLabel="กำลังโหลดข้อมูลสินค้า" color="#96bde9" />}
+            {state.loading && <ActivityIndicator accessibilityLabel="กำลังโหลดข้อมูลสินค้า" color={theme.accent} />}
             {!state.loading && state.notFound && <Text style={styles.notFoundText}>ไม่พบสินค้านี้</Text>}
             {!state.loading && state.loadError && (
               <View style={styles.loadErrorBox}>
@@ -166,26 +167,26 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     elevation: 4,
   },
   title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: Spacing.three },
-  notFoundText: { fontFamily: Fonts.sans, fontSize: 16, color: '#4a5568', textAlign: 'center' },
+  notFoundText: { fontFamily: Fonts.sans, fontSize: 16, color: theme.textSecondary, textAlign: 'center' },
   loadErrorBox: { alignItems: 'center', gap: Spacing.two },
-  loadErrorText: { fontFamily: Fonts.sans, fontSize: 14, color: '#d9534f', textAlign: 'center' },
+  loadErrorText: { fontFamily: Fonts.sans, fontSize: 14, color: theme.danger, textAlign: 'center' },
   retryButton: {
     backgroundColor: theme.primary,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.four,
   },
-  retryButtonText: { color: '#fff', fontFamily: Fonts.sans, fontSize: 14, fontWeight: '700' },
+  retryButtonText: { color: theme.onPrimary, fontFamily: Fonts.sans, fontSize: 14, fontWeight: '700' },
   cancelSection: {
     marginTop: Spacing.four,
     paddingTop: Spacing.four,
     borderTopWidth: 1,
-    borderTopColor: '#f0f3f6',
+    borderTopColor: theme.border,
     alignItems: 'center',
     width: '100%',
   },
   cancelButton: {
-    backgroundColor: '#ff4d4f',
+    backgroundColor: theme.danger,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.four,
@@ -199,8 +200,8 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   confirmBox: {
     width: '100%',
-    backgroundColor: '#fff1f0',
-    borderColor: '#ffa39e',
+    backgroundColor: theme.dangerSoft,
+    borderColor: theme.danger,
     borderWidth: 1,
     borderRadius: Spacing.two,
     padding: Spacing.three,
@@ -209,11 +210,11 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   confirmTitle: {
     fontFamily: Fonts.sans, fontSize: 15,
     fontWeight: '700',
-    color: '#cf1322',
+    color: theme.danger,
   },
   confirmDescription: {
     fontFamily: Fonts.sans, fontSize: 13,
-    color: '#4a5568',
+    color: theme.textSecondary,
     lineHeight: 18,
   },
   confirmButtonRow: {
@@ -223,7 +224,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   backButton: {
     flex: 1,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: theme.backgroundElement,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     alignItems: 'center',
@@ -235,7 +236,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   confirmCancelButton: {
     flex: 1,
-    backgroundColor: '#ff4d4f',
+    backgroundColor: theme.danger,
     borderRadius: Spacing.two,
     paddingVertical: Spacing.two,
     alignItems: 'center',
@@ -246,13 +247,13 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
     fontWeight: '700',
   },
   cancelErrorText: {
-    color: '#d9534f',
+    color: theme.danger,
     fontFamily: Fonts.sans, fontSize: 14,
     marginBottom: Spacing.two,
     textAlign: 'center',
   },
   cancelSuccessText: {
-    color: '#52c41a',
+    color: theme.success,
     fontFamily: Fonts.sans, fontSize: 14,
     marginTop: Spacing.three,
     textAlign: 'center',

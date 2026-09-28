@@ -42,11 +42,11 @@ MIN_ACCOUNT_DIGITS = 10
 MAX_ACCOUNT_DIGITS = 15
 
 
-def require_active_seller(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.SELLER:
+def require_active_customer(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {UserRole.BUYER, UserRole.SELLER}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Seller role is required for verification requests",
+            detail="Customer account is required for verification requests",
         )
     if current_user.status != UserStatus.ACTIVE:
         raise HTTPException(
@@ -56,7 +56,9 @@ def require_active_seller(current_user: User = Depends(get_current_user)) -> Use
     return current_user
 
 
-require_seller = require_active_seller
+# Compatibility for internal imports; product-write guards remain seller-only.
+require_active_seller = require_active_customer
+require_seller = require_active_customer
 
 
 def validation_error(fields: dict) -> HTTPException:
@@ -88,7 +90,7 @@ def latest_verification(db: Session, user_id: int) -> Verification | None:
     return db.scalars(
         select(Verification)
         .where(Verification.user_id == user_id)
-        .order_by(Verification.id.desc())
+        .order_by(Verification.created_at.desc(), Verification.id.desc())
         .limit(1)
     ).first()
 
@@ -100,6 +102,7 @@ def to_response(record: Verification | None) -> VerificationResponse:
     return VerificationResponse(
         status=current_status,
         id=record.id,
+        shop_name=record.shop_name,
         bank_name=record.bank_name,
         bank_account_name=record.bank_account_name,
         bank_account_last4=record.bank_account_number[-4:],
@@ -120,6 +123,7 @@ def get_my_verification(
 
 @router.post("", response_model=VerificationResponse, status_code=status.HTTP_201_CREATED)
 def submit_verification(
+    shop_name: str | None = Form(default=None),
     bank_name: str | None = Form(default=None),
     bank_account_name: str | None = Form(default=None),
     bank_account_number: str | None = Form(default=None),
@@ -128,6 +132,11 @@ def submit_verification(
     db: Session = Depends(get_db),
     storage=Depends(id_card_storage_dependency),
 ):
+    # Every submit/review locks User before Verification. Serialize with approval
+    # and refresh the identity map before trusting role/status from authentication.
+    current_user = db.scalar(select(User).where(User.id == current_user.id)
+                             .with_for_update().execution_options(populate_existing=True))
+    require_active_customer(current_user)
     existing = latest_verification(db, current_user.id)
     if existing is not None and existing.verification_status in {
         VerificationStatus.PENDING.value,
@@ -140,6 +149,9 @@ def submit_verification(
         )
 
     fields: dict[str, str] = {}
+    clean_shop_name = (shop_name or "").strip()
+    if not 2 <= len(clean_shop_name) <= 100:
+        fields["shop_name"] = "ชื่อร้านค้าต้องมี 2–100 ตัวอักษร"
     clean_bank_name, error = validate_text(bank_name, "ชื่อธนาคาร")
     if error:
         fields["bank_name"] = error
@@ -190,6 +202,7 @@ def submit_verification(
 
     record = Verification(
         user_id=current_user.id,
+        shop_name=clean_shop_name,
         id_card_image_url=stored_path,
         bank_account_name=clean_account_name,
         bank_account_number=digits,

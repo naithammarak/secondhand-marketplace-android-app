@@ -1,5 +1,5 @@
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, errorText, Loading, Row, Screen, StatusBadge, styles } from '@/components/order-ui';
+import { EmptyState } from './wondee/primitives';
 import { useTheme } from '@/hooks/use-theme';
 import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
@@ -27,7 +28,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
         <ThemedText type="small" themeColor="textSecondary">#{item.id}{createdAt ? ` · ${createdAt}` : ''}</ThemedText>
         <StatusBadge status={item.status} label={orderStatusLabel(item.status)} />
         <ThemedText type="smallBold">{item.product.name}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[item.product.condition] ?? item.product.condition} · {item.product.size}</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[item.product.condition] ?? 'ข้อมูลสภาพไม่พร้อมใช้งาน'} · {item.product.size}</ThemedText>
         <Row label={item.viewerRole === 'buyer' ? 'ยอดชำระ' : 'ยอดที่จะได้รับ'} value={formatBaht(amount)} />
         <Button label={canPay ? 'ชำระเงิน' : 'ดูรายละเอียด'}
           variant={canPay ? 'primary' : 'secondary'} onPress={onPress} />
@@ -41,24 +42,35 @@ export function OrdersListScreen() {
   const auth = useAuth();
   const router = useRouter();
   const { state, store } = useOrdersList();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const customer = auth.account?.source === 'backend' && (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') && !auth.accountError;
+  useEffect(() => {
+    if (!customer) return;
+    void store.setView(view === 'seller' && auth.account?.role === 'SELLER' ? 'seller' : 'buyer');
+  }, [customer, view, auth.account?.role, store]);
 
   useEffect(() => {
     // เข้าหน้านี้ทุกครั้งดึงข้อมูลล่าสุดจาก server
-    if (state.owner) void store.load();
-  }, [state.owner, store]);
+    if (state.owner && customer) void store.load();
+  }, [customer, state.owner, store]);
 
   if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
   if (!auth.session) return <MarketplaceLoginRequired destination={{ kind: 'orders' }} />;
 
-  const title = auth.account?.role === 'SELLER' ? 'คำสั่งซื้อสินค้าของฉัน' : 'คำสั่งซื้อของฉัน';
+  const title = 'คำสั่งซื้อ';
 
   return (
     <Screen>
       <SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
         <MarketplaceHeader title={title} />
+        {auth.account?.role === 'SELLER' && <View style={{ flexDirection: 'row', padding: 16, gap: 12 }}>
+          <View style={{ flex: 1 }}><Button label="รายการซื้อ" variant={state.view === 'buyer' ? 'primary' : 'secondary'} onPress={() => { void store.setView('buyer'); }} /></View>
+          <View style={{ flex: 1 }}><Button label="รายการขาย" variant={state.view === 'seller' ? 'primary' : 'secondary'} onPress={() => { void store.setView('seller'); }} /></View>
+        </View>}
+        {!customer && <Card><ThemedText>กำลังตรวจสอบสิทธิ์บัญชี หรือบัญชีนี้ไม่สามารถซื้อขายได้</ThemedText></Card>}
         <FlatList
           style={{ flex: 1 }}
-          data={state.owner === auth.session.user.id ? state.items : []}
+          data={customer && state.owner === auth.session.user.id ? state.items : []}
           keyExtractor={item => String(item.id)}
           contentContainerStyle={{ gap: 12, padding: 16 }}
           refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => { void store.refresh(); }} />}
@@ -88,7 +100,7 @@ export function OrdersListScreen() {
           }
           ListEmptyComponent={
             state.loading ? <Loading label="กำลังโหลดคำสั่งซื้อ" />
-              : state.loaded && !state.error ? <Card><ThemedText>ยังไม่มีคำสั่งซื้อ</ThemedText></Card>
+              : state.loaded && !state.error ? <EmptyState title="ยังไม่มีคำสั่งซื้อ" detail="รายการซื้อและสถานะการชำระเงินจะแสดงที่นี่" />
                 : null
           }
           ListFooterComponent={
