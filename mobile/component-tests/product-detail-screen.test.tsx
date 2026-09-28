@@ -3,17 +3,17 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { ProductDetailScreen } from '@/components/product-detail-screen';
 import { ProductCatalogError, type ProductDetail } from '@/services/product-catalog-service';
 
+const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
-const mockPush = jest.fn();
 let mockCanGoBack = true;
 let mockRouteId = '101';
 
 jest.mock('expo-router', () => ({
   router: {
     back: () => mockBack(),
-    replace: (...args: unknown[]) => mockReplace(...args),
     push: (...args: unknown[]) => mockPush(...args),
+    replace: (...args: unknown[]) => mockReplace(...args),
     canGoBack: () => mockCanGoBack,
   },
   useLocalSearchParams: () => ({ id: mockRouteId }),
@@ -90,7 +90,7 @@ describe('ProductDetailScreen', () => {
     });
   });
 
-  test('renders full product detail with a buy button and without seller info', async () => {
+  test('renders full product detail with a purchase action', async () => {
     mockGetProduct.mockResolvedValue(sampleProduct);
 
     render(<ProductDetailScreen />);
@@ -108,10 +108,10 @@ describe('ProductDetailScreen', () => {
     expect(screen.getByText('ดี')).toBeTruthy();
     expect(screen.getByText('เสื้อเชิ้ตมือสองสภาพดี ใส่ไม่กี่ครั้ง')).toBeTruthy();
 
-    // หน้านี้แสดงเฉพาะสินค้าที่พร้อมขาย จึงมีทางเข้า Checkout ได้เสมอ (D-16)
-    expect(screen.getByText('ซื้อสินค้านี้')).toBeTruthy();
-
-    // ข้อมูลผู้ขายยังอยู่นอกขอบเขตของหน้านี้
+    // Verify out-of-scope elements are absent
+    fireEvent.press(screen.getByRole('button', { name: 'ซื้อสินค้า' }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/checkout/[productId]', params: { productId: '101' } });
+    expect(screen.queryByText('สั่งซื้อ')).toBeNull();
     expect(screen.queryByText('ผู้ขาย')).toBeNull();
   });
 
@@ -119,7 +119,7 @@ describe('ProductDetailScreen', () => {
     mockGetProduct.mockResolvedValue(sampleProduct);
 
     render(<ProductDetailScreen />);
-    fireEvent.press(await screen.findByText('ซื้อสินค้านี้'));
+    fireEvent.press(await screen.findByRole('button', { name: 'ซื้อสินค้า' }));
 
     // ราคาและสิทธิ์ซื้อถูกถามจาก server ในหน้า Checkout ไม่ส่งต่อจากหน้านี้
     expect(mockPush).toHaveBeenCalledWith({
@@ -138,7 +138,6 @@ describe('ProductDetailScreen', () => {
     render(<ProductDetailScreen />);
 
     expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
-    expect(screen.getByText('🖼')).toBeTruthy();
     expect(screen.getByLabelText('รูปสินค้า เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
   });
 
@@ -213,7 +212,7 @@ describe('ProductDetailScreen', () => {
     render(<ProductDetailScreen />);
 
     expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
-    const backBtn = screen.getByText('กลับ');
+    const backBtn = screen.getByRole('button', { name: 'กลับ' });
     fireEvent.press(backBtn);
     expect(mockBack).toHaveBeenCalledTimes(1);
   });

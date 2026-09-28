@@ -83,7 +83,7 @@ export function AdminVerificationScreen() {
     if (!state.loaded && !state.loadError) void store.load();
   }, [state.loadError, state.loaded, state.loading, state.owner, state.refreshing, store]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   // ระหว่างที่ยังไม่รู้บทบาทจาก backend ต้องไม่แสดงโครงหน้าตรวจคำขอไปก่อน
   if (!auth.account) {

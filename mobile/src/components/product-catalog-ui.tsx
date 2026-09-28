@@ -1,12 +1,12 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-
-const PLACEHOLDER_COLOR = '#eef3f9';
+import { StyleSheet, View, type DimensionValue } from 'react-native';
+import { useTheme } from '@/hooks/use-theme';
+import { MarketplaceIcon } from './marketplace-icon';
 
 type ProductImageProps = {
   uri: string | null | undefined;
-  width?: number;
+  width?: DimensionValue;
   height?: number;
   borderRadius?: number;
   accessibilityLabel?: string;
@@ -14,6 +14,7 @@ type ProductImageProps = {
 
 /** แสดง placeholder เมื่อไม่มีรูปหรือรูปโหลดไม่สำเร็จ (onError) แต่ละ instance มี state ความล้มเหลวของตัวเอง */
 export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, accessibilityLabel }: ProductImageProps) {
+  const theme = useTheme();
   const [prevUri, setPrevUri] = useState(uri);
   const [failed, setFailed] = useState(false);
 
@@ -25,9 +26,11 @@ export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, 
   const showPlaceholder = !uri || failed;
 
   return (
-    <View style={[styles.frame, { width, height, borderRadius }]}>
+    <View style={[styles.frame, { width, height, borderRadius, backgroundColor: theme.backgroundSelected }]}>
       {showPlaceholder ? (
-        <Text style={styles.placeholderIcon} accessibilityLabel={accessibilityLabel ?? 'ไม่มีรูปสินค้า'}>🖼</Text>
+        <View accessible accessibilityRole="image" accessibilityLabel={accessibilityLabel ?? 'ไม่มีรูปสินค้า'}>
+          <MarketplaceIcon name="image" size={32} />
+        </View>
       ) : (
         <Image
           source={{ uri }}
@@ -43,10 +46,8 @@ export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, 
 
 const styles = StyleSheet.create({
   frame: {
-    backgroundColor: PLACEHOLDER_COLOR,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  placeholderIcon: { fontSize: 24, color: '#9aa3af' },
 });
