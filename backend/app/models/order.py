@@ -65,7 +65,7 @@ class Order(Base):
         ),
         # ยกเลิกแล้วต้องมีทั้งเหตุผลและเวลาเสมอ ยังไม่ยกเลิกต้องไม่มีทั้งคู่ กันสถานะครึ่ง ๆ กลาง ๆ
         CheckConstraint(
-            "(status = 'CANCELLED' AND cancelled_at IS NOT NULL "
+            "(status = 'CANCELLED' AND cancelled_at IS NOT NULL AND cancel_reason IS NOT NULL "
             f"AND cancel_reason IN ({', '.join(repr(value) for value in CANCEL_REASONS)})) "
             "OR (status <> 'CANCELLED' AND cancelled_at IS NULL AND cancel_reason IS NULL)",
             name="ck_orders_cancel_fields",

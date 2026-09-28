@@ -78,7 +78,7 @@ export function SellerVerificationScreen() {
     if (!state.record && !state.loadError) void store.load();
   }, [isSeller, state.loadError, state.loading, state.owner, state.record, state.refreshing, store]);
 
-  if (!auth.session) return <Redirect href="/" />;
+  if (!auth.session) return <Redirect href="/login" />;
 
   // ระหว่างที่ยังไม่รู้บทบาทจาก backend ต้องไม่แสดงฟอร์มหรือข้อมูลไปก่อน
   if (!auth.account) {

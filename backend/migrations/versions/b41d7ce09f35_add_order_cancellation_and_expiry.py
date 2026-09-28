@@ -25,7 +25,7 @@ OLD_STATUS_CHECK = "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP')"
 NEW_STATUS_CHECK = "status IN ('WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED')"
 
 CANCEL_FIELDS_CHECK = (
-    "(status = 'CANCELLED' AND cancelled_at IS NOT NULL "
+    "(status = 'CANCELLED' AND cancelled_at IS NOT NULL AND cancel_reason IS NOT NULL "
     "AND cancel_reason IN ('BUYER', 'EXPIRED')) "
     "OR (status <> 'CANCELLED' AND cancelled_at IS NULL AND cancel_reason IS NULL)"
 )
