@@ -89,6 +89,24 @@ def image_bytes():
     return output.getvalue()
 
 
+def test_admin_courier_picker_is_private_and_excludes_inactive_accounts(world):
+    client, engine, buyer, seller, inspector, other, product, courier_id, courier, admin = world
+    with Session(engine) as db:
+        inactive_id, _ = create_user(db, UserRole.COURIER)
+        inactive = db.get(User, inactive_id)
+        inactive.status = UserStatus.SUSPENDED
+        db.commit()
+    for headers in [buyer, seller, inspector, courier]:
+        assert client.get('/admin/couriers', headers=headers).status_code == 403
+    response = client.get('/admin/couriers?limit=100', headers=admin)
+    assert response.status_code == 200
+    body = response.json()
+    ids = {item['id'] for item in body['items']}
+    assert courier_id in ids and inactive_id not in ids
+    assert all(set(item) == {'id', 'name'} for item in body['items'])
+    assert client.get('/admin/couriers?limit=1&offset=1', headers=admin).json()['offset'] == 1
+
+
 def started_work(world):
     client, _, buyer, seller, inspector, other, product, courier_id, courier, admin = world
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))

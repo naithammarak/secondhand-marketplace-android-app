@@ -1,4 +1,5 @@
-import { OrderTimeline, UnavailableInspection } from './inspection/views';
+import { InspectionOrderPanel } from './inspection/connected-screens';
+import { OrderTimeline } from './inspection/views';
 import { MarketplaceHeader } from './marketplace-header';
 import { useTheme } from '@/hooks/use-theme';
 import { Redirect, useRouter } from 'expo-router';
@@ -134,7 +135,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                 ...(order.paidAt ? [{ label: 'ชำระเงินจำลองแล้ว', at: order.paidAt }] : []),
                 ...(order.cancelledAt ? [{ label: 'ยกเลิกคำสั่งซื้อ', at: order.cancelledAt }] : []),
               ]} />
-              {order.paymentStatus === 'PAID' && <UnavailableInspection />}
+              <InspectionOrderPanel order={order} />
               <Card>
                 <StatusBadge status={order.status} label={orderStatusLabel(order.status)} />
                 <Row label="การชำระเงิน" value={paymentStatusLabels[order.paymentStatus]} />

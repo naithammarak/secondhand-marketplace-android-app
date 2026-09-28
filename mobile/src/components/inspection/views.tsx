@@ -53,7 +53,7 @@ export function InspectorQueueView({ items, total, loading, error, filter, onFil
     {!!error && <Card><ThemedText accessibilityRole="alert">{error}</ThemedText>{onRetry && <Button label="ลองใหม่" onPress={onRetry} />}</Card>}
     {!loading && !error && items.length === 0 && <EmptyState title="ยังไม่มีงานตรวจในคิวนี้" />}
     {items.map(item => <Card key={item.id}><ThemedText type="small">คำสั่งซื้อ #{item.orderId}</ThemedText><ThemedText type="subtitle">{item.productName}</ThemedText><ThemedText themeColor="accent">{item.statusLabel}</ThemedText><Button label="เปิดงานตรวจ" disabled={!onOpen} onPress={() => onOpen?.(item.id)} /></Card>)}
-    {onMore && <Button label="โหลดงานเพิ่ม" onPress={onMore} />}
+    {onMore && <Button label="หน้าถัดไป" onPress={onMore} />}
   </View>;
 }
 export function InspectorWorkView({ productName, step, photos = [], busy, error, onReceive, onStart, onPick, onFinalize }: {
@@ -73,7 +73,7 @@ export function InspectorWorkView({ productName, step, photos = [], busy, error,
     {step === 1 && <Card><ThemedText>รับสินค้าได้เมื่อมีหลักฐานส่งถึงศูนย์ที่ระบบยืนยันแล้ว</ThemedText><Button label="รับสินค้าเข้าศูนย์" disabled={!onReceive} busy={busy} onPress={() => onReceive?.()} /><Button label="เริ่มตรวจสินค้า" disabled={!onStart} busy={busy} onPress={() => onStart?.()} /></Card>}
     {step >= 2 && <Card><ThemedText type="subtitle">หลักฐานการตรวจ</ThemedText><ThemedText themeColor="textSecondary">เลือกภาพที่ใช้ในรายงาน 1–5 ภาพจากสินค้านี้</ThemedText>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{photos.map(photo => <Pressable key={photo.id} accessibilityRole="checkbox" accessibilityLabel={photo.label} accessibilityState={{ checked: chosen.includes(photo.id), disabled: !!busy }} disabled={busy}
-        onPress={() => setSelected(current => current.includes(photo.id) ? current.filter(id => id !== photo.id) : current.length < 5 ? [...current, photo.id] : current)} style={{ padding: 4, borderWidth: 2, borderRadius: 12, borderColor: chosen.includes(photo.id) ? theme.primary : theme.border }}><Image source={photo.source} style={{ width: 96, height: 96 }} contentFit="cover" /><ThemedText type="small">{chosen.includes(photo.id) ? 'เลือกแล้ว' : 'เลือกภาพ'}</ThemedText></Pressable>)}</View>
+        onPress={() => setSelected(current => current.includes(photo.id) ? current.filter(id => id !== photo.id) : current.length < 5 ? [...current, photo.id] : current)} style={{ padding: 4, borderWidth: 2, borderRadius: 12, borderColor: chosen.includes(photo.id) ? theme.primary : theme.border }}><Image cachePolicy="none" source={photo.source} style={{ width: 96, height: 96 }} contentFit="cover" /><ThemedText type="small">{chosen.includes(photo.id) ? 'เลือกแล้ว' : 'เลือกภาพ'}</ThemedText></Pressable>)}</View>
       <Button label="เพิ่มรูปหลักฐาน" disabled={!onPick} busy={busy} onPress={() => onPick?.()} />
       <ThemedText type="subtitle">ผลการตรวจ</ThemedText>{(Object.keys(outcomes) as InspectionOutcome[]).map(value => <Button key={value} label={outcomes[value].label} variant={result === value ? 'primary' : 'secondary'} disabled={busy} onPress={() => setResult(value)} />)}
       <TextField label="สรุปผลการตรวจ" multiline value={summary} onChangeText={setSummary} editable={!busy} placeholder="อธิบายสิ่งที่พบ 10–2000 ตัวอักษร" style={{ minHeight: 130 }} />
@@ -88,7 +88,12 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
   certificate: CertificateData | null; outcome: InspectionOutcome; enabled: boolean; visible: boolean; onClose(): void;
 }) {
   const eligible = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
-  const publicReady = enabled && certificate && /^https:\/\//.test(certificate.publicUrl);
+  const publicReady = enabled && certificate && (() => {
+    try {
+      const url = new URL(certificate.publicUrl);
+      return url.protocol === 'https:' || (__DEV__ && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname));
+    } catch { return false; }
+  })();
   return <ConfirmationSheet visible={visible} title="ใบรับรองผลการตรวจ" onClose={onClose}>
     {eligible && certificate ? <><View style={{ alignItems: 'center' }}><WondeeMascot size={96} variant="seal" /></View><ThemedText type="title">{certificate.number}</ThemedText><ThemedText>{outcomes[outcome].label}</ThemedText><ThemedText type="small">ออกเมื่อ {new Date(certificate.issuedAt).toLocaleString('th-TH')}</ThemedText><ThemedText>รับรองผลการตรวจ ณ วันที่ออกตามรายงาน</ThemedText>
       {publicReady ? <>{certificate.qrSource && <Image source={certificate.qrSource} style={{ width: 180, height: 180, alignSelf: 'center' }} contentFit="contain" accessibilityLabel="QR เปิดใบรับรองสาธารณะ" />}<Button label="เปิดใบรับรองสาธารณะ" onPress={() => { void Linking.openURL(certificate.publicUrl); }} /></> : <ThemedText>หน้าใบรับรองสาธารณะและ QR ยังไม่พร้อมใช้งาน</ThemedText>}
@@ -112,7 +117,7 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
   const allowed = positive && !!certificate && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
   return <View style={{ gap: 16 }}><Card><View style={{ alignItems: 'center', gap: 16 }}><WondeeMascot size={96} variant={info.variant} /><ThemedText type="title" style={{ color: theme[info.tone], textAlign: 'center' }}>{info.label}</ThemedText><ThemedText type="small" themeColor="textSecondary">ตรวจเมื่อ {new Date(inspectedAt).toLocaleString('th-TH')}</ThemedText></View></Card>
-    <Card><ThemedText type="subtitle">รายงานการตรวจ</ThemedText><ThemedText>{summary}</ThemedText><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{photos.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`ขยาย${item.label}`} onPress={() => setPhoto(item)}><Image source={item.source} style={{ width: 96, height: 96, borderRadius: 12 }} accessibilityLabel={item.label} /></Pressable>)}</View></Card>
+    <Card><ThemedText type="subtitle">รายงานการตรวจ</ThemedText><ThemedText>{summary}</ThemedText><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{photos.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`ขยาย${item.label}`} onPress={() => setPhoto(item)}><Image cachePolicy="none" source={item.source} style={{ width: 96, height: 96, borderRadius: 12 }} accessibilityLabel={item.label} /></Pressable>)}</View></Card>
     {positive && certificate && <Card><Button label="ดูใบรับรองผลการตรวจ" onPress={() => setCertificate(true)} /></Card>}
     <Card><ThemedText type="subtitle">ขั้นตอนถัดไป</ThemedText><ThemedText>{nextAction === 'RETURN_TO_SELLER' ? 'ระบบอยู่ระหว่างขั้นตอนส่งคืนผู้ขาย ติดตามสถานะการคืนเงินจากคำสั่งซื้อ' : nextAction === 'WAIT_BUYER_DECISION' ? 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ' : 'ยังไม่มีข้อมูลขั้นตอนถัดไปจากระบบ'}</ThemedText>
       {allowed ? <><Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} /><Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} /></> : positive && <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>}

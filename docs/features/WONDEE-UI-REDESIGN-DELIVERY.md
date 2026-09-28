@@ -1,5 +1,9 @@
 # Wondee UI/UX redesign — delivery
 
+> The integration status below is the original redesign delivery snapshot.
+> See [live integration and rollout](WONDEE-INTEGRATION-ROLLOUT.md) for the later
+> PR #108 integration, connected routes, shared migration and real runtime.
+
 28 September 2026 · local implementation, not deployed.
 
 **CORE REDESIGN COMPLETE** and **VISUAL COVERAGE COMPLETE** for the selected scope. **FULL INTEGRATION COMPLETE is not claimed.** Inspection/CERT/FINISH integration and real Android/OAuth/Storage acceptance remain blocked or not run as specified below.

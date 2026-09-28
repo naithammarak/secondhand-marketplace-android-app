@@ -1,2 +1,2 @@
-import { InspectionUnavailableScreen } from '@/components/inspection/unavailable-screen';
-export default function InspectorQueueScreen() { return <InspectionUnavailableScreen kind="queue" />; }
+import { InspectionScreen } from '@/components/inspection/connected-screens';
+export default function ConnectedScreen() { return <InspectionScreen kind="queue" />; }

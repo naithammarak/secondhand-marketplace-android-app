@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError, DataError
 URL = os.getenv('WUI_TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not URL, reason='WUI_TEST_DATABASE_URL requires disposable PostgreSQL')
 PREDECESSOR = 'c93b7e5a1d84'
-REVISION = '19d4be72a610'
+REVISION = 'e8b2c490a713'
 
 
 @pytest.fixture
@@ -68,3 +68,21 @@ def test_empty_database_has_one_head(db):
     command.upgrade(config, 'head')
     with engine.connect() as c:
         assert c.execute(text('SELECT count(*) FROM users')).scalar_one() == 0
+
+
+def test_adopts_preexisting_verify_shop_without_shrinking_or_dropping_it(db):
+    engine, config = db
+    command.upgrade(config, PREDECESSOR)
+    with engine.begin() as c:
+        c.execute(text("ALTER TABLE verifications ADD COLUMN shop_name VARCHAR(255)"))
+        c.execute(text("ALTER TABLE verifications ADD CONSTRAINT ck_verifications_shop_name CHECK (shop_name IS NULL OR length(trim(shop_name)) BETWEEN 2 AND 255)"))
+        c.execute(text("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'BUYER'"))
+    command.upgrade(config, 'head')
+    with engine.connect() as c:
+        column = next(col for col in inspect(c).get_columns('verifications') if col['name'] == 'shop_name')
+        assert column['type'].length == 255
+    command.downgrade(config, PREDECESSOR)
+    with engine.connect() as c:
+        assert 'shop_name' in {col['name'] for col in inspect(c).get_columns('verifications')}
+        default = c.execute(text("SELECT column_default FROM information_schema.columns WHERE table_name='users' AND column_name='role'")).scalar_one()
+        assert 'BUYER' in default

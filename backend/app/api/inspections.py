@@ -189,7 +189,7 @@ def _public_url(token: str) -> str:
 
 
 def _certificate_view(row: Certificate | None):
-    return None if row is None else {"certificate_no": row.certificate_no, "public_url": _public_url(row.public_token)}
+    return None if row is None else {"certificate_no": row.certificate_no, "public_url": _public_url(row.public_token), "issued_at": row.issued_at}
 
 
 def issue_certificate(db: Session, order: Order, work: Inspection, result: str) -> Certificate:
@@ -259,6 +259,17 @@ def ship_to_center(order_id: int, body: ShipRequest, response: Response, actor: 
 def inspection_progress(order_id: int, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
     order, _ = load_order_for(db, order_id, actor)
     return _progress(db, order)
+
+
+@router.get("/admin/couriers")
+def active_couriers(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+                    _admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Minimal staff picker: no private contact fields or inactive accounts."""
+    condition = (User.role == UserRole.COURIER, User.status == UserStatus.ACTIVE)
+    total = db.scalar(select(func.count()).select_from(User).where(*condition)) or 0
+    rows = db.scalars(select(User).where(*condition).order_by(User.full_name, User.id).limit(limit).offset(offset)).all()
+    return {"items": [{"id": user.id, "name": user.full_name} for user in rows],
+            "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("/admin/shipments/{shipment_id}/assign-courier")
