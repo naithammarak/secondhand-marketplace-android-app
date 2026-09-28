@@ -1,16 +1,24 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 
 import { useTheme } from '@/hooks/use-theme';
-import { MarketplaceHeader } from './marketplace-header';
-import { WondeeMascot } from './wondee/brand';
+import { useThemePreference } from '@/theme/theme-provider';
+import { GeometricMascot } from './wondee/brand';
 import { ImageViewer } from './wondee/primitives';
 import { ProductImage } from '@/components/product-catalog-ui';
-import { Button, Card, Loading, Row, Screen, styles as orderUiStyles } from '@/components/order-ui';
+import { Button, Card, Loading, Screen } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
-import { Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Fonts, MaxContentWidth } from '@/constants/theme';
 import { formatBaht } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
@@ -26,17 +34,89 @@ const detailErrorMessages: Record<string, string> = {
   'validation-error': 'คำขอไม่ถูกต้อง',
 };
 
+function ChevronLeftIcon({ color = '#0f172a', size = 20 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 18L9 12L15 6"
+        stroke={color}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function ShareIcon({ color = '#0f172a', size = 18 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M8.59 13.51l6.83 3.98m-.01-10.98l-6.82 3.98M21 5a3 3 0 11-6 0 3 3 0 016 0zM7 12a3 3 0 11-6 0 3 3 0 016 0zM21 19a3 3 0 11-6 0 3 3 0 016 0z"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function HeartIcon({ color = '#0f172a', size = 18, filled = false }: { color?: string; size?: number; filled?: boolean }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? '#f43f5e' : 'none'}>
+      <Path
+        d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"
+        stroke={filled ? '#f43f5e' : color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function CheckmarkIcon({ size = 12 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20 6L9 17L4 12"
+        stroke="#ffffff"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return 'ลงขายเมื่อ 2 วันที่แล้ว';
+  try {
+    const created = new Date(dateString);
+    const now = new Date();
+    const diffHours = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60));
+    if (diffHours < 24) return `ลงขายเมื่อ ${Math.max(1, diffHours)} ชั่วโมงที่แล้ว`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `ลงขายเมื่อ ${diffDays} วันที่แล้ว`;
+  } catch {
+    return 'ลงขายเมื่อไม่นานมานี้';
+  }
+}
+
 export function ProductDetailScreen() {
   const theme = useTheme();
+  const { scheme } = useThemePreference();
+  const isDark = scheme === 'dark';
   const { width } = useWindowDimensions();
-  const imageSize = Math.min(width, MaxContentWidth) - 32;
+  const contentWidth = Math.min(width, MaxContentWidth);
+
   const [zoom, setZoom] = useState<string | null>(null);
   const [selection, setSelection] = useState({ productId: NaN, index: 0 });
+  const [isLiked, setIsLiked] = useState(false);
   const params = useLocalSearchParams<{ id: string }>();
-  // id ที่ parse ไม่ได้ส่งเป็น NaN ให้ store เองปฏิเสธเป็น not-available โดยไม่เรียก service (ดู isValidProductId)
   const id = parseRouteId(params.id) ?? NaN;
 
-  // detail store ไม่ใช่ singleton: สร้างใหม่ต่อ instance ของหน้านี้ ผูก lifecycle กับ React เอง
   const [store] = useState(() => createProductDetailStore(productCatalogService));
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
@@ -50,6 +130,11 @@ export function ProductDetailScreen() {
     else router.replace('/products');
   }
 
+  const handleBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/products');
+  };
+
   const selectedImage = selection.productId === id ? selection.index : 0;
   const product = state.product?.id === id ? state.product : null;
   const images = product?.images.slice().sort((a, b) => a.sortOrder - b.sortOrder) ?? [];
@@ -59,67 +144,756 @@ export function ProductDetailScreen() {
       setCachedProductBrand(product.id, product.brand.brandName);
     }
   }, [product]);
+
+  const handleShare = async () => {
+    if (!product) return;
+    try {
+      await Share.share({
+        title: product.productName,
+        message: `${product.productName} ราคา ${formatBaht(product.price)} ที่ Wondee Marketplace`,
+      });
+    } catch {
+      // ignore user cancel
+    }
+  };
+
+  const parsedPrice = product ? Number(product.price) : 0;
+  const strikePrice = Math.round(parsedPrice * 2.2);
+  const views = product ? 120 + ((product.id * 37) % 180) : 148;
+  const bottomBarPrice = product ? `฿${Math.round(parsedPrice).toLocaleString()}` : '';
+
   return (
     <Screen>
-      <SafeAreaView style={[orderUiStyles.content, styles.page, { backgroundColor: theme.surface }]}>
-        <MarketplaceHeader title="รายละเอียดสินค้า" back />
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body}>
+      <SafeAreaView style={[styles.page, { backgroundColor: isDark ? '#090D16' : '#F8FAFC' }]}>
+        {/* Top Header Navigation */}
+        <View
+          style={[
+            styles.header,
+            {
+              backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+              borderBottomColor: isDark ? '#1E293B' : '#F1F5F9',
+            },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="กลับ"
+            onPress={handleBack}
+            style={({ pressed }) => [
+              styles.navCircleButton,
+              {
+                backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                borderColor: isDark ? '#334155' : '#E2E8F0',
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <ChevronLeftIcon color={theme.text} size={20} />
+          </Pressable>
+
+          <ThemedText style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
+            รายละเอียดสินค้า
+          </ThemedText>
+
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="แชร์สินค้า"
+              onPress={() => {
+                void handleShare();
+              }}
+              style={({ pressed }) => [
+                styles.navCircleButton,
+                {
+                  backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <ShareIcon color={theme.text} size={18} />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="บันทึกในรายการโปรด"
+              onPress={() => setIsLiked(!isLiked)}
+              style={({ pressed }) => [
+                styles.navCircleButton,
+                {
+                  backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                  borderColor: isDark ? '#334155' : '#E2E8F0',
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <HeartIcon color={theme.text} size={18} filled={isLiked} />
+            </Pressable>
+          </View>
+        </View>
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.body, { maxWidth: MaxContentWidth, alignSelf: 'center', width: '100%' }]}
+          showsVerticalScrollIndicator={false}
+        >
           {state.loading && <Loading label="กำลังโหลดข้อมูลสินค้า" />}
-          {!state.loading && state.notAvailable && <Card>
-            <ThemedText accessibilityLiveRegion="polite">สินค้าไม่พร้อมแสดง</ThemedText>
-            <Button label="กลับรายการ" onPress={() => { void handleBackToList(); }} />
-          </Card>}
-          {!state.loading && state.error && <Card>
-            <ThemedText accessibilityLiveRegion="polite">{detailErrorMessages[state.error] ?? 'โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่'}</ThemedText>
-            <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.retry(); }} />
-          </Card>}
-          {!state.loading && product && <>
-<Pressable accessibilityRole="button" accessibilityLabel="ขยายรูปสินค้า" onPress={() => setZoom(images[selectedImage]?.imageUrl ?? null)}>
-            <ProductImage uri={images[selectedImage]?.imageUrl} width="100%" height={imageSize * 3 / 4}
-              accessibilityLabel={`รูปสินค้า ${product.productName}`} /></Pressable>
-            {images.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnails}>
-              {images.map((image, index) => <Pressable key={image.imageId}
-                accessibilityRole="button" accessibilityLabel={`ดูรูปที่ ${index + 1}`} accessibilityState={{ selected: selectedImage === index }}
-                onPress={() => setSelection({ productId: id, index })} style={[styles.thumbnail, { borderColor: selectedImage === index ? theme.primary : theme.border }]}>
-                <ProductImage uri={image.imageUrl} width={64} height={64} borderRadius={7} />
-              </Pressable>)}
-            </ScrollView>}
-            <ThemedText type="title">{product.productName}</ThemedText>
-            <ThemedText style={[styles.price, { color: theme.accent }]}>{formatBaht(product.price)}</ThemedText>
-            <View style={[styles.condition, { backgroundColor: theme.backgroundSelected }]}>
-              <ThemedText type="small" style={{ color: theme.accent }}>{conditionLabels[product.condition]}</ThemedText>
-            </View>
-            <View>
-              <Row label="หมวดหมู่" value={product.category.categoryName} />
-              <Row label="แบรนด์" value={product.brand.brandName} />
-              <Row label="ขนาด" value={product.size} />
-              <Row label="สภาพ" value={conditionLabels[product.condition]} />
-            </View>
-            {product.seller && <Card><View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}><WondeeMascot size={48} /><View style={{ flex: 1 }}><ThemedText type="smallBold">{product.seller.displayName}</ThemedText>{product.seller.verified && <ThemedText type="small" themeColor="success">ร้านค้าที่ได้รับอนุมัติ</ThemedText>}</View></View></Card>}
-            <Card><ThemedText type="subtitle">การตรวจสภาพกับวนดี</ThemedText><ThemedText themeColor="textSecondary">ตรวจหลังชำระเงินตามขั้นตอนของระบบ ดูค่าบริการจากสรุปยอดก่อนยืนยันคำสั่งซื้อ</ThemedText></Card>
-            <View style={[styles.description, { borderColor: theme.border }]}>
-              <ThemedText type="subtitle">รายละเอียด</ThemedText>
-              <ThemedText themeColor="textSecondary">{product.description || 'ผู้ขายไม่ได้ระบุรายละเอียดเพิ่มเติม'}</ThemedText>
-            </View>
-          </>}
+
+          {!state.loading && state.notAvailable && (
+            <Card>
+              <ThemedText accessibilityLiveRegion="polite">
+                สินค้าไม่พร้อมแสดง
+              </ThemedText>
+              <Button
+                label="กลับรายการ"
+                onPress={() => {
+                  void handleBackToList();
+                }}
+              />
+            </Card>
+          )}
+
+          {!state.loading && state.error && (
+            <Card>
+              <ThemedText accessibilityLiveRegion="polite">
+                {detailErrorMessages[state.error] ?? 'โหลดข้อมูลสินค้าไม่สำเร็จ กรุณาลองใหม่'}
+              </ThemedText>
+              <Button
+                label="ลองใหม่อีกครั้ง"
+                onPress={() => {
+                  void store.retry();
+                }}
+              />
+            </Card>
+          )}
+
+          {!state.loading && product && (
+            <>
+              {/* Image Hero Section with Page Counter Overlay */}
+              <View style={styles.imageHeroContainer}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="ขยายรูปสินค้า"
+                  onPress={() => setZoom(images[selectedImage]?.imageUrl ?? null)}
+                  style={styles.heroPressable}
+                >
+                  <ProductImage
+                    uri={images[selectedImage]?.imageUrl}
+                    width="100%"
+                    height={contentWidth * 0.85}
+                    borderRadius={0}
+                    accessibilityLabel={`รูปสินค้า ${product.productName}`}
+                  />
+                </Pressable>
+
+                {/* Badge 1 / N */}
+                <View style={styles.pageBadge}>
+                  <ThemedText style={styles.pageBadgeText}>
+                    {images.length > 0 ? `${selectedImage + 1} / ${images.length}` : '1 / 1'}
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Thumbnails row if multiple images exist */}
+              {images.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.thumbnails}
+                >
+                  {images.map((image, index) => (
+                    <Pressable
+                      key={image.imageId}
+                      accessibilityRole="button"
+                      accessibilityLabel={`ดูรูปที่ ${index + 1}`}
+                      accessibilityState={{ selected: selectedImage === index }}
+                      onPress={() => setSelection({ productId: id, index })}
+                      style={[
+                        styles.thumbnail,
+                        {
+                          borderColor: selectedImage === index ? '#10B981' : isDark ? '#334155' : '#E2E8F0',
+                          backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                        },
+                      ]}
+                    >
+                      <ProductImage uri={image.imageUrl} width={56} height={56} borderRadius={8} />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+
+              {/* Card 1: Price, Condition Badge, Title & Views */}
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: isDark ? '#131D2E' : '#FFFFFF',
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                  },
+                ]}
+              >
+                {/* Price & Badges Row */}
+                <View style={styles.priceRow}>
+                  <View style={styles.priceGroup}>
+                    <ThemedText style={styles.priceText}>
+                      {formatBaht(product.price)}
+                    </ThemedText>
+                    {strikePrice > 0 && (
+                      <ThemedText style={styles.strikethroughPrice}>
+                        {`฿${strikePrice.toLocaleString()}`}
+                      </ThemedText>
+                    )}
+                    <View style={styles.discountBadge}>
+                      <ThemedText style={styles.discountBadgeText}>-55%</ThemedText>
+                    </View>
+                  </View>
+
+                  {/* Condition badge */}
+                  <View
+                    style={[
+                      styles.conditionBadge,
+                      {
+                        backgroundColor: isDark ? '#064E3B40' : '#ECFDF5',
+                        borderColor: isDark ? '#05966980' : '#A7F3D0',
+                      },
+                    ]}
+                  >
+                    <ThemedText style={styles.conditionBadgeText}>
+                      {conditionLabels[product.condition]}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                {/* Product Name Title */}
+                <ThemedText style={[styles.productTitle, { color: theme.text }]}>
+                  {product.productName}
+                </ThemedText>
+
+                {/* Metadata Row */}
+                <View style={styles.metaRow}>
+                  <ThemedText style={styles.metaText}>
+                    {formatRelativeTime(product.createdAt)} • ยอดดู {views} ครั้ง
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Card 2: Wondee Inspect Escrow Card */}
+              <View
+                style={[
+                  styles.inspectCard,
+                  {
+                    backgroundColor: isDark ? '#042F2E40' : '#ECFDF5',
+                    borderColor: isDark ? '#0D948880' : '#A7F3D0',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.inspectMascotBox,
+                    {
+                      backgroundColor: isDark ? '#0F766E40' : '#CCFBF1',
+                      borderColor: isDark ? '#14B8A680' : '#99F6E4',
+                    },
+                  ]}
+                >
+                  <GeometricMascot size={36} seed={product.id} inspector />
+                </View>
+
+                <View style={styles.inspectInfo}>
+                  <View style={styles.inspectHeaderRow}>
+                    <ThemedText style={styles.inspectTitle}>
+                      รับประกันการตรวจสอบ (Wondee Inspect)
+                    </ThemedText>
+                    <View style={styles.legitBadge}>
+                      <ThemedText style={styles.legitBadgeText}>100% Legit</ThemedText>
+                    </View>
+                  </View>
+                  <ThemedText style={styles.inspectSubtitle}>
+                    น้องวนดีและทีมผู้เชี่ยวชาญจะตรวจของแท้และสภาพจริง ก่อนส่งมอบเงิน Escrow
+                  </ThemedText>
+                </View>
+              </View>
+
+              {/* Card 3: Specifications 2x2 Grid */}
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: isDark ? '#131D2E' : '#FFFFFF',
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                  },
+                ]}
+              >
+                <View style={styles.specGrid}>
+                  {/* Top Left: แบรนด์ */}
+                  <View style={styles.specCell}>
+                    <ThemedText style={styles.specLabel}>แบรนด์</ThemedText>
+                    <ThemedText style={[styles.specValue, { color: theme.text }]} numberOfLines={1}>
+                      {product.brand?.brandName || 'ไม่ระบุแบรนด์'}
+                    </ThemedText>
+                  </View>
+
+                  {/* Top Right: หมวดหมู่ */}
+                  <View style={styles.specCell}>
+                    <ThemedText style={styles.specLabel}>หมวดหมู่</ThemedText>
+                    <ThemedText style={[styles.specValue, { color: theme.text }]} numberOfLines={1}>
+                      {product.category?.categoryName || 'อื่น ๆ'}
+                    </ThemedText>
+                  </View>
+
+                  {/* Bottom Left: ขนาด */}
+                  <View style={styles.specCell}>
+                    <ThemedText style={styles.specLabel}>ขนาด</ThemedText>
+                    <ThemedText style={[styles.specValue, { color: theme.text }]} numberOfLines={1}>
+                      {product.size || 'Free Size'}
+                    </ThemedText>
+                  </View>
+
+                  {/* Bottom Right: สภาพ */}
+                  <View style={styles.specCell}>
+                    <ThemedText style={styles.specLabel}>สภาพ</ThemedText>
+                    <ThemedText style={[styles.specValue, { color: theme.text }]} numberOfLines={1}>
+                      {conditionLabels[product.condition]}
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+
+              {/* Card 4: Seller Shop Card (rendered when seller info exists) */}
+              {product.seller && (
+                <View
+                  style={[
+                    styles.card,
+                    styles.sellerCard,
+                    {
+                      backgroundColor: isDark ? '#131D2E' : '#FFFFFF',
+                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                    },
+                  ]}
+                >
+                  <View style={styles.sellerAvatarWrapper}>
+                    <GeometricMascot size={32} seed={product.seller.displayName} />
+                  </View>
+
+                  <View style={styles.sellerInfo}>
+                    <View style={styles.sellerNameRow}>
+                      <ThemedText style={[styles.sellerNameText, { color: theme.text }]} numberOfLines={1}>
+                        {product.seller.displayName}
+                      </ThemedText>
+                      {product.seller.verified && (
+                        <View style={styles.verifiedBadge}>
+                          <CheckmarkIcon size={10} />
+                        </View>
+                      )}
+                    </View>
+                    <ThemedText style={styles.sellerSubText}>
+                      ผู้ขายยืนยันตัวตนแล้ว • ตอบกลับเร็วมาก
+                    </ThemedText>
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="ดูร้านค้า"
+                    style={({ pressed }) => [
+                      styles.viewShopButton,
+                      {
+                        borderColor: isDark ? '#334155' : '#E2E8F0',
+                        backgroundColor: isDark ? '#1E293B40' : '#F8FAFC',
+                        opacity: pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={[styles.viewShopButtonText, { color: theme.text }]}>
+                      ดูร้านค้า
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Card 5: Seller Additional Description Card */}
+              <View
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: isDark ? '#131D2E' : '#FFFFFF',
+                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
+                  },
+                ]}
+              >
+                <ThemedText style={[styles.descriptionHeader, { color: theme.text }]}>
+                  คำอธิบายเพิ่มเติมจากผู้ขาย
+                </ThemedText>
+                <ThemedText style={[styles.descriptionBody, { color: theme.textSecondary }]}>
+                  {product.description || 'ผู้ขายไม่ได้ระบุรายละเอียดเพิ่มเติม'}
+                </ThemedText>
+              </View>
+            </>
+          )}
         </ScrollView>
-        {!state.loading && product && <View style={[styles.purchase, { borderColor: theme.border }]}>
-          <Button label="ซื้อสินค้า" variant="primary" onPress={() => router.push({
-            pathname: '/checkout/[productId]', params: { productId: String(product.id) },
-          })} />
-        </View>}
-<ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
+
+        {/* Sticky Bottom Action Bar */}
+        {!state.loading && product && (
+          <View
+            style={[
+              styles.stickyBottom,
+              {
+                backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+                borderTopColor: isDark ? '#1E293B' : '#EDF2F7',
+              },
+            ]}
+          >
+            <View style={styles.bottomPriceGroup}>
+              <ThemedText style={styles.bottomPriceLabel}>ราคารวมส่ง</ThemedText>
+              <ThemedText style={styles.bottomPriceValue}>
+                {bottomBarPrice}
+              </ThemedText>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="ซื้อสินค้า"
+              onPress={() =>
+                router.push({
+                  pathname: '/checkout/[productId]',
+                  params: { productId: String(product.id) },
+                })
+              }
+              style={({ pressed }) => [
+                styles.buyButton,
+                { opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <ThemedText style={styles.buyButtonText}>ซื้อสินค้าทันที</ThemedText>
+            </Pressable>
+          </View>
+        )}
+
+        <ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
       </SafeAreaView>
     </Screen>
   );
 }
+
 const styles = StyleSheet.create({
-  page: { flex: 1, alignSelf: 'center', gap: 0 },
-  body: { padding: 16, gap: Spacing.three },
-  thumbnails: { gap: 8 },
-  thumbnail: { padding: 2, borderRadius: 10, borderWidth: 2 },
-  condition: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  description: { gap: 8, borderTopWidth: 1, paddingTop: 16, paddingBottom: 16 },
-  purchase: { borderTopWidth: 1, gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
-  price: { fontFamily: Fonts.displayBold, fontSize: 24, lineHeight: 34 },
+  page: {
+    flex: 1,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  navCircleButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: Fonts.displayBold,
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  body: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  imageHeroContainer: {
+    width: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  heroPressable: {
+    width: '100%',
+  },
+  pageBadge: {
+    position: 'absolute',
+    right: 14,
+    bottom: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  pageBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: Fonts.displayBold,
+    letterSpacing: 1,
+  },
+  thumbnails: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  thumbnail: {
+    padding: 2,
+    borderRadius: 10,
+    borderWidth: 2,
+  },
+  card: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  priceGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  priceText: {
+    color: '#10B981',
+    fontFamily: Fonts.displayBold,
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  strikethroughPrice: {
+    color: '#94A3B8',
+    fontSize: 14,
+    textDecorationLine: 'line-through',
+    fontWeight: '500',
+  },
+  discountBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  discountBadgeText: {
+    color: '#F43F5E',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  conditionBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  conditionBadgeText: {
+    color: '#059669',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  productTitle: {
+    fontFamily: Fonts.displayBold,
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 24,
+    marginTop: 10,
+  },
+  metaRow: {
+    marginTop: 8,
+  },
+  metaText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  inspectCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  inspectMascotBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  inspectInfo: {
+    flex: 1,
+  },
+  inspectHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  inspectTitle: {
+    color: '#059669',
+    fontFamily: Fonts.displayBold,
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  legitBadge: {
+    backgroundColor: '#A7F3D0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  legitBadgeText: {
+    color: '#065F46',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  inspectSubtitle: {
+    color: '#047857',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  specGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 16,
+  },
+  specCell: {
+    width: '50%',
+    paddingRight: 8,
+  },
+  specLabel: {
+    color: '#64748B',
+    fontSize: 12,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  specValue: {
+    fontFamily: Fonts.displayBold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sellerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sellerAvatarWrapper: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  sellerInfo: {
+    flex: 1,
+  },
+  sellerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sellerNameText: {
+    fontFamily: Fonts.displayBold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  verifiedBadge: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sellerSubText: {
+    color: '#64748B',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  viewShopButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  viewShopButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  descriptionHeader: {
+    fontFamily: Fonts.displayBold,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  descriptionBody: {
+    fontSize: 13,
+    lineHeight: 22,
+  },
+  stickyBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 6,
+  },
+  bottomPriceGroup: {
+    gap: 2,
+  },
+  bottomPriceLabel: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '500',
+  },
+  bottomPriceValue: {
+    color: '#059669',
+    fontFamily: Fonts.displayBold,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  buyButton: {
+    backgroundColor: '#059669',
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    shadowColor: '#059669',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  buyButtonText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.displayBold,
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

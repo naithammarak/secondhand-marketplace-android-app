@@ -56,3 +56,13 @@ export function WondeeWordmark() {
   </View></View>;
 }
 const styles = StyleSheet.create({ wordmark: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 } });
+
+export {
+  GeometricMascot,
+  MASCOT_PALETTES,
+  getMascotBySeed,
+  getRandomMascot,
+  type GeometricMascotProps,
+  type GeometricMascotShape,
+  type MascotPalette,
+} from './geometric-mascot';
