@@ -1,0 +1,59 @@
+- generic: QA FIXTURE · edit · ไม่มี API/การบันทึกจริง
+- generic: แก้ไขสินค้า
+- generic: รูปภาพ * (2/10)
+- generic: JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป
+- generic: ★ รูปหลัก
+- button "ลบรูปภาพ" [disabled]:
+  - generic: ✕
+- button "เลื่อนรูปไปขวา" [disabled]:
+  - generic: ▶
+- button "ตั้งเป็นรูปหลัก" [disabled]:
+  - generic: รูปหลัก
+- button "ลบรูปภาพ" [disabled]:
+  - generic: ✕
+- button "เลื่อนรูปไปซ้าย" [disabled]:
+  - generic: ◀
+- button "เพิ่มรูป" [disabled]:
+  - generic: +
+  - generic: เพิ่มรูป
+- generic: ชื่อสินค้า *
+- textbox "ชื่อสินค้า":
+  - /placeholder: เช่น เสื้อยืดสีขาว
+  - text: เสื้อคอตตอนทรงคลาสสิก สีเขียวมรกต ใส่สบายสำหรับวันพักผ่อน
+- generic: รายละเอียด
+- textbox "รายละเอียดสินค้า":
+  - /placeholder: อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ
+  - text: เสื้อตัวโปรดที่ดูแลอย่างดี ผ้านุ่ม ระบายอากาศดี มีรอยใช้งานเล็กน้อยบริเวณชายเสื้อ โปรดดูรูปและรายละเอียดก่อนสั่งซื้อ
+- generic: แบรนด์
+- textbox "แบรนด์":
+  - /placeholder: เช่น Uniqlo
+  - text: ไม่ระบุแบรนด์
+- button "ไม่ระบุแบรนด์" [disabled]:
+  - generic: ไม่ระบุแบรนด์
+- generic: ไซซ์
+- textbox "ไซซ์":
+  - /placeholder: เช่น M, 42
+  - text: M
+- generic: ราคา *
+- generic: ฿
+- textbox "ราคา (บาท)":
+  - /placeholder: "0"
+  - text: "590.00"
+- generic: หมวดหมู่ *
+- button "เสื้อผ้า" [disabled]:
+  - generic: เสื้อผ้า
+- button "รองเท้า" [disabled]:
+  - generic: รองเท้า
+- generic: สภาพสินค้า
+- button "สภาพใหม่" [disabled]:
+  - generic: สภาพใหม่
+- button "สภาพเหมือนใหม่" [disabled]:
+  - generic: สภาพเหมือนใหม่
+- button "สภาพดี" [disabled]:
+  - generic: สภาพดี
+- button "สภาพพอใช้" [disabled]:
+  - generic: สภาพพอใช้
+- generic: รูปแบบการขาย
+- generic: ราคาปกติ
+- button "บันทึกการแก้ไข" [disabled]:
+  - generic: บันทึกการแก้ไข

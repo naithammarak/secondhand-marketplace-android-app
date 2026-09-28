@@ -1,0 +1,68 @@
+{
+  "base": "8254f8d224f62aa765f978f65f110139410a09ab",
+  "originMain": "8254f8d224f62aa765f978f65f110139410a09ab",
+  "prs": [
+    {
+      "baseRefName": "main",
+      "headRefName": "feat/order-08-cancel-expiry",
+      "headRefOid": "1c1b46989f64c47091432a18ed8700082b3d821b",
+      "mergeCommit": {
+        "oid": "8254f8d224f62aa765f978f65f110139410a09ab"
+      },
+      "mergedAt": "2026-09-27T07:56:39Z",
+      "number": 92,
+      "state": "MERGED",
+      "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/92",
+      "mergeContainedInOriginMain": true
+    },
+    {
+      "baseRefName": "feat/order-08-cancel-expiry",
+      "headRefName": "feat/inspect-01-storage",
+      "headRefOid": "e7bde70aacb654a3c8973a947613518835d00e0a",
+      "mergeCommit": {
+        "oid": "bdc55d1098cfc54aaf567e42441876488e462a49"
+      },
+      "mergedAt": "2026-09-27T07:57:09Z",
+      "number": 93,
+      "state": "MERGED",
+      "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/93",
+      "mergeContainedInOriginMain": false
+    },
+    {
+      "baseRefName": "feat/inspect-01-storage",
+      "headRefName": "feat/inspect-02-03-api",
+      "headRefOid": "050e22f4cc336ceb0007ce886eab51a3366db8a6",
+      "mergeCommit": {
+        "oid": "d6a1a1a8f86b2bc1e3c2b5bcb0b0d1b34b3f8d59"
+      },
+      "mergedAt": "2026-09-27T07:57:20Z",
+      "number": 94,
+      "state": "MERGED",
+      "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/94",
+      "mergeContainedInOriginMain": false
+    },
+    {
+      "baseRefName": "feat/inspect-02-03-api",
+      "headRefName": "feat/inspect-mobile-flow",
+      "headRefOid": "b64687d23eb8513ce26f8951fb073c3e44cda159",
+      "mergeCommit": null,
+      "mergedAt": null,
+      "number": 95,
+      "state": "OPEN",
+      "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/95"
+    },
+    {
+      "baseRefName": "main",
+      "headRefName": "feat/marketplace-design-ui",
+      "headRefOid": "b342523591b7f0b0a00d1ca0b74b6364cde33172",
+      "mergeCommit": {
+        "oid": "a936ccf8c10df308af3a7792c0ad633d53cf6d1b"
+      },
+      "mergedAt": "2026-09-25T15:10:09Z",
+      "number": 97,
+      "state": "MERGED",
+      "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/97",
+      "mergeContainedInOriginMain": true
+    }
+  ]
+}

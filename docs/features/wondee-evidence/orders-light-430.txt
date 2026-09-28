@@ -1,0 +1,22 @@
+- generic: QA FIXTURE · orders · ไม่มี API/การบันทึกจริง
+- heading "คำสั่งซื้อ" [level=1]
+- button "รายการซื้อ":
+  - generic: รายการซื้อ
+- button "รายการขาย":
+  - generic: รายการขาย
+- button "รีเฟรช":
+  - generic: รีเฟรช
+- generic: "#42 · 27/9/2569 13:00:00"
+- generic: รอชำระเงิน
+- generic: เสื้อคอตตอนทรงคลาสสิก สีเขียวมรกต ใส่สบายสำหรับวันพักผ่อน
+- generic: สภาพดี · M
+- generic: ยอดชำระ
+- generic: ฿740.00
+- button "ชำระเงิน":
+  - generic: ชำระเงิน
+- tab "หน้าแรก":
+  - generic: หน้าแรก
+- tab "คำสั่งซื้อ":
+  - generic: คำสั่งซื้อ
+- tab "ฉัน":
+  - generic: ฉัน
