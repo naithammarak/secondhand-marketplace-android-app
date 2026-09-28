@@ -47,11 +47,11 @@
         <span class="state revoked">เพิกถอนแล้ว</span>
         {% else %}
         <p class="intro">ใบรับรองนี้ออกจากผลการตรวจสินค้าที่บันทึกไว้ในระบบ</p>
-        <span class="state">ใช้งานได้</span>
+        <span class="state">{% if result == 'PASS' %}ของแท้{% elif result == 'MINOR_ISSUE' %}พบข้อสังเกตเล็กน้อย{% endif %}</span>
         {% endif %}
         <dl>
           <div class="row"><dt>เลขที่ใบรับรอง</dt><dd>{{ certificate_no }}</dd></div>
-          <div class="row"><dt>ผลตรวจ</dt><dd>{% if result == 'PASS' %}ผ่านการตรวจ (PASS){% elif result == 'MINOR_ISSUE' %}พบข้อสังเกตเล็กน้อย (MINOR_ISSUE){% endif %}</dd></div>
+          <div class="row"><dt>ผลตรวจ</dt><dd>{% if result == 'PASS' %}ของแท้ (PASS){% elif result == 'MINOR_ISSUE' %}พบข้อสังเกตเล็กน้อย (MINOR_ISSUE){% endif %}</dd></div>
           <div class="row"><dt>วันที่ออก</dt><dd><time datetime="{{ issued_at_iso }}">{{ issued_at_display }}</time></dd></div>
         </dl>
         <p class="note">ใบรับรองแสดงผลการตรวจ ณ วันที่ออกเท่านั้น ไม่ยืนยันว่าผู้ซื้อได้รับสินค้าแล้วหรือเป็นเจ้าของสินค้า</p>

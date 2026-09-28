@@ -8,7 +8,7 @@
 
 | สถานะ | หน้าเว็บ |
 |---|---|
-| `ISSUED` + `PASS` | เลขใบรับรอง, “ผ่านการตรวจ”, เวลาออก และข้อความอธิบายขอบเขต |
+| `ISSUED` + `PASS` | เลขใบรับรอง, “ของแท้”, เวลาออก และข้อความอธิบายขอบเขต |
 | `ISSUED` + `MINOR_ISSUE` | เลขใบรับรอง, “พบข้อสังเกตเล็กน้อย”, เวลาออก และข้อความอธิบายขอบเขต |
 | `REVOKED` | แสดงชัดว่าเพิกถอนและใช้ยืนยันไม่ได้ พร้อมผลตรวจเดิมและเวลาออก; ไม่แสดงเหตุผลภายใน |
 | token ไม่พบ | HTTP 404 กับหน้า “ไม่พบใบรับรอง” แบบทั่วไป ไม่สะท้อน token/Order ID |
@@ -44,3 +44,5 @@ X-Robots-Tag: noindex
 5. ตรวจ responsive ที่ความกว้างประมาณ 360 px และ desktop; บันทึกภาพหน้า `ISSUED`, `MINOR_ISSUE`, `REVOKED`, และ 404 สำหรับ QA ก่อน merge
 
 ชุดทดสอบอัตโนมัติอยู่ใน `backend/tests/test_certificate_public_page.py` และ `backend/tests/test_inspection_flow_postgres.py` โดยชุดหลังใช้ PostgreSQL ทดสอบแยกเท่านั้น การทดสอบ local ใช้ `https://cert.example.test` เป็นค่าประกอบ URL และพิสูจน์ route ผ่าน HTTP test client; **ยังไม่ใช่หลักฐานว่า URL สาธารณะจริงเปิดได้จากมือถืออีกเครื่อง** ต้องทำข้อ 2–5 ในสภาพแวดล้อม deploy ก่อนปิดงาน
+
+28 กันยายน 2026: ผู้ทดสอบรายงานว่าเปิดหน้า `PASS`, `MINOR_ISSUE`, `REVOKED` และ 404 ผ่าน HTTPS quick tunnel บนมือถือได้ครบ โดยใช้ PostgreSQL ทดสอบแยกในเครื่อง หลักฐานนี้ยืนยันการแสดงผลผ่าน HTTPS ชั่วคราว; ยังต้องเก็บภาพและตรวจ Network/response headers รวมถึงทดสอบ `certificate.public_url` ที่ API ส่งจริงในสภาพแวดล้อม deploy ก่อนปิดงาน
