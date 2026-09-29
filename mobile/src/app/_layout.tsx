@@ -1,15 +1,16 @@
+import { useEffect, useState } from 'react';
+import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
-
-import { useEffect } from 'react';
-import { useFonts } from 'expo-font';
-import { Colors } from '@/constants/theme';
 import { StatusBar } from 'expo-status-bar';
+
 import { AuthProvider } from '@/auth/auth-provider';
 import { ReviewProvider } from '@/admin/review-provider';
+import { Colors } from '@/constants/theme';
 import { OrdersProvider } from '@/orders/orders-provider';
 import { VerificationProvider } from '@/verification/verification-provider';
+import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
+import { SplashScreenView } from '@/components/wondee/splash-screen';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -19,6 +20,7 @@ export default function TabLayout() {
 
 function AppLayout() {
   const { scheme: colorScheme, ready } = useThemePreference();
+  const [splashFinished, setSplashFinished] = useState(() => process.env.NODE_ENV === 'test');
   const [fontsLoaded, fontError] = useFonts({
     'Prompt-Regular': require('@/assets/fonts/Prompt-Regular.ttf'),
     'Prompt-Medium': require('@/assets/fonts/Prompt-Medium.ttf'),
@@ -37,7 +39,13 @@ function AppLayout() {
           <ReviewProvider>
             <OrdersProvider>
               <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: theme.background },
+                  animation: 'slide_from_right',
+                  animationDuration: 250,
+                }}>
                 <Stack.Screen name="index" />
                 <Stack.Screen name="login" />
                 <Stack.Screen name="profile" />
@@ -54,6 +62,9 @@ function AppLayout() {
                 <Stack.Screen name="orders/[orderId]" />
                 <Stack.Screen name="receipt/[orderId]" />
               </Stack>
+              {!splashFinished ? (
+                <SplashScreenView onFinish={() => setSplashFinished(true)} />
+              ) : null}
             </OrdersProvider>
           </ReviewProvider>
         </VerificationProvider>

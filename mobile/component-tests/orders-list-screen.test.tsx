@@ -59,3 +59,26 @@ test('does not render explicit refresh button and triggers refresh on pull-to-re
   refreshControl.props.onRefresh();
   expect(mockStore.refresh).toHaveBeenCalled();
 });
+
+test('displays dynamic countdown for active WAITING_PAYMENT order', () => {
+  const futureDeadline = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  mockState.items[0].expiresAt = futureDeadline;
+  render(<OrdersListScreen />);
+  expect(screen.getByText(/⏱ เหลือเวลาชำระ 1[45]:\d\d/)).toBeTruthy();
+});
+
+test('displays expired text when WAITING_PAYMENT order deadline has passed', () => {
+  const pastDeadline = new Date(Date.now() - 5000).toISOString();
+  mockState.items[0].expiresAt = pastDeadline;
+  render(<OrdersListScreen />);
+  expect(screen.getByText('⏱ หมดเวลาชำระเงิน')).toBeTruthy();
+});
+
+test('displays seller countdown label for seller WAITING_PAYMENT order', () => {
+  const futureDeadline = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+  mockState.items[0].viewerRole = 'seller';
+  mockState.items[0].expiresAt = futureDeadline;
+  render(<OrdersListScreen />);
+  expect(screen.getByText(/⏱ ผู้ซื้อต้องชำระภายใน 19:\d\d|⏱ ผู้ซื้อต้องชำระภายใน 20:00/)).toBeTruthy();
+});
+

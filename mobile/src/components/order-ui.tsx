@@ -1,11 +1,13 @@
 import type { PropsWithChildren } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
+import { WondeeLoader } from './wondee/loader';
 
 export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: Colors.light.warning,
@@ -54,7 +56,15 @@ export function errorText(kind: OrderErrorKind, code?: string | null): string {
 }
 
 export function Screen({ children }: PropsWithChildren) {
-  return <ThemedView style={styles.screen}>{children}</ThemedView>;
+  return (
+    <ThemedView style={styles.screen}>
+      <Animated.View
+        entering={FadeIn?.duration ? FadeIn.duration(240) : undefined}
+        style={{ flex: 1, width: '100%' }}>
+        {children}
+      </Animated.View>
+    </ThemedView>
+  );
 }
 
 export function Card({ children }: PropsWithChildren) {
@@ -74,8 +84,8 @@ export function Row({ label, value, bold }: { label: string; value: string; bold
 export function Loading({ label }: { label: string }) {
   return (
     <View style={styles.center}>
-      <ActivityIndicator accessibilityLabel={label} />
-      <ThemedText type="small">{label}</ThemedText>
+      <WondeeLoader size={36} accessibilityLabel={label} />
+      <ThemedText type="small" style={{ marginTop: 8 }}>{label}</ThemedText>
     </View>
   );
 }

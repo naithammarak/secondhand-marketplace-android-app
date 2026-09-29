@@ -380,6 +380,8 @@ export function ProductListScreen() {
           refreshControl={
             <RefreshControl
               refreshing={state.refreshing}
+              colors={['#059669']}
+              tintColor="#059669"
               onRefresh={() => {
                 void productCatalogStore.refresh();
               }}

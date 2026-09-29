@@ -153,8 +153,48 @@ function OrderCardBadge({ status }: { status: OrderStatus | string }) {
   );
 }
 
+function useOrderCountdown(expiresAt: string | null | undefined, createdAt: string | null | undefined) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const deadline = useMemo(() => {
+    if (expiresAt) {
+      const ms = new Date(expiresAt).getTime();
+      if (!Number.isNaN(ms)) return ms;
+    }
+    if (createdAt) {
+      const ms = new Date(createdAt).getTime();
+      if (!Number.isNaN(ms)) return ms + 30 * 60 * 1000;
+    }
+    return null;
+  }, [expiresAt, createdAt]);
+
+  if (!deadline) {
+    return { formatted: '24:13', isExpired: false };
+  }
+
+  const diffMs = deadline - now;
+  if (diffMs <= 0) {
+    return { formatted: '0:00', isExpired: true };
+  }
+
+  const totalSecs = Math.ceil(diffMs / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  const secStr = String(secs).padStart(2, '0');
+
+  const formatted = hours > 0 ? `${hours}:${String(mins).padStart(2, '0')}:${secStr}` : `${mins}:${secStr}`;
+  return { formatted, isExpired: false };
+}
+
 function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const theme = useTheme();
+  const countdown = useOrderCountdown(item.expiresAt, item.createdAt);
   const canPay =
     item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
@@ -287,7 +327,9 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
       <View style={styles.infoLineContainer}>
         {item.status === 'WAITING_PAYMENT' ? (
           <ThemedText style={styles.waitingPaymentDeadline}>
-            ⏱ {item.viewerRole === 'seller' ? 'ผู้ซื้อต้องชำระภายใน 24:13' : 'เหลือเวลาชำระ 24:13'}
+            {countdown.isExpired
+              ? '⏱ หมดเวลาชำระเงิน'
+              : `⏱ ${item.viewerRole === 'seller' ? 'ผู้ซื้อต้องชำระภายใน ' : 'เหลือเวลาชำระ '}${countdown.formatted}`}
           </ThemedText>
         ) : isCancelled ? (
           <ThemedText style={styles.infoMutedText}>
@@ -508,6 +550,8 @@ export function OrdersListScreen() {
           refreshControl={
             <RefreshControl
               refreshing={state.refreshing}
+              colors={['#059669']}
+              tintColor="#059669"
               onRefresh={() => {
                 void store.refresh();
               }}
