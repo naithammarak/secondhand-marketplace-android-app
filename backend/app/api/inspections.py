@@ -1,28 +1,33 @@
 """INSPECT-02/03: authorized shipment, inspection and private result flow."""
 
-import os
 import secrets
 import logging
 import hashlib
 from datetime import datetime, timezone
+from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
 from app.api.admin_verifications import require_admin
-from app.api.orders import api_error, key_reused, load_order_for, request_fingerprint, require_idempotency_key, validation_error
+from app.api.orders import api_error, key_reused, load_order_for, not_order_buyer, request_fingerprint, require_idempotency_key, validation_error
 from app.database import get_db
 from app.models.certificate import Certificate
+from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from app.services import inspection_storage
+from app.services.certificate_urls import public_certificate_base_url
+from app.services.certificate_page import render_certificate_page
 
 
 router = APIRouter(tags=["Inspections"])
@@ -52,6 +57,36 @@ class ResultRequest(BaseModel):
 class CourierAssignment(BaseModel):
     model_config = ConfigDict(extra="forbid")
     courier_id: int
+
+
+class BuyerDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["CONFIRM", "REJECT"]
+    reason: str | None = None
+
+
+def decision_validation_error(fields: dict[str, str]) -> HTTPException:
+    return api_error(422, "validation_error", "Invalid buyer decision", fields=fields)
+
+
+async def parse_buyer_decision(request: Request) -> BuyerDecisionRequest:
+    """Use the Order API's field-error envelope for malformed decision JSON."""
+    try:
+        raw = await request.json()
+        body = BuyerDecisionRequest.model_validate(raw)
+    except (ValueError, ValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            fields = {str(error["loc"][0]) if error["loc"] else "body": error["msg"] for error in exc.errors()}
+        else:
+            fields = {"body": "Invalid JSON body"}
+        raise decision_validation_error(fields) from exc
+    reason = body.reason.strip() if body.reason is not None else None
+    if body.decision == "CONFIRM" and reason is not None:
+        raise decision_validation_error({"reason": "CONFIRM does not accept a reason"})
+    if body.decision == "REJECT" and reason is not None and len(reason) > 500:
+        raise decision_validation_error({"reason": "At most 500 characters after trimming"})
+    body.reason = reason or None
+    return body
 
 
 def now() -> datetime:
@@ -182,14 +217,20 @@ def _certificate(db: Session, order_id: int) -> Certificate | None:
 
 
 def _public_url(token: str) -> str:
-    origin = (os.getenv("CERT_PUBLIC_ORIGIN") or "").rstrip("/")
-    if not origin.startswith(("https://", "http://")) or "/" in origin.split("://", 1)[1]:
-        raise api_error(503, "certificate_unavailable", "Certificate service is unavailable")
+    try:
+        origin = public_certificate_base_url()
+    except ValueError as exc:
+        raise api_error(503, "certificate_unavailable", "Certificate service is unavailable") from exc
     return f"{origin}/certificates/{token}"
 
 
 def _certificate_view(row: Certificate | None):
-    return None if row is None else {"certificate_no": row.certificate_no, "public_url": _public_url(row.public_token), "issued_at": row.issued_at}
+    return None if row is None else {
+        "certificate_no": row.certificate_no,
+        "status": row.status,
+        "issued_at": row.issued_at,
+        "public_url": _public_url(row.public_token),
+    }
 
 
 def issue_certificate(db: Session, order: Order, work: Inspection, result: str) -> Certificate:
@@ -198,6 +239,9 @@ def issue_certificate(db: Session, order: Order, work: Inspection, result: str) 
         raise ValueError("Only qualifying results receive certificates")
     token = secrets.token_urlsafe(32)
     _public_url(token)  # Validate configuration before creating any row.
+    # Persist the final result first so the certificate snapshot FK can match it.
+    # This flush remains inside the same transaction; failure rolls both back.
+    db.flush()
     row = Certificate(
         order_id=order.id, inspection_id=work.id, result=result,
         certificate_no=f"CERT-{uuid4().hex[:24].upper()}", public_token=token,
@@ -575,17 +619,99 @@ def submit_result(inspection_id: int, body: ResultRequest, response: Response, a
         raise
 
 
+def _decision_view(row: BuyerInspectionDecision) -> dict:
+    return {"decision": row.decision, "reason": row.reason, "decided_at": row.decided_at}
+
+
+def _next_action(result: str, decision: BuyerInspectionDecision | None) -> str:
+    if result not in POSITIVE or (decision is not None and decision.decision == "REJECT"):
+        return "RETURN_TO_SELLER"
+    if decision is not None:
+        return "SHIP_TO_BUYER"
+    return "WAIT_BUYER_DECISION"
+
+
 @router.get("/orders/{order_id}/inspection")
-def buyer_inspection(order_id: int, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def buyer_inspection(order_id: int, response: Response, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
     order, role = load_order_for(db, order_id, actor)
-    if role.value != "buyer":
-        raise api_error(403, "buyer_role_required", "Only this Order's buyer can view the result")
+    if role.value != "buyer" or actor.role != UserRole.BUYER:
+        raise not_order_buyer()
     work = _inspection(db, order.id)
-    if work is None or work.result is None or order.status != "RESULT_NOTIFIED":
-        raise api_error(409, "invalid_state", "Result not available yet")
+    if work is None or work.result is None:
+        raise api_error(404, "inspection_not_ready", "Inspection result is not ready")
     selected = db.scalars(select(InspectionEvidence).join(InspectionResultEvidence, InspectionResultEvidence.evidence_id == InspectionEvidence.id).where(InspectionResultEvidence.inspection_id == work.id).order_by(InspectionEvidence.id)).all()
+    if not 1 <= len(selected) <= 5:
+        logger.error("Invalid selected evidence count for order %s inspection %s", order.id, work.id)
+        raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
     cert = _certificate(db, order.id)
-    return {"order_id": order.id, "order_status": order.status, "result": work.result, "summary": work.summary, "inspected_at": work.inspected_at, "next_action": "WAIT_BUYER_DECISION" if work.result in POSITIVE else "RETURN_TO_SELLER", "certificate": _certificate_view(cert), "evidence": [{"id": photo.id, "mime_type": photo.mime_type, "size_bytes": photo.size_bytes, "url": f"/inspection-evidence/{photo.id}"} for photo in selected]}
+    if (work.result in POSITIVE and (cert is None or cert.inspection_id != work.id or cert.result != work.result)) or (work.result not in POSITIVE and cert is not None):
+        logger.error("Inconsistent certificate for order %s inspection %s", order.id, work.id)
+        raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
+    decision = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
+    can_decide = (actor.status == UserStatus.ACTIVE and order.status == "RESULT_NOTIFIED"
+                  and work.result in POSITIVE and cert is not None and cert.status == "ISSUED" and decision is None)
+    return {
+        "order_id": order.id, "order_status": order.status, "result": work.result,
+        "summary": work.summary, "inspected_at": work.inspected_at,
+        "evidence": [{"id": photo.id, "mime_type": photo.mime_type, "size_bytes": photo.size_bytes,
+                      "url": f"/inspection-evidence/{photo.id}", "expires_at": None} for photo in selected],
+        "certificate": _certificate_view(cert),
+        "decision": None if decision is None else _decision_view(decision),
+        "can_decide": can_decide,
+        "next_action": _next_action(work.result, decision),
+    }
+
+
+@router.post(
+    "/orders/{order_id}/inspection/decision",
+    openapi_extra={"requestBody": {"required": True, "content": {"application/json": {
+        "schema": BuyerDecisionRequest.model_json_schema(),
+        "example": {"decision": "REJECT", "reason": "สภาพสินค้าไม่ตรงที่คาด"},
+    }}}},
+)
+def decide_inspection(order_id: int, response: Response, actor: User = Depends(get_current_user),
+                      body: BuyerDecisionRequest = Depends(parse_buyer_decision), db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        order, role = load_order_for(db, order_id, actor, lock=True)
+        if role.value != "buyer" or actor.role != UserRole.BUYER:
+            raise not_order_buyer()
+        _fresh_actor(db, actor, UserRole.BUYER, "account_inactive")
+        existing = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
+        if existing is not None:
+            if (existing.decision, existing.reason) != (body.decision, body.reason):
+                raise api_error(409, "decision_already_recorded", "Buyer decision is already recorded")
+            return {"decision": _decision_view(existing), "next_action": _next_action("PASS", existing)}
+
+        work = _inspection(db, order.id)
+        if work is None or work.result is None:
+            raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
+        if work.result not in POSITIVE:
+            raise api_error(409, "decision_not_allowed", "This result cannot be decided by the buyer")
+        cert = _certificate(db, order.id)
+        if cert is None or cert.inspection_id != work.id or cert.result != work.result:
+            logger.error("Missing or inconsistent certificate for order %s inspection %s", order.id, work.id)
+            raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
+        if order.status != "RESULT_NOTIFIED" or cert.status != "ISSUED":
+            raise api_error(409, "decision_not_allowed", "Buyer decision is not available")
+        recorded = BuyerInspectionDecision(order_id=order.id, inspection_id=work.id, buyer_id=actor.id,
+                                           decision=body.decision, reason=body.reason)
+        db.add(recorded)
+        db.commit()
+        db.refresh(recorded)
+        return {"decision": _decision_view(recorded), "next_action": _next_action(work.result, recorded)}
+    except IntegrityError as exc:
+        db.rollback()
+        existing = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order_id))
+        if existing is None:
+            raise
+        if (existing.decision, existing.reason) != (body.decision, body.reason):
+            raise api_error(409, "decision_already_recorded", "Buyer decision is already recorded") from exc
+        return {"decision": _decision_view(existing), "next_action": _next_action("PASS", existing)}
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/inspection-evidence/{evidence_id}")
@@ -603,9 +729,25 @@ def read_evidence(evidence_id: int, actor: User = Depends(get_current_user), db:
     return Response(content=inspection_storage.download_object(photo.object_key), media_type=photo.mime_type, headers={"Cache-Control": "no-store"})
 
 
-@router.get("/certificates/{token}")
-def public_certificate(token: str, db: Session = Depends(get_db)):
+@router.get("/certificates/{token}", response_class=HTMLResponse)
+def public_certificate(token: str, db: Session = Depends(get_db)) -> HTMLResponse:
+    cert = db.scalar(select(Certificate).where(Certificate.public_token == token))
+    return render_certificate_page(cert)
+
+
+@router.get("/certificates/{token}/json")
+def public_certificate_json(token: str, db: Session = Depends(get_db)):
+    """Limited machine-readable view; the QR URL continues to render HTML."""
     cert = db.scalar(select(Certificate).where(Certificate.public_token == token))
     if cert is None:
         raise api_error(404, "certificate_not_found", "Certificate not found")
-    return {"certificate_no": cert.certificate_no, "result": cert.result, "issued_at": cert.issued_at}
+    return JSONResponse(
+        content=jsonable_encoder({
+            "certificate_no": cert.certificate_no,
+            "result": cert.result,
+            "issued_at": cert.issued_at,
+            "status": cert.status,
+        }),
+        media_type="application/json",
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"},
+    )

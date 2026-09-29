@@ -14,6 +14,7 @@ URL = os.getenv('WUI_TEST_DATABASE_URL')
 pytestmark = pytest.mark.skipif(not URL, reason='WUI_TEST_DATABASE_URL requires disposable PostgreSQL')
 PREDECESSOR = 'c93b7e5a1d84'
 REVISION = 'e8b2c490a713'
+INTEGRATED_HEAD = '714f11c84d53'
 
 
 @pytest.fixture
@@ -42,7 +43,7 @@ def test_upgrade_old_data_constraints_and_forward_only_downgrade(db):
         c.execute(text("INSERT INTO verifications(user_id,id_card_image_url,bank_account_name,bank_account_number,bank_name,verification_status) VALUES (3,'private/old','Legacy Name','1234567890','Legacy Bank','APPROVED')"))
     command.upgrade(config, 'head')
     with engine.connect() as c:
-        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == REVISION
+        assert c.execute(text('SELECT version_num FROM alembic_version')).scalar_one() == INTEGRATED_HEAD
         assert c.execute(text('SELECT role FROM users ORDER BY id')).scalars().all() == ['BUYER', 'BUYER', 'SELLER', 'ADMIN', 'INSPECTOR']
         assert c.execute(text('SELECT status FROM users WHERE id=1')).scalar_one() == 'SUSPENDED'
         assert c.execute(text('SELECT shop_name FROM verifications')).scalar_one() is None
@@ -64,7 +65,7 @@ def test_upgrade_old_data_constraints_and_forward_only_downgrade(db):
 def test_empty_database_has_one_head(db):
     from alembic.script import ScriptDirectory
     engine, config = db
-    assert ScriptDirectory.from_config(config).get_heads() == [REVISION]
+    assert ScriptDirectory.from_config(config).get_heads() == [INTEGRATED_HEAD]
     command.upgrade(config, 'head')
     with engine.connect() as c:
         assert c.execute(text('SELECT count(*) FROM users')).scalar_one() == 0

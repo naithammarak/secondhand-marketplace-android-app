@@ -48,6 +48,7 @@ def _in_list(column: str, values: tuple[str, ...]) -> str:
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
+        UniqueConstraint("id", "buyer_id", name="uq_orders_id_buyer_id"),
         CheckConstraint(_in_list("status", ORDER_STATUSES), name="ck_orders_status"),
         CheckConstraint("buyer_id <> seller_id", name="ck_orders_not_self_purchase"),
         CheckConstraint(

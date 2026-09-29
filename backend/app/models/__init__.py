@@ -1,5 +1,6 @@
 from app.models.audit import AdminAccessLog
 from app.models.brand import Brand
+from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.category import Category
 from app.models.certificate import Certificate
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
@@ -16,6 +17,7 @@ from app.models.verification import Verification
 __all__ = [
     "AdminAccessLog",
     "Brand",
+    "BuyerInspectionDecision",
     "Category",
     "Certificate",
     "Escrow",
