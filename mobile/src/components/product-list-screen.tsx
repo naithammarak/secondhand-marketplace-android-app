@@ -25,7 +25,7 @@ import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState, Skeleton } from './wondee/primitives';
-import { WondeeLogo } from './wondee/brand';
+import { BrandHeaderLogo } from './wondee/brand';
 import { Fonts, MaxContentWidth } from '@/constants/theme';
 import { formatBaht } from '@/orders/order-format';
 import { productCatalogStore } from '@/products/product-catalog-instance';
@@ -192,7 +192,7 @@ function HomeBrandBanner() {
         </View>
       </View>
 
-      <ThemedText style={styles.bannerAdLabel}>AD · WONDEE</ThemedText>
+      <ThemedText style={styles.bannerAdLabel}>AD · 2NDHAND</ThemedText>
     </View>
   );
 }
@@ -263,13 +263,7 @@ export function ProductListScreen() {
         >
           {/* Row 1: Brand Wordmark + Account Action Button */}
           <View style={styles.brandRow}>
-            <View style={styles.brandLeft}>
-              <WondeeLogo size={28} />
-              <View style={styles.brandWordmarkBox}>
-                <ThemedText style={[styles.brandTitle, { color: theme.text }]}>Wondee</ThemedText>
-                <ThemedText style={styles.brandSubtitle}>MARKETPLACE</ThemedText>
-              </View>
-            </View>
+            <BrandHeaderLogo iconSize={30} wordmarkWidth={96} wordmarkHeight={32} />
             <CatalogAccountButton />
           </View>
 
@@ -497,10 +491,6 @@ const styles = StyleSheet.create({
   page: { flex: 1, alignSelf: 'center', gap: 0, width: '100%' },
   headerArea: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, gap: 10, borderBottomWidth: 1 },
   brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  brandWordmarkBox: { justifyContent: 'center' },
-  brandTitle: { fontFamily: Fonts.displayBold, fontSize: 16, fontWeight: '800', lineHeight: 20 },
-  brandSubtitle: { fontSize: 8.5, fontWeight: '800', color: '#10B981', letterSpacing: 1.5, marginTop: -2 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

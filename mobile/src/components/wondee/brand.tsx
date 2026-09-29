@@ -41,20 +41,18 @@ export function WondeeMascot({ size = 64, variant = 'neutral', outline = false, 
     </Animated.View>
   </View>;
 }
-export function WondeeLogo({ size = 36 }: { size?: number }) {
-  return <Svg width={size} height={size} viewBox="0 0 48 48" accessibilityLabel="วนดี" accessibilityRole="image">
-    <Rect width="48" height="48" rx="17" fill="#047857" />
-    <Path d="M14 25 A11 11 0 1 0 20 14" fill="none" stroke="#d1fae5" strokeWidth="5" strokeLinecap="round" />
-    <Path d="M14 12 L25 12 L25 23" fill="none" stroke="#d1fae5" strokeWidth="4" strokeLinecap="round" />
-    <Path d="M30 11 Q38 3 42 10 Q38 18 30 11" fill="#00baa7" />
-  </Svg>;
+
+export { BrandIcon, BrandWordmark, BrandHeaderLogo } from './brand-logo';
+import { BrandIcon, BrandHeaderLogo } from './brand-logo';
+
+export function WondeeLogo({ size = 32 }: { size?: number }) {
+  return <BrandIcon size={size} />;
 }
+
 export function WondeeWordmark() {
-  return <View style={styles.wordmark}><WondeeLogo /><View style={{ flexShrink: 1 }}>
-    <ThemedText style={{ fontFamily: Fonts.wordmark, fontWeight: '800', fontSize: 20 }}>Wondee</ThemedText>
-    <ThemedText type="small" themeColor="textSecondary">ส่งต่อของรัก ให้พบเจ้าของใหม่</ThemedText>
-  </View></View>;
+  return <BrandHeaderLogo />;
 }
+
 const styles = StyleSheet.create({ wordmark: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 } });
 
 export {
