@@ -17,7 +17,7 @@ export default function PublicCertificateScreen() {
 
 function CertificateContent({ token }: { token?: string }) {
   const service = useMemo(() => createInspectionService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL }), []);
-  const [data, setData] = useState<{ certificate_no: string; result: InspectionResult; issued_at: string }>();
+  const [data, setData] = useState<{ certificate_no: string; result: InspectionResult; issued_at: string; status: 'ISSUED' | 'REVOKED' }>();
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,11 @@ function CertificateContent({ token }: { token?: string }) {
     <MarketplaceHeader title="ใบรับรองผลการตรวจ" back /><ScrollView contentContainerStyle={{ padding: 24, gap: 16 }}>
       {(!token || !/^[\w-]{20,100}$/.test(token)) ? <ThemedText>ลิงก์ใบรับรองไม่ถูกต้อง</ThemedText> : loading && <Loading label="กำลังตรวจสอบใบรับรอง" />}
       {error && <Card><ThemedText accessibilityRole="alert">{error}</ThemedText><Button label="ลองใหม่" onPress={() => { setError(undefined); setData(undefined); setLoading(true); setAttempt(value => value + 1); }} /></Card>}
-      {data && <Card><WondeeMascot variant="seal" size={96} /><ThemedText type="title">ใบรับรองวนดี</ThemedText>
+      {data && data.status !== 'ISSUED' && <Card><ThemedText type="title">{data.status === 'REVOKED' ? 'ใบรับรองนี้ถูกเพิกถอน' : 'ไม่สามารถยืนยันใบรับรองนี้ได้'}</ThemedText>
+        <ThemedText>ไม่สามารถใช้ใบรับรองนี้เพื่อยืนยันผลการตรวจได้</ThemedText><ThemedText>{data.certificate_no}</ThemedText>
+        <ThemedText>ออกเมื่อ {new Date(data.issued_at).toLocaleString('th-TH')}</ThemedText>
+      </Card>}
+      {data?.status === 'ISSUED' && <Card><WondeeMascot variant="seal" size={96} /><ThemedText type="title">ใบรับรองวนดี</ThemedText>
         <ThemedText>{data.certificate_no}</ThemedText><ThemedText type="subtitle">{outcomes[data.result]?.label ?? 'ผลการตรวจ'}</ThemedText>
         <ThemedText>ออกเมื่อ {new Date(data.issued_at).toLocaleString('th-TH')}</ThemedText><ThemedText>รับรองผลการตรวจ ณ วันที่ออกตามรายงาน</ThemedText>
       </Card>}

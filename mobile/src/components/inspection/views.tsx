@@ -103,7 +103,7 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
 export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], certificate = null, nextAction,
   certificatePublicHtml = false, certificateDecision = false, canDecide = false, busy, error, onDecision }: {
   outcome: InspectionOutcome; summary: string; inspectedAt: string; photos?: InspectionPhoto[];
-  certificate?: CertificateData | null; nextAction: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | null;
+  certificate?: CertificateData | null; nextAction: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | 'SHIP_TO_BUYER' | null;
   certificatePublicHtml?: boolean; certificateDecision?: boolean; canDecide?: boolean; busy?: boolean; error?: string;
   onDecision?(decision: 'CONFIRM' | 'REJECT', reason?: string | null): void;
 }) {

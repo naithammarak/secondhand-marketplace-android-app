@@ -57,7 +57,12 @@ test('Certificate failure code and body timeout are surfaced without claiming su
 
 test('Courier and Admin use protected routes and stable mutation keys', async () => {
   const calls = [];
-  const service = createInspectionService({ baseUrl: 'https://api.test', fetch: async (url, init) => { calls.push({url,init}); return json(200,{}); } });
+  const service = createInspectionService({ baseUrl: 'https://api.test', fetch: async (url, init) => {
+    calls.push({url,init});
+    return url.includes('/courier/shipments')
+      ? json(200, { items: [], scope: 'pending', offset: 0, limit: 100, has_more: false, next_offset: null })
+      : json(200,{});
+  } });
   await service.adminOrders('admin',20);
   await service.assignCourier('admin',42,12,'assign-key');
   await service.courierShipments('courier');
@@ -65,17 +70,63 @@ test('Courier and Admin use protected routes and stable mutation keys', async ()
   assert.equal(calls[0].url, 'https://api.test/admin/orders?status=SHIPPING_TO_CENTER&limit=20&offset=20');
   assert.deepEqual(JSON.parse(calls[1].init.body), {courier_id:12});
   assert.equal(calls[1].init.headers['Idempotency-Key'],'assign-key');
+  assert.equal(calls[2].url, 'https://api.test/courier/shipments?scope=pending&offset=0&limit=100');
   assert.equal(calls[3].init.headers.Authorization,'Bearer courier');
   assert.equal(calls[3].init.headers['Idempotency-Key'],'delivery-key');
   assert.deepEqual(service.privateImageSource('courier',{url:'/shipment-delivery-proofs/4'}), {uri:'https://api.test/shipment-delivery-proofs/4',headers:{Authorization:'Bearer courier'}});
   assert.throws(() => service.privateImageSource('courier',{url:'https://evil.test/4'}));
 });
 
+test('Courier follows every next_offset page for the selected scope and removes repeated shipments', async () => {
+  const calls = [];
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, order_id: index + 101, proofs: [] }));
+  const service = createInspectionService({ baseUrl: 'https://api.test', fetch: async url => {
+    calls.push(url);
+    const offset = Number(new URL(url).searchParams.get('offset'));
+    return offset === 0
+      ? json(200, { items: firstPage, scope: 'history', offset: 0, limit: 100, has_more: true, next_offset: 100 })
+      : json(200, { items: [firstPage[99], { id: 101, order_id: 201, proofs: [] }], scope: 'history', offset: 100, limit: 100, has_more: false, next_offset: null });
+  } });
+
+  const result = await service.courierShipments('courier', 'history');
+  assert.deepEqual(calls, [
+    'https://api.test/courier/shipments?scope=history&offset=0&limit=100',
+    'https://api.test/courier/shipments?scope=history&offset=100&limit=100',
+  ]);
+  assert.equal(result.items.length, 101);
+  assert.equal(result.items[100].id, 101);
+  assert.equal(result.scope, 'history');
+  assert.equal(result.offset, 0);
+  assert.equal(result.has_more, false);
+  assert.equal(result.next_offset, null);
+});
+
+test('Courier rejects a non-advancing pagination cursor instead of looping', async () => {
+  const service = createInspectionService({ baseUrl: 'https://api.test', fetch: async () =>
+    json(200, { items: [], scope: 'pending', offset: 0, limit: 100, has_more: true, next_offset: 0 }) });
+  await assert.rejects(service.courierShipments('courier'), error => error.code === 'invalid_pagination');
+});
+
 test('public certificate read needs no session and sends no bearer token', async () => {
   let request;
-  const service = createInspectionService({ baseUrl:'https://api.test', fetch:async (url, init) => {request={url,init};return json(200,{certificate_no:'C1',result:'PASS',issued_at:'2026-09-28T00:00:00Z'});} });
+  const service = createInspectionService({ baseUrl:'https://api.test', fetch:async (url, init) => {request={url,init};return json(200,{certificate_no:'C1',result:'PASS',issued_at:'2026-09-28T00:00:00Z',status:'ISSUED'});} });
   const result=await service.publicCertificate('opaque-token');
   assert.equal(result.certificate_no,'C1');
-  assert.equal(request.url,'https://api.test/certificates/opaque-token');
+  assert.equal(result.status, 'ISSUED');
+  assert.equal(request.url,'https://api.test/certificates/opaque-token/json');
   assert.equal(request.init.headers.Authorization,undefined);
+});
+
+test('buyer inspection decision posts the documented payload to the protected route', async () => {
+  let request;
+  const service = createInspectionService({ baseUrl:'https://api.test', fetch:async (url, init) => {
+    request = { url, init };
+    return json(200, { decision: { decision: 'REJECT', reason: 'สภาพไม่ตรง', decided_at: '2026-09-29T00:00:00Z' }, next_action: 'RETURN_TO_SELLER' });
+  } });
+  const result = await service.decideBuyerInspection('buyer-token', 42, { decision: 'REJECT', reason: 'สภาพไม่ตรง' });
+  assert.equal(request.url, 'https://api.test/orders/42/inspection/decision');
+  assert.equal(request.init.method, 'POST');
+  assert.equal(request.init.headers.Authorization, 'Bearer buyer-token');
+  assert.deepEqual(JSON.parse(request.init.body), { decision: 'REJECT', reason: 'สภาพไม่ตรง' });
+  assert.equal(result.next_action, 'RETURN_TO_SELLER');
 });

@@ -212,7 +212,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
 
   let footerNote = 'คำสั่งซื้อล่าสุด';
   if (item.status === 'RESULT_NOTIFIED') {
-    footerNote = `ออกใบรับรอง #CERT-${item.id} แล้ว 📜`;
+    footerNote = 'แจ้งผลการตรวจแล้ว';
   } else if ((item.status as string) === 'SHIPPED') {
     footerNote = 'ตรวจสินค้าผ่านแล้ว • TH01928374';
   } else if (item.status === 'WAITING_PAYMENT') {
@@ -902,4 +902,3 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
 });
-

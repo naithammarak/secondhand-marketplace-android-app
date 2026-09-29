@@ -27,6 +27,13 @@ test('paid orders have no payment action', () => {
   expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
   expect(screen.getByRole('button', { name: 'ดูรายละเอียด' })).toBeTruthy();
 });
+test('result notification does not claim that every result has a certificate', () => {
+  mockState.items[0].status = 'RESULT_NOTIFIED';
+  mockState.items[0].paymentStatus = 'PAID';
+  render(<OrdersListScreen />);
+  expect(screen.getByText('แจ้งผลการตรวจแล้ว')).toBeTruthy();
+  expect(screen.queryByText(/ออกใบรับรอง/)).toBeNull();
+});
 test.each(['CANCELLED', 'UNKNOWN'])('%s unpaid orders open details without offering payment', (status) => {
   mockState.items[0].status = status;
   render(<OrdersListScreen />);
@@ -81,4 +88,3 @@ test('displays seller countdown label for seller WAITING_PAYMENT order', () => {
   render(<OrdersListScreen />);
   expect(screen.getByText(/⏱ ผู้ซื้อต้องชำระภายใน 19:\d\d|⏱ ผู้ซื้อต้องชำระภายใน 20:00/)).toBeTruthy();
 });
-

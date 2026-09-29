@@ -9,7 +9,7 @@ import { inspectionError, useInspectionApi, useInspectionMutation } from '@/insp
 import { orderStatusLabel } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { createOrderService, type OrderDetail } from '@/services/order-service';
-import type { BuyerResult, EvidenceFile, WorkDetail, CourierShipment } from '@/services/inspection-service';
+import type { BuyerResult, BuyerDecision, CourierShipmentScope, EvidenceFile, WorkDetail, CourierShipment } from '@/services/inspection-service';
 import { MarketplaceHeader } from '../marketplace-header';
 import { Button, Card, Loading, Row, Screen, styles } from '../order-ui';
 import { ThemedText } from '../themed-text';
@@ -137,16 +137,26 @@ function Work({ id }: { id: number }) {
 function Result({ id }: { id: number }) {
   const api = useInspectionApi();
   const resource = useResource(useCallback(() => api.call(token => api.service.getBuyerResult(token, id)), [api, id]));
-  return <><Status {...resource} />{resource.data && <ResultData result={resource.data} />}</>;
+  const action = useInspectionMutation();
+  const decide = (decision: BuyerDecision, reason?: string | null) => {
+    const identity = `buyer-decision:${id}:${decision}:${reason ?? ''}`;
+    void action.mutate(identity, () => api.call(token => api.service.decideBuyerInspection(token, id,
+      reason === undefined ? { decision } : { decision, reason }))).then(ok => { if (ok) void resource.reload(); });
+  };
+  return <><Status {...resource} />{resource.data && <ResultData result={resource.data} busy={action.busy} error={action.error} onDecision={decide} />}</>;
 }
 
-function ResultData({ result }: { result: BuyerResult | WorkDetail }) {
+function ResultData({ result, busy = false, error, onDecision }: {
+  result: BuyerResult | WorkDetail; busy?: boolean; error?: string; onDecision?(decision: BuyerDecision, reason?: string | null): void;
+}) {
   const api = useInspectionApi();
   if (!result.result || !result.inspected_at) return <EmptyState title="ยังไม่มีผลการตรวจ" />;
+  const buyerCanDecide = 'can_decide' in result;
   return <BuyerResultView outcome={result.result} summary={result.summary ?? ''} inspectedAt={result.inspected_at}
     photos={result.evidence.map(photo => ({ id: photo.id, label: `หลักฐาน ${photo.id}`, source: api.service.privateImageSource(api.token, photo) }))}
-    certificate={result.certificate ? { number: result.certificate.certificate_no, publicUrl: result.certificate.public_url, issuedAt: result.certificate.issued_at } : null}
-    nextAction={result.next_action} certificatePublicHtml />;
+    certificate={result.certificate?.status === 'ISSUED' ? { number: result.certificate.certificate_no, publicUrl: result.certificate.public_url, issuedAt: result.certificate.issued_at } : null}
+    nextAction={result.next_action} certificatePublicHtml certificateDecision={buyerCanDecide} canDecide={buyerCanDecide && result.can_decide}
+    busy={busy} error={error} onDecision={onDecision} />;
 }
 
 export function InspectionOrderPanel({ order }: { order: OrderDetail }) {
@@ -170,9 +180,17 @@ function ProgressPanel({ order }: { order: OrderDetail }) {
 
 function Courier() {
   const api = useInspectionApi();
-  const resource = useResource(useCallback(() => api.call(token => api.service.courierShipments(token)), [api]));
-  return <><Status {...resource} />{resource.data?.items.length === 0 && <EmptyState title="ยังไม่มีงานที่มอบหมายให้คุณ" />}
-    {resource.data?.items.map(item => <CourierItem key={item.id} item={item} reload={resource.reload} />)}
+  const [scope, setScope] = useState<CourierShipmentScope>('pending');
+  const resource = useResource(useCallback(() => api.call(token => api.service.courierShipments(token, scope)), [api, scope]));
+  const scopes: { value: CourierShipmentScope; label: string }[] = [
+    { value: 'pending', label: 'รอดำเนินการ' }, { value: 'history', label: 'ประวัติ' }, { value: 'all', label: 'ทั้งหมด' },
+  ];
+  const emptyTitle = scope === 'history' ? 'ยังไม่มีงานส่งถึงศูนย์ในประวัติ' : 'ยังไม่มีงานที่มอบหมายให้คุณ';
+  const shipments = resource.data?.scope === scope ? resource.data.items : [];
+  return <><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{scopes.map(option =>
+    <Button key={option.value} label={option.label} variant={scope === option.value ? 'primary' : 'secondary'} disabled={resource.loading} onPress={() => setScope(option.value)} />
+  )}</View><Status {...resource} />{resource.data?.scope === scope && shipments.length === 0 && <EmptyState title={emptyTitle} />}
+    {shipments.map(item => <CourierItem key={item.id} item={item} reload={resource.reload} />)}
     <Button label="โหลดงานล่าสุด" disabled={resource.loading} onPress={() => { void resource.reload(); }} /></>;
 }
 
