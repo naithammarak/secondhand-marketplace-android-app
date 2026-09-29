@@ -70,3 +70,13 @@ test('positive decision fails closed when its certificate is absent', () => {
   render(<BuyerResultView {...props} outcome="PASS" certificate={null} onDecision={jest.fn()} />);
   expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
 });
+
+test('a saved rejection shows its recorded reason and return next step without decision controls', () => {
+  render(<BuyerResultView {...props} outcome="PASS" canDecide={false} nextAction="RETURN_TO_SELLER"
+    recordedDecision={{ decision: 'REJECT', reason: 'สภาพไม่ตรง', decidedAt: '2026-09-29T00:00:00Z' }} onDecision={jest.fn()} />);
+  expect(screen.getByText('บันทึกคำตัดสิน: ไม่ยอมรับผลตรวจ')).toBeTruthy();
+  expect(screen.getByText('เหตุผล: สภาพไม่ตรง')).toBeTruthy();
+  expect(screen.getByText(/ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย/)).toBeTruthy();
+  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้')).toBeNull();
+});

@@ -19,6 +19,7 @@ export const outcomes: Record<InspectionOutcome, { label: string; variant: Masco
 };
 export type InspectionPhoto = { id: number; source: ImageSource; label: string };
 export type CertificateData = { number: string; publicUrl: string; qrSource?: ImageSource; issuedAt: string };
+export type BuyerDecisionData = { decision: 'CONFIRM' | 'REJECT'; reason: string | null; decidedAt: string };
 export function UnavailableInspection({ title = 'บริการตรวจสินค้ายังไม่พร้อมใช้งาน' }: { title?: string }) {
   return <Card><EmptyState title={title} detail="คุณยังดูสถานะคำสั่งซื้อและใบเสร็จที่มีอยู่ได้ กรุณากลับมาตรวจสอบบริการนี้อีกครั้ง" /></Card>;
 }
@@ -100,10 +101,11 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
     </> : <ThemedText>ไม่มีใบรับรองสำหรับผลการตรวจนี้</ThemedText>}
   </ConfirmationSheet>;
 }
-export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], certificate = null, nextAction,
+export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], certificate = null, nextAction, recordedDecision = null,
   certificatePublicHtml = false, certificateDecision = false, canDecide = false, busy, error, onDecision }: {
   outcome: InspectionOutcome; summary: string; inspectedAt: string; photos?: InspectionPhoto[];
   certificate?: CertificateData | null; nextAction: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | 'SHIP_TO_BUYER' | null;
+  recordedDecision?: BuyerDecisionData | null;
   certificatePublicHtml?: boolean; certificateDecision?: boolean; canDecide?: boolean; busy?: boolean; error?: string;
   onDecision?(decision: 'CONFIRM' | 'REJECT', reason?: string | null): void;
 }) {
@@ -116,11 +118,23 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   const validReason = [...reason.trim()].length <= 500;
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
   const allowed = positive && !!certificate && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
+  const nextActionLabel = nextAction === 'RETURN_TO_SELLER'
+    ? 'ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย ติดตามความคืบหน้าจากคำสั่งซื้อ'
+    : nextAction === 'SHIP_TO_BUYER'
+      ? 'ขั้นตอนถัดไปคือจัดส่งสินค้าไปยังผู้ซื้อ การยอมรับผลตรวจยังไม่ใช่การยืนยันว่าได้รับสินค้าแล้ว'
+      : nextAction === 'WAIT_BUYER_DECISION'
+        ? 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ'
+        : 'ยังไม่มีข้อมูลขั้นตอนถัดไปจากระบบ';
   return <View style={{ gap: 16 }}><Card><View style={{ alignItems: 'center', gap: 16 }}><WondeeMascot size={96} variant={info.variant} /><ThemedText type="title" style={{ color: theme[info.tone], textAlign: 'center' }}>{info.label}</ThemedText><ThemedText type="small" themeColor="textSecondary">ตรวจเมื่อ {new Date(inspectedAt).toLocaleString('th-TH')}</ThemedText></View></Card>
     <Card><ThemedText type="subtitle">รายงานการตรวจ</ThemedText><ThemedText>{summary}</ThemedText><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>{photos.map(item => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`ขยาย${item.label}`} onPress={() => setPhoto(item)}><Image cachePolicy="none" source={item.source} style={{ width: 96, height: 96, borderRadius: 12 }} accessibilityLabel={item.label} /></Pressable>)}</View></Card>
     {positive && certificate && <Card><Button label="ดูใบรับรองผลการตรวจ" onPress={() => setCertificate(true)} /></Card>}
-    <Card><ThemedText type="subtitle">ขั้นตอนถัดไป</ThemedText><ThemedText>{nextAction === 'RETURN_TO_SELLER' ? 'ระบบอยู่ระหว่างขั้นตอนส่งคืนผู้ขาย ติดตามสถานะการคืนเงินจากคำสั่งซื้อ' : nextAction === 'WAIT_BUYER_DECISION' ? 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ' : 'ยังไม่มีข้อมูลขั้นตอนถัดไปจากระบบ'}</ThemedText>
-      {allowed ? <><Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} /><Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} /></> : positive && <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>}
+    <Card><ThemedText type="subtitle">ขั้นตอนถัดไป</ThemedText><ThemedText>{nextActionLabel}</ThemedText>
+      {recordedDecision && <View style={{ gap: 4 }}>
+        <ThemedText type="smallBold">{recordedDecision.decision === 'CONFIRM' ? 'บันทึกคำตัดสิน: ยอมรับผลตรวจ' : 'บันทึกคำตัดสิน: ไม่ยอมรับผลตรวจ'}</ThemedText>
+        {recordedDecision.decision === 'REJECT' && recordedDecision.reason && <ThemedText>เหตุผล: {recordedDecision.reason}</ThemedText>}
+        <ThemedText type="small" themeColor="textSecondary">บันทึกเมื่อ {new Date(recordedDecision.decidedAt).toLocaleString('th-TH')}</ThemedText>
+      </View>}
+      {allowed ? <><Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} /><Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} /></> : positive && !recordedDecision && <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
     </Card>
     <CertificateSheet certificate={positive ? certificate : null} outcome={outcome} enabled={certificatePublicHtml} visible={showCertificate && positive} onClose={() => setCertificate(false)} />

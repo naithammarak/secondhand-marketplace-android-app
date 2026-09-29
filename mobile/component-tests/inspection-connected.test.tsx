@@ -37,7 +37,11 @@ beforeEach(() => {
     evidence: [], certificate: { certificate_no: 'C-42', public_url: 'https://api.test/certificates/token', issued_at: '2026-09-28T00:00:00Z', status: 'ISSUED' },
     decision: null, can_decide: true, next_action: 'WAIT_BUYER_DECISION' };
   mockService.getBuyerResult.mockImplementation(async () => mockBuyerResult);
-  mockService.decideBuyerInspection.mockResolvedValue({ decision: { decision: 'CONFIRM', reason: null, decided_at: '2026-09-29T00:00:00Z' }, next_action: 'SHIP_TO_BUYER' });
+  mockService.decideBuyerInspection.mockImplementation(async () => {
+    const savedDecision = { decision: 'CONFIRM', reason: null, decided_at: '2026-09-29T00:00:00Z' };
+    mockBuyerResult = { ...mockBuyerResult, decision: savedDecision, can_decide: false, next_action: 'SHIP_TO_BUYER' };
+    return { decision: savedDecision, next_action: 'SHIP_TO_BUYER' };
+  });
   mockService.courierShipments.mockResolvedValue({ items: [], scope: 'pending', offset: 0, limit: 100, has_more: false, next_offset: null });
 });
 test('guest and buyer cannot load the Inspector queue', () => {
@@ -69,7 +73,7 @@ test('receive waits for courier delivery, then real receive/start callbacks adva
   expect(mockService.start).toHaveBeenCalledWith('current', 9, expect.any(String));
 });
 
-test('buyer result submits a confirmed decision and reloads the server result', async () => {
+test('buyer result submits a confirmed decision and displays the saved decision and shipping next step', async () => {
   mockAuth.account.role = 'SELLER';
   mockParams = { orderId: '42' };
   render(<InspectionScreen kind="result" />);
@@ -78,6 +82,10 @@ test('buyer result submits a confirmed decision and reloads the server result', 
   fireEvent.press(screen.getByText('ยืนยันยอมรับผลตรวจ'));
   await waitFor(() => expect(mockService.decideBuyerInspection).toHaveBeenCalledWith('current', 42, { decision: 'CONFIRM' }));
   await waitFor(() => expect(mockService.getBuyerResult).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText('บันทึกคำตัดสิน: ยอมรับผลตรวจ')).toBeTruthy();
+  expect(screen.getByText(/ขั้นตอนถัดไปคือจัดส่งสินค้าไปยังผู้ซื้อ/)).toBeTruthy();
+  expect(screen.getByText(/ยังไม่ใช่การยืนยันว่าได้รับสินค้าแล้ว/)).toBeTruthy();
+  expect(screen.queryByText('การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้')).toBeNull();
 });
 
 test('Courier screen selects a queue scope and refreshes that scope from its first page', async () => {
