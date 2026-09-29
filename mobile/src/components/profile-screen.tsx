@@ -1,7 +1,8 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useAuth } from '@/auth/auth-provider';
 import { marketplaceReturn } from '@/auth/marketplace-return-instance';
 import { useVerification } from '@/verification/verification-provider';
@@ -82,12 +83,62 @@ export function ProfileScreen() {
       ? statusLabels[record.status]
       : 'ขอเปิดร้านค้า';
 
+  const [isManualRefresh, setIsManualRefresh] = useState(false);
+
+  const handleManualRefresh = useCallback(async () => {
+    setIsManualRefresh(true);
+    try {
+      if (owner) await auth.retryAccount();
+      if (
+        owner &&
+        state.owner === owner &&
+        (auth.account?.role === 'BUYER' || auth.account?.role === 'SELLER')
+      ) {
+        await store.refresh();
+      }
+    } finally {
+      setIsManualRefresh(false);
+    }
+  }, [auth, owner, state.owner, store]);
+
+  const pullToRefresh = usePullToRefresh({
+    refreshing: isManualRefresh,
+    onRefresh: () => {
+      void handleManualRefresh();
+    },
+  });
+
   return (
     <Screen>
       <SafeAreaView style={[styles.screenContent, { flex: 1, alignSelf: 'center' }]}>
         <MarketplaceHeader title="ฉัน" />
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          alwaysBounceVertical={true}
+          onScroll={pullToRefresh.handleScroll}
+          scrollEventThrottle={16}
+          {...(Platform.OS === 'web'
+            ? {
+                onWheel: pullToRefresh.handleWheel,
+                onPointerDown: pullToRefresh.handlePointerDown,
+                onPointerUp: pullToRefresh.handlePointerUp,
+              }
+            : {})}
+          refreshControl={
+            <RefreshControl
+              refreshing={isManualRefresh}
+              colors={['#059669']}
+              tintColor="#059669"
+              onRefresh={handleManualRefresh}
+            />
+          }>
+          {Platform.OS === 'web' && isManualRefresh ? (
+            <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+              <Loading label="กำลังอัปเดตบัญชี..." />
+            </View>
+          ) : null}
           {auth.initializing ? (
             <Loading label="กำลังตรวจสอบบัญชี" />
           ) : (
@@ -159,7 +210,7 @@ export function ProfileScreen() {
                   </View>
                 </View>
 
-                {auth.accountChecking && <Loading label="กำลังอัปเดตบัญชี" />}
+                {!account && auth.accountChecking && <Loading label="กำลังอัปเดตบัญชี" />}
                 {auth.accountError && (
                   <View style={styles.accountErrorBox}>
                     <ThemedText accessibilityRole="alert" style={{ color: theme.danger }}>

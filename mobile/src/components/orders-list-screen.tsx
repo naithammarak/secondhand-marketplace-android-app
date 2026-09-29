@@ -390,11 +390,22 @@ export function OrdersListScreen() {
     (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') &&
     !auth.accountError;
 
+  const [isManualRefresh, setIsManualRefresh] = useState(false);
+
+  useEffect(() => {
+    if (!state.refreshing) {
+      setIsManualRefresh(false);
+    }
+  }, [state.refreshing]);
+
+  const handleManualRefresh = () => {
+    setIsManualRefresh(true);
+    void store.refresh();
+  };
+
   const pullToRefresh = usePullToRefresh({
     refreshing: state.refreshing,
-    onRefresh: () => {
-      void store.refresh();
-    },
+    onRefresh: handleManualRefresh,
   });
 
   useEffect(() => {
@@ -403,8 +414,8 @@ export function OrdersListScreen() {
   }, [customer, view, auth.account?.role, store]);
 
   useEffect(() => {
-    if (state.owner && customer) void store.load();
-  }, [customer, state.owner, store]);
+    if (state.owner && customer && !state.loaded) void store.load();
+  }, [customer, state.loaded, state.owner, store]);
 
   const activeTabs = state.view === 'seller' ? SELLER_TABS : BUYER_TABS;
 
@@ -549,12 +560,10 @@ export function OrdersListScreen() {
             : {})}
           refreshControl={
             <RefreshControl
-              refreshing={state.refreshing}
+              refreshing={isManualRefresh && state.refreshing}
               colors={['#059669']}
               tintColor="#059669"
-              onRefresh={() => {
-                void store.refresh();
-              }}
+              onRefresh={handleManualRefresh}
             />
           }
           onEndReachedThreshold={0.3}
@@ -571,7 +580,7 @@ export function OrdersListScreen() {
           )}
           ListHeaderComponent={
             <View>
-              {Platform.OS === 'web' && state.refreshing ? (
+              {Platform.OS === 'web' && isManualRefresh && state.refreshing ? (
                 <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                   <Loading label="กำลังรีเฟรชคำสั่งซื้อ..." />
                 </View>
