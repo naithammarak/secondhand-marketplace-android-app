@@ -19,7 +19,7 @@ from app.database import get_db
 from app.main import app
 from app.models.certificate import Certificate
 from app.models.buyer_inspection_decision import BuyerInspectionDecision
-from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
+from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
@@ -146,6 +146,110 @@ def started_work(world):
     started = client.post(f"/inspections/{work_id}/start", json={}, headers=request_headers(inspector))
     assert started.status_code == 200 and started.json()["order_status"] == "INSPECTING", started.text
     return order_id, work_id
+
+
+def review_shipment(session, source, courier_id, *, delivered=False):
+    """Independent order/shipment with real FKs for courier regression checks."""
+    values = {column.name: getattr(source, column.name) for column in Order.__table__.columns if column.name != "id"}
+    values.update(product_id=create_product(session, source.seller_id),
+                  idempotency_key=new_key(), status="SHIPPING_TO_CENTER")
+    order = Order(**values)
+    session.add(order)
+    session.flush()
+    timestamp = inspect_api.now()
+    shipment = Shipment(order_id=order.id, courier_id=courier_id, leg="TO_CENTER",
+                        carrier="Test courier", tracking_number=new_key(), shipped_at=timestamp,
+                        status="IN_TRANSIT")
+    session.add(shipment)
+    session.flush()
+    if delivered:
+        session.add(ShipmentDeliveryProof(shipment_id=shipment.id, sort_order=0,
+                    object_key=f"courier/test/{new_key()}.png", mime_type="image/png",
+                    size_bytes=10, sha256="0" * 64, uploaded_by=courier_id, uploaded_at=timestamp))
+        session.flush()
+        shipment.status = "DELIVERED"
+        shipment.courier_delivered_at = timestamp
+        shipment.received_at = timestamp
+        shipment.received_by = courier_id
+        session.flush()
+    return shipment.id
+
+
+def test_courier_queue_preserves_old_pending_and_paginates(world):
+    client, engine, _, _, _, _, _, courier_id, courier, _ = world
+    order_id, _ = started_work(world)
+    with Session(engine) as session:
+        source = session.get(Order, order_id)
+        old_pending = review_shipment(session, source, courier_id)
+        history = [review_shipment(session, source, courier_id, delivered=True) for _ in range(100)]
+        session.commit()
+    pending = client.get("/courier/shipments", headers=courier)
+    assert pending.status_code == 200
+    assert [item["id"] for item in pending.json()["items"]] == [old_pending]
+    first = client.get("/courier/shipments?scope=all&limit=100", headers=courier).json()
+    assert [item["id"] for item in first["items"]] == list(reversed(history))
+    assert first["has_more"] and first["next_offset"] == 100
+    second = client.get("/courier/shipments?scope=all&offset=100&limit=100", headers=courier).json()
+    assert old_pending in [item["id"] for item in second["items"]]
+    assert not second["has_more"] and second["next_offset"] is None
+    past = client.get("/courier/shipments?scope=history", headers=courier).json()
+    assert old_pending not in [item["id"] for item in past["items"]]
+    # More than 100 pending jobs remain reachable, with no duplicates on a fixed dataset.
+    with Session(engine) as session:
+        source = session.get(Order, order_id)
+        pending_ids = [review_shipment(session, source, courier_id) for _ in range(100)]
+        _, outsider = create_user(session, UserRole.COURIER)
+        session.commit()
+    first = client.get("/courier/shipments", headers=courier).json()
+    second = client.get("/courier/shipments?offset=100&limit=100", headers=courier).json()
+    assert [item["id"] for item in first["items"] + second["items"]] == list(reversed(pending_ids)) + [old_pending]
+    assert client.get("/courier/shipments?offset=9999", headers=courier).json()["items"] == []
+    assert client.get("/courier/shipments?scope=all", headers=outsider).json()["items"] == []
+    for query in ("limit=101", "limit=0", "offset=-1", "scope=invalid"):
+        assert client.get(f"/courier/shipments?{query}", headers=courier).status_code == 422
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_courier_upload_response_failure_cleans_or_logs_object(world, monkeypatch, caplog, cleanup_fails):
+    from fastapi import HTTPException
+
+    client, engine, _, _, _, _, _, courier_id, courier, _ = world
+    order_id, _ = started_work(world)
+    with Session(engine) as session:
+        shipment_id = review_shipment(session, session.get(Order, order_id), courier_id)
+        session.commit()
+    storage = inspect_api.inspection_storage
+    real_upload = storage.upload_object
+    paths = []
+
+    def write_then_timeout(path, content, mime):
+        real_upload(path, content, mime)
+        paths.append(path)
+        raise HTTPException(503, detail={"code": "storage_unavailable"})
+
+    monkeypatch.setattr(storage, "upload_object", write_then_timeout)
+    if cleanup_fails:
+        real_unlink = Path.unlink
+
+        def fail_cleanup(path, *args, **kwargs):
+            if path == storage._local_path(paths[-1]):
+                raise OSError("Simulated delete outage")
+            return real_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", fail_cleanup)
+    headers = request_headers(courier)
+    for _ in range(2):
+        result = client.post(f"/courier/shipments/{shipment_id}/proofs",
+                             files={"file": ("photo.png", image_bytes(), "image/png")}, headers=headers)
+        assert result.status_code == 503
+    with Session(engine) as session:
+        assert session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment_id).count() == 0
+        assert session.query(InspectionIdempotency).filter_by(idempotency_key=headers["Idempotency-Key"]).count() == 0
+    assert len(paths) == 2
+    for path in paths:
+        assert storage._local_path(path).exists() is cleanup_fails
+        if cleanup_fails:
+            assert path in caplog.text and "requires cleanup" in caplog.text
 
 
 @pytest.mark.parametrize("result", ["PASS", "MINOR_ISSUE", "NOT_AS_DESCRIBED", "FAKE"])
