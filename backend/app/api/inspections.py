@@ -6,6 +6,7 @@ import logging
 import hashlib
 from datetime import datetime, timezone
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -312,12 +313,28 @@ def _assign_courier(db: Session, order: Order, shipment: Shipment, body: Courier
 
 
 @router.get("/courier/shipments")
-def courier_queue(actor: User = Depends(courier_only), db: Session = Depends(get_db)):
-    rows = db.scalars(select(Shipment).where(Shipment.courier_id == actor.id, Shipment.leg == "TO_CENTER")
-                      .order_by(Shipment.id.desc()).limit(100)).all()
+def courier_queue(actor: User = Depends(courier_only), db: Session = Depends(get_db),
+                  scope: Literal["pending", "history", "all"] = Query("pending", description="pending: งานที่ยังไม่ยืนยันส่ง, history: ส่งแล้ว, all: ทั้งหมด"),
+                  offset: int = Query(0, ge=0, description="จำนวนรายการที่ข้ามเพื่อเปิดหน้าถัดไป"),
+                  limit: int = Query(100, ge=1, le=100, description="จำนวนรายการต่อหน้า สูงสุด 100")):
+    query = select(Shipment).where(Shipment.courier_id == actor.id, Shipment.leg == "TO_CENTER")
+    if scope == "pending":
+        query = query.where(Shipment.status == "IN_TRANSIT", Shipment.courier_delivered_at.is_(None))
+    elif scope == "history":
+        query = query.where(Shipment.courier_delivered_at.is_not(None))
+    rows = db.scalars(query.order_by(Shipment.id.desc()).offset(offset).limit(limit + 1)).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    proofs = {row.id: [] for row in rows}
+    if rows:
+        for proof in db.scalars(select(ShipmentDeliveryProof).where(
+                ShipmentDeliveryProof.shipment_id.in_(proofs)).order_by(ShipmentDeliveryProof.sort_order)):
+            proofs[proof.shipment_id].append(_proof_view(proof))
     return {"items": [{"id": row.id, "order_id": row.order_id, "status": row.status,
                        "courier_delivered_at": row.courier_delivered_at,
-                       "proofs": [_proof_view(item) for item in _proofs(db, row.id)]} for row in rows]}
+                       "proofs": proofs[row.id]} for row in rows],
+            "scope": scope, "offset": offset, "limit": limit,
+            "has_more": has_more, "next_offset": offset + limit if has_more else None}
 
 
 @router.post("/courier/shipments/{shipment_id}/proofs", status_code=201)
@@ -340,11 +357,11 @@ def upload_delivery_proof(shipment_id: int, response: Response, file: UploadFile
         if len(proof_rows) >= 3:
             raise api_error(409, "proof_limit", "At most three delivery photos")
         path = f"courier/{shipment.id}/{uuid4().hex}{extension}"
-        uploaded = False
+        storage_attempted = False
         commit_attempted = False
         try:
+            storage_attempted = True
             inspection_storage.upload_object(path, content, mime)
-            uploaded = True
             proof = ShipmentDeliveryProof(shipment_id=shipment.id, sort_order=len(proof_rows),
                                           object_key=path, mime_type=mime, size_bytes=len(content),
                                           sha256=digest, uploaded_by=actor.id, uploaded_at=now())
@@ -360,7 +377,7 @@ def upload_delivery_proof(shipment_id: int, response: Response, file: UploadFile
             return result
         except Exception:
             db.rollback()
-            if uploaded and not commit_attempted:
+            if storage_attempted and not commit_attempted:
                 inspection_storage.cleanup_object(path)
             elif commit_attempted:
                 logger.exception("Courier proof commit outcome uncertain: shipment_id=%s object_key=%s", shipment_id, path)
