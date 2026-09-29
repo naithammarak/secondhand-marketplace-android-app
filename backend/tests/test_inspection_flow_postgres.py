@@ -767,10 +767,10 @@ def test_promoted_owner_staff_role_loses_buyer_private_access(world):
         session.get(User, session.get(Order, order_id).buyer_id).role = UserRole.COURIER
         session.commit()
     url = f"/orders/{order_id}/inspection"
-    assert client.get(url, headers=buyer).status_code == 403
+    assert client.get(url, headers=buyer).status_code == 404
     assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 404
     denied = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
-    assert denied.status_code == 403
+    assert denied.status_code == 404
     with Session(engine) as session:
         assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
 

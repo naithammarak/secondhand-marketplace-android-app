@@ -27,7 +27,7 @@ GET /orders/42/inspection
 Authorization: Bearer <seller-account-token>
 
 200 Cache-Control: no-store
-{"order_id":42,"result":"PASS","can_decide":true,"evidence":[{"id":7,"url":"/inspection-evidence/7","expires_at":null}],"decision":null,"next_action":"WAIT_BUYER_DECISION"}
+{"order_id":42,"result":"PASS","can_decide":true,"evidence":[{"id":7,"mime_type":"image/png","size_bytes":77,"url":"/inspection-evidence/7","expires_at":null}],"decision":null,"next_action":"WAIT_BUYER_DECISION"}
 
 POST /orders/42/inspection/decision
 Authorization: Bearer <seller-account-token>
