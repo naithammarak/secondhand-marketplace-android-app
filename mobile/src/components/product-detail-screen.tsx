@@ -114,6 +114,7 @@ export function ProductDetailScreen() {
   const [zoom, setZoom] = useState<string | null>(null);
   const [selection, setSelection] = useState({ productId: NaN, index: 0 });
   const [isLiked, setIsLiked] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
   const params = useLocalSearchParams<{ id: string }>();
   const id = parseRouteId(params.id) ?? NaN;
 
@@ -480,6 +481,9 @@ export function ProductDetailScreen() {
                       <ThemedText style={[styles.sellerNameText, { color: theme.text }]} numberOfLines={1}>
                         {product.seller.displayName}
                       </ThemedText>
+                      <ThemedText style={styles.sellerRatingText}>
+                        ★ 4.8 <ThemedText style={styles.sellerReviewsText}>(32 รีวิว) ›</ThemedText>
+                      </ThemedText>
                       {product.seller.verified && (
                         <View style={styles.verifiedBadge}>
                           <CheckmarkIcon size={10} />
@@ -521,11 +525,26 @@ export function ProductDetailScreen() {
                 ]}
               >
                 <ThemedText style={[styles.descriptionHeader, { color: theme.text }]}>
-                  คำอธิบายเพิ่มเติมจากผู้ขาย
+                  รายละเอียดจากผู้ขาย
                 </ThemedText>
-                <ThemedText style={[styles.descriptionBody, { color: theme.textSecondary }]}>
+                <ThemedText
+                  style={[styles.descriptionBody, { color: theme.textSecondary }]}
+                  numberOfLines={descExpanded ? undefined : 3}
+                >
                   {product.description || 'ผู้ขายไม่ได้ระบุรายละเอียดเพิ่มเติม'}
                 </ThemedText>
+                {product.description && product.description.length > 50 && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={descExpanded ? 'ย่อ' : 'อ่านเพิ่ม'}
+                    onPress={() => setDescExpanded(!descExpanded)}
+                    style={{ marginTop: 6 }}
+                  >
+                    <ThemedText style={styles.descToggleText}>
+                      {descExpanded ? 'ย่อ' : 'อ่านเพิ่ม'}
+                    </ThemedText>
+                  </Pressable>
+                )}
               </View>
             </>
           )}
@@ -543,7 +562,7 @@ export function ProductDetailScreen() {
             ]}
           >
             <View style={styles.bottomPriceGroup}>
-              <ThemedText style={styles.bottomPriceLabel}>ราคารวมส่ง</ThemedText>
+              <ThemedText style={styles.bottomPriceLabel}>ราคาสินค้า</ThemedText>
               <ThemedText style={styles.bottomPriceValue}>
                 {bottomBarPrice}
               </ThemedText>
@@ -563,7 +582,7 @@ export function ProductDetailScreen() {
                 { opacity: pressed ? 0.9 : 1 },
               ]}
             >
-              <ThemedText style={styles.buyButtonText}>ซื้อสินค้าทันที</ThemedText>
+              <ThemedText style={styles.buyButtonText}>ซื้อสินค้า</ThemedText>
             </Pressable>
           </View>
         )}
@@ -819,6 +838,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  sellerRatingText: {
+    color: '#F59E0B',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  sellerReviewsText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '400',
+  },
   verifiedBadge: {
     width: 16,
     height: 16,
@@ -851,6 +881,11 @@ const styles = StyleSheet.create({
   descriptionBody: {
     fontSize: 13,
     lineHeight: 22,
+  },
+  descToggleText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '700',
   },
   stickyBottom: {
     flexDirection: 'row',

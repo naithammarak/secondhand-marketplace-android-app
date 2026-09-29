@@ -26,7 +26,62 @@ import { formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-for
 import { useOrdersList } from '@/orders/orders-provider';
 import type { OrderListItem, OrderStatus } from '@/services/order-service';
 
-type StatusFilterTab = 'all' | 'unpaid' | 'inspecting' | 'shipped';
+type BuyerFilterTab = 'ALL' | 'WP' | 'CONF' | 'PROG' | 'DONE' | 'CXR';
+type SellerFilterTab = 'ALL' | 'SHIP' | 'WP' | 'PROGS' | 'DONE' | 'CXR';
+type StatusFilterTab = BuyerFilterTab | SellerFilterTab;
+
+const ST_GROUPS: Record<string, string[]> = {
+  ALL: [],
+  WP: ['WAITING_PAYMENT'],
+  SHIP: ['WAITING_SELLER_SHIP'],
+  PROG: [
+    'WAITING_SELLER_SHIP',
+    'SHIPPING_TO_CENTER',
+    'RECEIVED_AT_CENTER',
+    'INSPECTING',
+    'SHIPPING_TO_BUYER',
+    'RETURNING_TO_SELLER',
+  ],
+  CONF: ['RESULT_NOTIFIED'],
+  PROGS: [
+    'WAITING_SELLER_SHIP',
+    'SHIPPING_TO_CENTER',
+    'RECEIVED_AT_CENTER',
+    'INSPECTING',
+    'RESULT_NOTIFIED',
+    'SHIPPING_TO_BUYER',
+    'RETURNING_TO_SELLER',
+  ],
+  DONE: ['COMPLETED'],
+  CXR: ['CANCELLED', 'REFUNDED', 'RETURNED'],
+};
+
+const BUYER_TABS: Array<{ key: BuyerFilterTab; label: string }> = [
+  { key: 'ALL', label: 'ทั้งหมด' },
+  { key: 'WP', label: 'รอชำระ' },
+  { key: 'CONF', label: 'รอยืนยันรับสินค้า' },
+  { key: 'PROG', label: 'กำลังดำเนินการ' },
+  { key: 'DONE', label: 'สำเร็จ' },
+  { key: 'CXR', label: 'ยกเลิก/คืนเงิน' },
+];
+
+const SELLER_TABS: Array<{ key: SellerFilterTab; label: string }> = [
+  { key: 'ALL', label: 'ทั้งหมด' },
+  { key: 'SHIP', label: 'ต้องจัดส่ง' },
+  { key: 'WP', label: 'รอผู้ซื้อชำระ' },
+  { key: 'PROGS', label: 'กำลังดำเนินการ' },
+  { key: 'DONE', label: 'สำเร็จ' },
+  { key: 'CXR', label: 'ยกเลิก/คืน' },
+];
+
+function matchesFilter(item: OrderListItem, filterKey: StatusFilterTab): boolean {
+  if (filterKey === 'ALL') return true;
+  if (filterKey === 'WP') {
+    return item.status === 'WAITING_PAYMENT';
+  }
+  const group = ST_GROUPS[filterKey];
+  return group ? group.includes(item.status) : (item.status as string) === filterKey;
+}
 
 function formatTimeAgo(dateStr: string | null | undefined): string {
   if (!dateStr) return '15 นาทีที่แล้ว';
@@ -114,7 +169,6 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
 
   const rawCondition = CONDITION_LABELS[item.product.condition] ?? item.product.condition ?? '';
   const conditionText = rawCondition ? (rawCondition.startsWith('สภาพ') ? rawCondition : `สภาพ${rawCondition}`) : '';
-  const storeName = item.viewerRole === 'buyer' ? 'ร้านวนดี ช็อป' : 'ร้านของฉัน';
 
   let footerNote = 'คำสั่งซื้อล่าสุด';
   if (item.status === 'RESULT_NOTIFIED') {
@@ -127,6 +181,8 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
     const formatted = formatDateTime(item.createdAt);
     footerNote = formatted ? `สั่งซื้อเมื่อ ${formatted}` : 'คำสั่งซื้อล่าสุด';
   }
+
+  const isCancelled = item.status === 'CANCELLED';
 
   return (
     <Pressable
@@ -159,14 +215,16 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
               accessibilityLabel={`รูปสินค้า ${item.product.name}`}
             />
           ) : (
-            <ThemedText style={{ fontSize: 26 }}>
+            <ThemedText style={{ fontSize: 24 }}>
               {item.product.name.includes('กระเป๋า')
                 ? '👜'
                 : item.product.name.includes('เสื้อ') || item.product.name.includes('Jacket')
                   ? '🧥'
-                  : item.product.name.includes('หูฟัง')
-                    ? '🎧'
-                    : '📦'}
+                  : item.product.name.includes('รองเท้า')
+                    ? '👟'
+                    : item.product.name.includes('หูฟัง')
+                      ? '🎧'
+                      : '📦'}
             </ThemedText>
           )}
         </View>
@@ -175,45 +233,104 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           <ThemedText style={styles.productTitle} numberOfLines={1}>
             {item.product.name}
           </ThemedText>
-          <ThemedText style={styles.productSubtitle} numberOfLines={1}>
-            {storeName} • ไซซ์ {item.product.size || '-'}
-            {conditionText ? ` • ${conditionText}` : ''}
+          <View style={styles.productSubtitleRow}>
+            {conditionText ? (
+              <View
+                style={[
+                  styles.condPill,
+                  {
+                    backgroundColor:
+                      item.product.condition === 'LIKE_NEW'
+                        ? '#ECFDF5'
+                        : item.product.condition === 'GOOD'
+                          ? '#FEF3C7'
+                          : '#F1F5F9',
+                  },
+                ]}>
+                <ThemedText
+                  style={[
+                    styles.condPillText,
+                    {
+                      color:
+                        item.product.condition === 'LIKE_NEW'
+                          ? '#059669'
+                          : item.product.condition === 'GOOD'
+                            ? '#D97706'
+                            : '#64748B',
+                    },
+                  ]}>
+                  {conditionText}
+                </ThemedText>
+              </View>
+            ) : null}
+            <ThemedText style={styles.productSubtitleText}>
+              ขนาด {item.product.size || '-'}
+            </ThemedText>
+          </View>
+        </View>
+
+        <View style={styles.productPriceCol}>
+          <ThemedText style={styles.amountLabelText}>
+            {item.viewerRole === 'seller' ? 'คุณจะได้รับ' : 'ยอดชำระ'}
           </ThemedText>
-          <ThemedText style={styles.productPrice}>{formatBaht(amount)}</ThemedText>
+          <ThemedText
+            style={[
+              styles.productPrice,
+              isCancelled && styles.productPriceCancelled,
+            ]}>
+            {formatBaht(amount)}
+          </ThemedText>
         </View>
       </View>
 
-      {/* Footer Row */}
-      <View style={styles.cardFooterRow}>
-        <ThemedText style={styles.footerNoteText}>{footerNote}</ThemedText>
-
-        {canPay ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ชำระเงิน"
-            onPress={onPress}
-            style={({ pressed }) => [styles.payButton, { opacity: pressed ? 0.8 : 1 }]}>
-            <ThemedText style={styles.payButtonText}>ชำระเงินทันที</ThemedText>
-          </Pressable>
+      {/* Info Line */}
+      <View style={styles.infoLineContainer}>
+        {item.status === 'WAITING_PAYMENT' ? (
+          <ThemedText style={styles.waitingPaymentDeadline}>
+            ⏱ {item.viewerRole === 'seller' ? 'ผู้ซื้อต้องชำระภายใน 24:13' : 'เหลือเวลาชำระ 24:13'}
+          </ThemedText>
+        ) : isCancelled ? (
+          <ThemedText style={styles.infoMutedText}>
+            {item.viewerRole === 'seller'
+              ? 'ผู้ซื้อยกเลิกคำสั่งซื้อนี้'
+              : 'หมดเวลาชำระเงิน ระบบยกเลิกให้อัตโนมัติ'}
+          </ThemedText>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ดูรายละเอียด"
-            onPress={onPress}
-            style={({ pressed }) => [
-              styles.detailButton,
-              {
-                backgroundColor: theme.backgroundElement ?? '#F8FAFC',
-                borderColor: theme.border ?? '#CBD5E1',
-                opacity: pressed ? 0.8 : 1,
-              },
-            ]}>
-            <ThemedText style={[styles.detailButtonText, { color: theme.text }]}>
-              {(item.status as string) === 'SHIPPED' ? 'ดูสถานะจัดส่ง' : 'ดูรายละเอียด'}
-            </ThemedText>
-          </Pressable>
+          <ThemedText style={styles.infoMutedText}>{footerNote}</ThemedText>
         )}
       </View>
+
+      {/* Action Button: Full width */}
+      {canPay ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ชำระเงิน"
+          onPress={onPress}
+          style={({ pressed }) => [styles.fullPayButton, { opacity: pressed ? 0.85 : 1 }]}>
+          <ThemedText style={styles.fullPayButtonText}>ชำระเงิน</ThemedText>
+        </Pressable>
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ดูรายละเอียด"
+          onPress={onPress}
+          style={({ pressed }) => [
+            styles.fullDetailButton,
+            {
+              backgroundColor: theme.backgroundElement ?? '#F8FAFC',
+              borderColor: theme.border ?? '#E2E8F0',
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}>
+          <ThemedText style={[styles.fullDetailButtonText, { color: theme.text }]}>
+            {item.viewerRole === 'seller' && item.status === 'WAITING_SELLER_SHIP'
+              ? 'จัดส่งสินค้า'
+              : (item.status as string) === 'SHIPPED'
+                ? 'ดูสถานะจัดส่ง'
+                : 'ดูรายละเอียด'}
+          </ThemedText>
+        </Pressable>
+      )}
     </Pressable>
   );
 }
@@ -224,7 +341,7 @@ export function OrdersListScreen() {
   const router = useRouter();
   const { state, store } = useOrdersList();
   const { view } = useLocalSearchParams<{ view?: string }>();
-  const [statusFilter, setStatusFilter] = useState<StatusFilterTab>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilterTab>('ALL');
 
   const customer =
     auth.account?.source === 'backend' &&
@@ -247,35 +364,14 @@ export function OrdersListScreen() {
     if (state.owner && customer) void store.load();
   }, [customer, state.owner, store]);
 
-  const unpaidCount = useMemo(
-    () =>
-      state.items.filter(
-        item => item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID',
-      ).length,
-    [state.items],
-  );
+  const activeTabs = state.view === 'seller' ? SELLER_TABS : BUYER_TABS;
+
+  const countForTab = useMemo(() => {
+    return (tabKey: StatusFilterTab) => state.items.filter(item => matchesFilter(item, tabKey)).length;
+  }, [state.items]);
 
   const displayedItems = useMemo(() => {
-    if (statusFilter === 'unpaid') {
-      return state.items.filter(
-        item => item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID',
-      );
-    }
-    if (statusFilter === 'inspecting') {
-      return state.items.filter(item =>
-        [
-          'WAITING_SELLER_SHIP',
-          'SHIPPING_TO_CENTER',
-          'RECEIVED_AT_CENTER',
-          'INSPECTING',
-          'RESULT_NOTIFIED',
-        ].includes(item.status),
-      );
-    }
-    if (statusFilter === 'shipped') {
-      return state.items.filter(item => (item.status as string) === 'SHIPPED');
-    }
-    return state.items;
+    return state.items.filter(item => matchesFilter(item, statusFilter));
   }, [state.items, statusFilter]);
 
   if (auth.initializing) {
@@ -292,7 +388,9 @@ export function OrdersListScreen() {
       <SafeAreaView style={[orderUiStyles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
         {/* Top Header */}
         <View style={[styles.topHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <ThemedText style={styles.headerTitle}>คำสั่งซื้อของฉัน</ThemedText>
+          <ThemedText style={styles.headerTitle}>
+            {state.view === 'seller' ? 'ที่ฉันซื้อ' : 'คำสั่งซื้อ'}
+          </ThemedText>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="ปิด"
@@ -315,6 +413,7 @@ export function OrdersListScreen() {
               accessibilityLabel="คำสั่งซื้อที่ฉันซื้อ"
               accessibilityState={{ selected: state.view === 'buyer' }}
               onPress={() => {
+                setStatusFilter('ALL');
                 void store.setView('buyer');
               }}
               style={[styles.roleTab, state.view === 'buyer' && styles.roleTabActive]}>
@@ -331,6 +430,7 @@ export function OrdersListScreen() {
               accessibilityLabel="คำสั่งซื้อร้านของฉัน"
               accessibilityState={{ selected: state.view === 'seller' }}
               onPress={() => {
+                setStatusFilter('ALL');
                 void store.setView('seller');
               }}
               style={[styles.roleTab, state.view === 'seller' && styles.roleTabActive]}>
@@ -344,24 +444,20 @@ export function OrdersListScreen() {
             </Pressable>
           </View>
 
-          {/* Status Filter Pills */}
+          {/* Status Filter Chips */}
           <View style={styles.filterPillsWrapper}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterPillsContent}>
-              {([
-                { key: 'all', label: 'ทั้งหมด' },
-                { key: 'unpaid', label: `รอชำระ${unpaidCount > 0 ? ` (${unpaidCount})` : ''}` },
-                { key: 'inspecting', label: 'กำลังตรวจสินค้า' },
-                { key: 'shipped', label: 'จัดส่งแล้ว' },
-              ] as const).map(tab => {
+              {activeTabs.map(tab => {
                 const active = statusFilter === tab.key;
+                const count = countForTab(tab.key);
                 return (
                   <Pressable
                     key={tab.key}
                     accessibilityRole="tab"
-                    accessibilityLabel={tab.label}
+                    accessibilityLabel={`${tab.label} (${count})`}
                     accessibilityState={{ selected: active }}
                     onPress={() => setStatusFilter(tab.key)}
                     style={[
@@ -378,7 +474,7 @@ export function OrdersListScreen() {
                         styles.filterPillText,
                         active ? styles.filterPillTextActive : { color: theme.textSecondary },
                       ]}>
-                      {tab.label}
+                      {tab.label} ({count})
                     </ThemedText>
                   </Pressable>
                 );
@@ -453,10 +549,22 @@ export function OrdersListScreen() {
             state.loading ? (
               <Loading label="กำลังโหลดคำสั่งซื้อ" />
             ) : state.loaded && !state.error ? (
-              <EmptyState
-                title="ยังไม่มีคำสั่งซื้อ"
-                detail="รายการซื้อและสถานะการชำระเงินจะแสดงที่นี่"
-              />
+              <View style={styles.emptyContainer}>
+                <View style={[styles.emptyIconBox, { backgroundColor: theme.backgroundElement ?? '#F1F5F9' }]}>
+                  <ThemedText style={{ fontSize: 32 }}>🧾</ThemedText>
+                </View>
+                <ThemedText style={styles.emptyTitle}>ยังไม่มีคำสั่งซื้อ</ThemedText>
+                <ThemedText style={styles.emptySubtitle}>
+                  เลือกซื้อของมือสองคัดเกรดได้ที่หน้าแรก
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="เลือกซื้อสินค้า"
+                  onPress={() => router.replace('/products')}
+                  style={({ pressed }) => [styles.emptyActionButton, { opacity: pressed ? 0.8 : 1 }]}>
+                  <ThemedText style={styles.emptyActionButtonText}>เลือกซื้อสินค้า</ThemedText>
+                </Pressable>
+              </View>
             ) : null
           }
           ListFooterComponent={
@@ -469,6 +577,10 @@ export function OrdersListScreen() {
                   void store.loadMore();
                 }}
               />
+            ) : displayedItems.length > 0 ? (
+              <View style={styles.listFooter}>
+                <ThemedText style={styles.listFooterText}>ดูครบทุกรายการแล้ว</ThemedText>
+              </View>
             ) : null
           }
         />
@@ -546,7 +658,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterPill: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     paddingVertical: 5,
     borderRadius: 20,
     alignItems: 'center',
@@ -615,15 +727,38 @@ const styles = StyleSheet.create({
   },
   productInfo: {
     flex: 1,
-    gap: 2,
+    gap: 4,
   },
   productTitle: {
     fontSize: 13,
     fontWeight: '700',
   },
-  productSubtitle: {
+  productSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  condPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  condPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  productSubtitleText: {
     fontSize: 11,
     color: '#64748B',
+  },
+  productPriceCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  amountLabelText: {
+    fontSize: 10,
+    color: '#94A3B8',
   },
   productPrice: {
     fontSize: 14,
@@ -632,37 +767,86 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
-  cardFooterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  productPriceCancelled: {
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  infoLineContainer: {
     paddingTop: 2,
   },
-  footerNoteText: {
-    fontSize: 10,
-    color: '#94A3B8',
-    flex: 1,
-    marginRight: 8,
-  },
-  payButton: {
-    backgroundColor: '#059669',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 12,
-  },
-  payButtonText: {
-    color: '#FFFFFF',
+  waitingPaymentDeadline: {
     fontSize: 11,
-    fontWeight: '700',
-  },
-  detailButton: {
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  detailButtonText: {
-    fontSize: 11,
+    color: '#D97706',
     fontWeight: '600',
   },
+  infoMutedText: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  fullPayButton: {
+    backgroundColor: '#059669',
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullPayButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  fullDetailButton: {
+    borderWidth: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullDetailButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 8,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  emptyActionButton: {
+    backgroundColor: '#059669',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  emptyActionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  listFooter: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  listFooterText: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
 });
+
