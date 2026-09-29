@@ -36,9 +36,14 @@ Only evidence selected in the final inspection result appears here. Its relative
 
 For a SELLER who bought another seller's product, purchase history requires `GET /orders?role=buyer`; the default SELLER order list remains the selling view. Self-purchase remains `409 self_purchase`. The frontend owner's Order image fields remain in this candidate: Order and quote `product.image_url` use the signed product image lookup from `794b193`.
 
+## Courier queue
+
+`GET /courier/shipments` now defaults to `scope=pending&offset=0&limit=100`. The response keeps `items` and adds `scope`, `offset`, `limit`, `has_more`, and `next_offset`. Valid scopes are `pending`, `history`, and `all`; `limit` is 1–100. **Frontend change required:** `mobile/src/services/inspection-service.ts::courierShipments` and the Courier queue screen currently read only the first page. Follow `next_offset` until null for the chosen scope, and refresh from offset zero after queue changes. The default view now omits already confirmed deliveries; request `scope=history` to show them.
+
 ## Frontend acceptance checks
 
 1. Open the QR URL in an unauthenticated external browser: HTML is visible; no private evidence or buyer data appears; revoked state is clear.
 2. Open the in-app certificate screen through the JSON route; handle `status=REVOKED` and unknown-token 404.
 3. Sign in as a SELLER who owns `order.buyer_id`: retrieve buyer history with `role=buyer`, selected evidence, final result, and one decision. The product's seller and unrelated accounts cannot see buyer evidence.
 4. Verify the existing Order list/detail/quote product image on the frontend owner's latest UI revision.
+5. Assign more than 100 pending Courier jobs in a test environment and verify every page is reachable without repeated items on a fixed dataset.
