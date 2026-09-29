@@ -173,13 +173,17 @@ def test_checkout_quote_is_calculated_by_server(world):
     assert data["product"]["name"] == "เสื้อแจ็กเก็ตมือสอง"
 
 
-def test_checkout_quote_requires_buyer(world):
+def test_checkout_quote_allows_seller_as_buyer_but_blocks_self_purchase(world):
     assert client.get(f"/orders/checkout-quote?product_id={world['product_id']}").status_code in (401, 403)
-    response = client.get(
+    own = client.get(
         f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["seller_h"]
     )
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "self_purchase"
+    assert own.status_code == 409 and own.json()["detail"]["code"] == "self_purchase"
+    quote = client.get(f"/orders/checkout-quote?product_id={world['product_id']}", headers=world["other_seller_h"])
+    assert quote.status_code == 200
+    purchased = post_order(world["other_seller_h"], order_body(world["product_id"]))
+    assert purchased.status_code == 201 and purchased.json()["viewer_role"] == "buyer", purchased.text
+    assert client.get(f"/orders?role=buyer", headers=world["other_seller_h"]).json()["total"] == 1
 
 
 # ------------------------------------------------------------------ create (ORDER-02)
@@ -267,11 +271,13 @@ def test_create_validates_address_fields(world, db):
     [
         (UserRole.ADMIN, UserStatus.ACTIVE),
         (UserRole.INSPECTOR, UserStatus.ACTIVE),
+        (UserRole.COURIER, UserStatus.ACTIVE),
         (None, UserStatus.ACTIVE),
         (UserRole.BUYER, UserStatus.SUSPENDED),
+        (UserRole.SELLER, UserStatus.SUSPENDED),
     ],
 )
-def test_only_active_buyers_can_create(world, db, role, status_):
+def test_staff_or_inactive_accounts_cannot_create(world, db, role, status_):
     _, headers = create_user(db, role, status_)
     response = post_order(headers, order_body(world["product_id"]))
     assert response.status_code == 403

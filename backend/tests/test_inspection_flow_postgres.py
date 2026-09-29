@@ -4,7 +4,9 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
+from uuid import UUID
 
+import jwt
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -20,7 +22,7 @@ from app.main import app
 from app.models.certificate import Certificate
 from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.inspection import Inspection, InspectionEvidence, InspectionResultEvidence
-from app.models.order import Escrow, Order
+from app.models.order import Escrow, Order, Payment
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
 from tests.order_helpers import create_product, create_user, new_key, order_body, patch_auth
@@ -611,6 +613,181 @@ def test_buyer_decision_once_and_identical_replay(world, result, answer, reason,
         assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
         assert session.get(Order, order_id).status == "RESULT_NOTIFIED"
         assert session.query(Shipment).filter_by(order_id=order_id).count() == 1
+        assert session.query(Escrow).filter_by(order_id=order_id).one().status == "HELD"
+
+
+@pytest.mark.parametrize("promote_before_purchase", [True, False])
+def test_seller_as_buyer_keeps_private_inspection_and_one_time_decision(world, promote_before_purchase):
+    client, engine, buyer, seller, _, other, _, _, _, admin = world
+    with Session(engine) as session:
+        subject = UUID(jwt.decode(buyer["Authorization"].split()[1], options={"verify_signature": False})["sub"])
+        buyer_id = session.scalar(select(User.id).where(User.supabase_user_id == subject))
+        if promote_before_purchase:
+            session.get(User, buyer_id).role = UserRole.SELLER
+            session.commit()
+    order_id, work_id = started_work(world)
+    if not promote_before_purchase:
+        with Session(engine) as session:
+            session.get(User, buyer_id).role = UserRole.SELLER
+            session.commit()
+    with Session(engine) as session:
+        assert session.get(Order, order_id).buyer_id == buyer_id
+        shipment = session.scalar(select(Shipment).where(Shipment.order_id == order_id))
+        proof_id = session.scalar(select(ShipmentDeliveryProof.id).where(ShipmentDeliveryProof.shipment_id == shipment.id))
+    uploaded = client.post(f"/inspections/{work_id}/evidence", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(world[4]))
+    assert uploaded.status_code == 201, uploaded.text
+    selected_id = uploaded.json()["evidence"]["id"]
+    unselected = client.post(f"/inspections/{work_id}/evidence", files={"file": ("other.png", image_bytes(), "image/png")}, headers=request_headers(world[4]))
+    assert unselected.status_code == 201, unselected.text
+    unselected_id = unselected.json()["evidence"]["id"]
+    saved = client.post(f"/inspections/{work_id}/result", json={"result": "PASS", "summary": "The expert inspected this item and recorded the final result.", "evidence_ids": [selected_id]}, headers=request_headers(world[4]))
+    assert saved.status_code == 200, saved.text
+    url = f"/orders/{order_id}/inspection"
+    view = client.get(url, headers=buyer)
+    assert view.status_code == 200 and view.json()["can_decide"] is True, view.text
+    assert view.json()["evidence"] == [{
+        "id": selected_id, "mime_type": "image/png", "size_bytes": len(image_bytes()),
+        "url": f"/inspection-evidence/{selected_id}", "expires_at": None,
+    }]
+    for path in (f"/inspection-evidence/{selected_id}", f"/shipment-delivery-proofs/{proof_id}"):
+        response = client.get(path, headers=buyer)
+        assert response.status_code == 200 and response.headers["cache-control"] == "no-store" and response.content
+        for denied in (seller, other, admin):
+            assert client.get(path, headers=denied).status_code == 404
+    assert client.get(f"/inspection-evidence/{unselected_id}", headers=buyer).status_code == 404
+    assert client.get(f"/orders/{order_id}", headers=buyer).status_code == 200
+    assert any(item["id"] == order_id for item in client.get("/orders?role=buyer", headers=buyer).json()["items"])
+    confirmed = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert confirmed.status_code == 200 and confirmed.json()["next_action"] == "SHIP_TO_BUYER", confirmed.text
+    assert client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer).json() == confirmed.json()
+    conflict = client.post(f"{url}/decision", json={"decision": "REJECT"}, headers=buyer)
+    assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "decision_already_recorded"
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+        assert session.query(Payment).filter_by(order_id=order_id).count() == 1
+        assert session.query(Shipment).filter_by(order_id=order_id).count() == 1
+        assert session.query(Escrow).filter_by(order_id=order_id).one().status == "HELD"
+
+
+@pytest.mark.parametrize("new_role,new_status", [
+    (UserRole.ADMIN, UserStatus.ACTIVE),
+    (UserRole.SELLER, UserStatus.SUSPENDED),
+])
+def test_seller_buyer_permission_is_refreshed_after_order_lock(world, monkeypatch, new_role, new_status):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    with Session(engine) as session:
+        buyer_id = session.get(Order, order_id).buyer_id
+        session.get(User, buyer_id).role = UserRole.SELLER
+        session.commit()
+    original = inspect_api.load_order_for
+
+    def change_after_lock(db, requested_order_id, actor, lock=False):
+        order, role = original(db, requested_order_id, actor, lock=lock)
+        with Session(engine) as other_session:
+            user = other_session.get(User, buyer_id)
+            user.role, user.status = new_role, new_status
+            other_session.commit()
+        return order, role
+
+    monkeypatch.setattr(inspect_api, "load_order_for", change_after_lock)
+    denied = client.post(f"/orders/{order_id}/inspection/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert denied.status_code == 403 and denied.json()["detail"]["code"] == "account_inactive", denied.text
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+
+
+def test_buyer_promoted_during_decision_still_has_order_buyer_access(world, monkeypatch):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    buyer_id = None
+    with Session(engine) as session:
+        buyer_id = session.get(Order, order_id).buyer_id
+    original = inspect_api.load_order_for
+
+    def promote_after_lock(db, requested_order_id, actor, lock=False):
+        order, role = original(db, requested_order_id, actor, lock=lock)
+        with Session(engine) as other_session:
+            other_session.get(User, buyer_id).role = UserRole.SELLER
+            other_session.commit()
+        return order, role
+
+    monkeypatch.setattr(inspect_api, "load_order_for", promote_after_lock)
+    recorded = client.post(f"/orders/{order_id}/inspection/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert recorded.status_code == 200, recorded.text
+    with Session(engine) as session:
+        assert session.get(User, buyer_id).role == UserRole.SELLER
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+
+
+def test_promoted_owner_can_read_negative_result_without_decision(world):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, photo_id = completed_work(world, "FAKE")
+    with Session(engine) as session:
+        session.get(User, session.get(Order, order_id).buyer_id).role = UserRole.SELLER
+        session.commit()
+    url = f"/orders/{order_id}/inspection"
+    view = client.get(url, headers=buyer)
+    assert view.status_code == 200 and view.json()["result"] == "FAKE" and view.json()["certificate"] is None
+    assert view.json()["can_decide"] is False and view.json()["next_action"] == "RETURN_TO_SELLER"
+    assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 200
+    denied = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert denied.status_code == 409 and denied.json()["detail"]["code"] == "decision_not_allowed"
+
+
+def test_promoted_owner_inactive_read_policy_and_replay_denial(world):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, photo_id = completed_work(world)
+    with Session(engine) as session:
+        owner = session.get(User, session.get(Order, order_id).buyer_id)
+        owner.role = UserRole.SELLER
+        proof_id = session.scalar(select(ShipmentDeliveryProof.id).join(Shipment, ShipmentDeliveryProof.shipment_id == Shipment.id).where(Shipment.order_id == order_id))
+        session.commit()
+    url = f"/orders/{order_id}/inspection"
+    recorded = client.post(f"{url}/decision", json={"decision": "REJECT", "reason": "Changed my mind"}, headers=buyer)
+    assert recorded.status_code == 200, recorded.text
+    with Session(engine) as session:
+        session.get(User, session.get(Order, order_id).buyer_id).status = UserStatus.SUSPENDED
+        session.commit()
+    view = client.get(url, headers=buyer)
+    assert view.status_code == 200 and view.json()["can_decide"] is False
+    assert view.json()["decision"] == recorded.json()["decision"]
+    assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 200
+    assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=buyer).status_code == 404
+    replay = client.post(f"{url}/decision", json={"decision": "REJECT", "reason": "Changed my mind"}, headers=buyer)
+    assert replay.status_code == 403 and replay.json()["detail"]["code"] == "account_inactive"
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+
+
+def test_promoted_owner_staff_role_loses_buyer_private_access(world):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, photo_id = completed_work(world)
+    with Session(engine) as session:
+        session.get(User, session.get(Order, order_id).buyer_id).role = UserRole.COURIER
+        session.commit()
+    url = f"/orders/{order_id}/inspection"
+    assert client.get(url, headers=buyer).status_code == 403
+    assert client.get(f"/inspection-evidence/{photo_id}", headers=buyer).status_code == 404
+    denied = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
+    assert denied.status_code == 403
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+
+
+def test_promoted_seller_buyer_concurrent_decisions_record_once(world):
+    client, engine, buyer, _, _, _, _, _, _, _ = world
+    order_id, _, _ = completed_work(world)
+    with Session(engine) as session:
+        session.get(User, session.get(Order, order_id).buyer_id).role = UserRole.SELLER
+        session.commit()
+    url = f"/orders/{order_id}/inspection/decision"
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda answer: client.post(url, json={"decision": answer}, headers=buyer), ["CONFIRM", "REJECT"]))
+    assert sorted(response.status_code for response in responses) == [200, 409], [response.text for response in responses]
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 1
+        assert session.query(Payment).filter_by(order_id=order_id).count() == 1
         assert session.query(Escrow).filter_by(order_id=order_id).one().status == "HELD"
 
 

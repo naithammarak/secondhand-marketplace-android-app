@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
 from app.api.admin_verifications import require_admin
-from app.api.orders import api_error, key_reused, load_order_for, not_order_buyer, request_fingerprint, require_idempotency_key, validation_error
+from app.api.orders import BUYER_ACCOUNT_ROLES, api_error, key_reused, load_order_for, not_order_buyer, request_fingerprint, require_idempotency_key, validation_error
 from app.database import get_db
 from app.models.certificate import Certificate
 from app.models.buyer_inspection_decision import BuyerInspectionDecision
@@ -107,7 +107,7 @@ def courier_only(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def _fresh_actor(db: Session, actor: User, role: UserRole, error_code: str) -> User:
+def _fresh_actor(db: Session, actor: User, role: UserRole | frozenset[UserRole], error_code: str) -> User:
     """Refresh the authenticated row after locking the Order, before a write.
 
     The auth dependency has already loaded this User into SQLAlchemy's identity
@@ -115,7 +115,8 @@ def _fresh_actor(db: Session, actor: User, role: UserRole, error_code: str) -> U
     when another transaction suspends the account between auth and the write.
     """
     fresh = db.scalar(select(User).where(User.id == actor.id).with_for_update().execution_options(populate_existing=True))
-    if fresh is None or fresh.status != UserStatus.ACTIVE or fresh.role != role:
+    allowed_roles = {role} if isinstance(role, UserRole) else role
+    if fresh is None or fresh.status != UserStatus.ACTIVE or fresh.role not in allowed_roles:
         raise api_error(403, error_code, "Account is no longer authorized for this action")
     return fresh
 
@@ -456,7 +457,7 @@ def read_delivery_proof(proof_id: int, actor: User = Depends(get_current_user), 
     work = _inspection(db, order.id)
     allowed = actor.status == UserStatus.ACTIVE and (
         (actor.role == UserRole.COURIER and shipment.courier_id == actor.id) or
-        (actor.role == UserRole.BUYER and order.buyer_id == actor.id) or
+        (actor.role in BUYER_ACCOUNT_ROLES and order.buyer_id == actor.id) or
         (actor.role == UserRole.INSPECTOR and work is not None and
          (work.inspector_id is None or work.inspector_id == actor.id))
     )
@@ -634,8 +635,8 @@ def _next_action(result: str, decision: BuyerInspectionDecision | None) -> str:
 @router.get("/orders/{order_id}/inspection")
 def buyer_inspection(order_id: int, response: Response, actor: User = Depends(get_current_user), db: Session = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
-    order, role = load_order_for(db, order_id, actor)
-    if role.value != "buyer" or actor.role != UserRole.BUYER:
+    order, role = load_order_for(db, order_id, actor, allow_inactive=True)
+    if role.value != "buyer" or actor.role not in BUYER_ACCOUNT_ROLES:
         raise not_order_buyer()
     work = _inspection(db, order.id)
     if work is None or work.result is None:
@@ -675,9 +676,9 @@ def decide_inspection(order_id: int, response: Response, actor: User = Depends(g
     response.headers["Cache-Control"] = "no-store"
     try:
         order, role = load_order_for(db, order_id, actor, lock=True)
-        if role.value != "buyer" or actor.role != UserRole.BUYER:
+        if role.value != "buyer":
             raise not_order_buyer()
-        _fresh_actor(db, actor, UserRole.BUYER, "account_inactive")
+        _fresh_actor(db, actor, BUYER_ACCOUNT_ROLES, "account_inactive")
         existing = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
         if existing is not None:
             if (existing.decision, existing.reason) != (body.decision, body.reason):
@@ -723,7 +724,7 @@ def read_evidence(evidence_id: int, actor: User = Depends(get_current_user), db:
     order = db.get(Order, work.order_id)
     allowed_inspector = actor.role == UserRole.INSPECTOR and actor.status == UserStatus.ACTIVE and work.inspector_id == actor.id
     selected = db.get(InspectionResultEvidence, (work.id, photo.id)) is not None
-    allowed_buyer = actor.role == UserRole.BUYER and actor.id == order.buyer_id and work.result is not None and selected
+    allowed_buyer = actor.role in BUYER_ACCOUNT_ROLES and actor.id == order.buyer_id and work.result is not None and selected
     if not (allowed_inspector or allowed_buyer):
         raise api_error(404, "evidence_not_found", "Image not found")
     return Response(content=inspection_storage.download_object(photo.object_key), media_type=photo.mime_type, headers={"Cache-Control": "no-store"})

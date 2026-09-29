@@ -4,7 +4,7 @@
 
 ## อ่านผล
 
-`GET /orders/{order_id}/inspection` ต้องส่ง Bearer token; เฉพาะ Buyer เจ้าของ Order อ่านได้ รวมถึงกรณีบัญชีไม่ ACTIVE แล้ว ผู้ขายของ Order ได้ `403 not_order_buyer`; ผู้ไม่เกี่ยวข้องได้ `404 order_not_found`; ยังไม่มีผลสุดท้ายได้ `404 inspection_not_ready` ตรวจสิทธิ์ Order ก่อนตรวจผลเสมอ
+`GET /orders/{order_id}/inspection` ต้องส่ง Bearer token; บัญชี BUYER หรือ SELLER ที่ `order.buyer_id` ตรงกับบัญชีอ่านได้ รวมถึงผู้ซื้อที่ได้รับอนุมัติเป็น SELLER หลังซื้อและบัญชีที่ไม่ ACTIVE แล้ว ผู้ขายของ Order ที่ไม่ใช่ผู้ซื้อได้ `403 not_order_buyer`; ผู้ไม่เกี่ยวข้องได้ `404 order_not_found`; ยังไม่มีผลสุดท้ายได้ `404 inspection_not_ready` ตรวจสิทธิ์ Order ก่อนตรวจผลเสมอ บัญชี staff ไม่ได้สิทธิ์ผู้ซื้อจากการเป็นเจ้าของ Order ในอดีต
 
 ```json
 {
@@ -25,7 +25,7 @@
 
 ## ตัดสินใจครั้งเดียว
 
-`POST /orders/{order_id}/inspection/decision` ต้องเป็น Buyer เจ้าของ Order ที่ยัง ACTIVE และ Order ต้องเป็น `RESULT_NOTIFIED` พร้อมผล `PASS`/`MINOR_ISSUE` และ Certificate `ISSUED` เท่านั้น
+`POST /orders/{order_id}/inspection/decision` ต้องเป็น BUYER หรือ SELLER ที่เป็นผู้ซื้อของ Order และยัง ACTIVE โดยตรวจบทบาท/สถานะจากฐานอีกครั้งหลังล็อก Order; Order ต้องเป็น `RESULT_NOTIFIED` พร้อมผล `PASS`/`MINOR_ISSUE` และ Certificate `ISSUED` เท่านั้น
 
 ```json
 {"decision":"REJECT","reason":"สภาพสินค้าไม่ตรงที่คาด"}
@@ -40,6 +40,17 @@
 `CONFIRM` ต้องไม่มี `reason` หรือเป็น `null`; `REJECT` จะไม่ใส่ reason ก็ได้ ข้อความจะถูก trim และข้อความว่างกลายเป็น `null` จำกัด 500 ตัวอักษรหลัง trim ส่ง payload เดิมซ้ำได้ record/เวลาเดิมพร้อม `200`; เปลี่ยนคำตอบหรือเหตุผลได้ `409 decision_already_recorded` ฐานข้อมูลมี unique และ guard กันแก้ย้อนหลัง คู่กับ Order row lock ใน API เพื่อจัดการคำขอพร้อมกัน
 
 Error ใช้ `detail.code` และ `detail.fields` เช่น `inspection_not_ready`, `decision_not_allowed`, `account_inactive`, `not_order_buyer`, `order_not_found`, `validation_error`; คำตอบส่วนตัวทั้งสำเร็จและผิดพลาดส่ง `Cache-Control: no-store` ไม่มี token ได้ `401`
+
+## นโยบายสิทธิ์ของหลักฐานส่วนตัว
+
+| Endpoint | BUYER/SELLER ที่เป็น `order.buyer_id` | บัญชีผู้ซื้อที่ไม่ ACTIVE | Staff |
+|---|---|---|---|
+| `GET /orders/{id}/inspection` | อ่านผลสุดท้ายได้ | อ่านประวัติได้ แต่ `can_decide=false` | ไม่ได้สิทธิ์ผู้ซื้อ |
+| `POST /orders/{id}/inspection/decision` | ACTIVE เท่านั้น; ตัดสินใจ/replay ได้หนึ่งครั้ง | ปฏิเสธทั้งการสร้างและ replay | ปฏิเสธ |
+| `GET /inspection-evidence/{id}` | อ่านเฉพาะภาพที่เลือกแนบผลสุดท้าย | อ่านภาพประวัติที่เลือกได้ | Inspector ที่รับงานและ ACTIVE มีสิทธิ์ตามเดิม |
+| `GET /shipment-delivery-proofs/{id}` | ACTIVE เท่านั้น | ปฏิเสธ | Courier/Inspector ที่เกี่ยวข้องและ ACTIVE มีสิทธิ์ตามเดิม |
+
+SELLER ที่เป็น `order.seller_id` แต่ไม่ใช่ `order.buyer_id` และบัญชีอื่นไม่มีสิทธิ์หลักฐานส่วนตัว การซื้อสินค้าตัวเองยังตอบ `409 self_purchase`; SELLER ซื้อสินค้าของผู้อื่นได้
 
 ## ส่งต่อ FINISH
 
