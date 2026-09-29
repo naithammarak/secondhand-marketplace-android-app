@@ -204,11 +204,18 @@ export function ProductListScreen() {
   const { scheme } = useThemePreference();
   const isDark = scheme === 'dark';
   const returningFromDetail = useRef(false);
+  const [isManualRefresh, setIsManualRefresh] = useState(false);
   const state = useSyncExternalStore(
     productCatalogStore.subscribe,
     productCatalogStore.getSnapshot,
     productCatalogStore.getSnapshot,
   );
+
+  useEffect(() => {
+    if (!state.refreshing) {
+      setIsManualRefresh(false);
+    }
+  }, [state.refreshing]);
 
   useFocusEffect(
     useCallback(() => {
@@ -232,11 +239,14 @@ export function ProductListScreen() {
 
   const emptyMessage = state.query.trim() ? 'ไม่พบสินค้าตามคำค้น' : 'ยังไม่มีสินค้า';
 
+  const handleManualRefresh = () => {
+    setIsManualRefresh(true);
+    void productCatalogStore.refresh();
+  };
+
   const pullToRefresh = usePullToRefresh({
     refreshing: state.refreshing,
-    onRefresh: () => {
-      void productCatalogStore.refresh();
-    },
+    onRefresh: handleManualRefresh,
   });
 
   return (
@@ -379,12 +389,10 @@ export function ProductListScreen() {
             : {})}
           refreshControl={
             <RefreshControl
-              refreshing={state.refreshing}
+              refreshing={isManualRefresh && state.refreshing}
               colors={['#059669']}
               tintColor="#059669"
-              onRefresh={() => {
-                void productCatalogStore.refresh();
-              }}
+              onRefresh={handleManualRefresh}
             />
           }
           onEndReachedThreshold={0.3}
@@ -413,7 +421,7 @@ export function ProductListScreen() {
                 <ThemedText style={styles.sectionNotice}>ของแท้ตรวจแล้ว</ThemedText>
               </View>
 
-              {Platform.OS === 'web' && state.refreshing ? (
+              {Platform.OS === 'web' && isManualRefresh && state.refreshing ? (
                 <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                   <Loading label="กำลังรีเฟรชสินค้า..." />
                 </View>
