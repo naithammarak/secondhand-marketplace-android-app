@@ -26,17 +26,15 @@ podman exec task01-simulated-payment-test pg_isready -U postgres -d task01_payme
 
 ## 2. Migrate and start the matching API
 
-Run from this checkout's `backend` directory with its Python environment active. The shell variable takes precedence over `.env` for migration. Unset `DATABASE_URL` before launching: the launcher refuses the same target in both the task-specific and application settings.
+Run from this checkout's `backend` directory with its Python environment active. Use the guarded migration mode before starting the API; it validates the same local database boundary, then runs Alembic with the validated `DATABASE_URL`. Do not run Alembic directly for this demo. The launcher refuses the same target in both the task-specific and configured application settings.
 
 ```sh
 export TASK01_DEMO_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:55441/task01_payment_test'
-export DATABASE_URL="$TASK01_DEMO_DATABASE_URL"
-python -m alembic upgrade head
-unset DATABASE_URL
+python scripts/task01_demo.py --migrate
 python scripts/task01_demo.py --host 127.0.0.1 --port 8765
 ```
 
-The launcher sets `APP_ENV=demo`, explicitly enables simulation, and supplies `https://certificate.task01.test` unless another HTTPS `.test` origin is configured with `TASK01_DEMO_CERTIFICATE_ORIGIN`. It prints no database URL or auth secret. `backend/app/services/certificate_urls.py` still performs the required HTTPS origin validation during startup.
+The launcher checks inherited process variables and `backend/.env` before migration or API startup. It rejects non-empty libpq routing settings (`PGHOST`, `PGHOSTADDR`, `PGPORT`, `PGDATABASE`, `PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`, `PGTARGETSESSIONATTRS`, and `PGLOADBALANCEHOSTS`) without printing their values, then removes those variables from the child environment so `load_dotenv()` cannot restore a route after validation. Empty values pass validation but are also removed before connecting; whitespace-only values are rejected. Configured application URLs with routing query options (including psycopg `conninfo`) are refused; non-routing options such as `sslmode` are allowed. Other `.env` settings retain their normal precedence. It also sets `APP_ENV=demo`, explicitly enables simulation, and supplies `https://certificate.task01.test` unless another HTTPS `.test` origin is configured with `TASK01_DEMO_CERTIFICATE_ORIGIN`. See the [PostgreSQL libpq environment reference](https://www.postgresql.org/docs/current/libpq-envars.htm). `backend/app/services/certificate_urls.py` still performs the required HTTPS origin validation during startup.
 
 Check the local health endpoint in another terminal:
 
@@ -48,10 +46,16 @@ The launcher does not change authentication settings. To use a signed-in mobile 
 
 ## 3. Start Expo against that API
 
-Run from this checkout's `mobile` directory. For browser or emulator testing on the same computer:
+Run from this checkout's `mobile` directory. For browser testing on the same computer, use Expo web explicitly:
 
 ```sh
-EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8765 npm run start -- --host lan --port 8090
+EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:8765 npm run start -- --web --port 8090
+```
+
+For the standard Android emulator, use its host-loopback alias for the API. The Android [emulator networking guide](https://developer.android.com/studio/run/emulator-networking-address) documents `10.0.2.2` for reaching host-loopback services. The API can remain bound to `127.0.0.1`:
+
+```sh
+EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:8765 npm run start -- --host lan --port 8090
 ```
 
 For a physical Android device, bind the API to the computer's LAN interface, then use the computer's reachable LAN address in the Expo build-time variable. A phone cannot reach the computer through `127.0.0.1`:
@@ -75,6 +79,6 @@ TASK01_DEMO_DATABASE_URL='postgresql+psycopg://postgres@127.0.0.1:55441/task01_p
   python scripts/task01_payment_http_smoke.py
 ```
 
-The smoke creates uniquely named fixture rows and does not truncate or delete data. It starts its own loopback API listener on a temporary port and verifies disabled and production 403 guards, successful payment, PAID detail and receipt, same-key idempotent replay without duplicate payment/escrow/receipt rows, and FAILED followed by a new-key SUCCESS. Run it only on the database described above.
+The smoke uses the same process and `.env` libpq-routing checks as the launcher before importing the database module. It creates uniquely named fixture rows and does not truncate or delete data. It starts its own loopback API listener on a temporary port and verifies disabled and production 403 guards, successful payment, PAID detail and receipt, same-key idempotent replay without duplicate payment/escrow/receipt rows, and FAILED followed by a new-key SUCCESS. Run it only on the database described above.
 
 Press `Ctrl+C` in the API and Expo terminals to stop those processes. Do not stop or remove containers that this task did not create.

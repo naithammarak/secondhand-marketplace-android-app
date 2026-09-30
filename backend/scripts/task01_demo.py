@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlsplit
 
-from dotenv import dotenv_values
+from dotenv import dotenv_values, load_dotenv
 from sqlalchemy.engine import make_url
 
 
@@ -19,6 +19,29 @@ ALLOWED_DEMO_ENVS = {"development", "dev", "test", "demo"}
 PRODUCTION_ENVS = {"production", "prod"}
 LOCAL_DATABASE_HOSTS = {"localhost", "127.0.0.1", "::1"}
 DEFAULT_TEST_CERTIFICATE_ORIGIN = "https://certificate.task01.test"
+LIBPQ_ROUTING_ENVIRONMENT = (
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSYSCONFDIR",
+    "PGTARGETSESSIONATTRS",
+    "PGLOADBALANCEHOSTS",
+)
+DATABASE_ROUTING_QUERY_OPTIONS = {
+    "conninfo",
+    "database",
+    "dbname",
+    "host",
+    "hostaddr",
+    "load_balance_hosts",
+    "port",
+    "service",
+    "servicefile",
+    "target_session_attrs",
+}
 
 
 class DemoConfigurationError(ValueError):
@@ -30,8 +53,11 @@ def _database_identity(value: str, *, reject_query: bool = True) -> tuple[str, s
         parsed = make_url(value)
     except Exception as exc:
         raise DemoConfigurationError("TASK01_DEMO_DATABASE_URL is not a valid database URL") from exc
-    if reject_query and parsed.query:
-        raise DemoConfigurationError("TASK01 demo database URLs must not include connection-routing options")
+    query_keys = {key.lower() for key in parsed.query}
+    if reject_query and query_keys:
+        raise DemoConfigurationError("TASK01 demo database URLs must not include query options")
+    if not reject_query and query_keys & DATABASE_ROUTING_QUERY_OPTIONS:
+        raise DemoConfigurationError("Configured application database URL has unsupported routing options")
     host = (parsed.host or "").lower().rstrip(".")
     if host in LOCAL_DATABASE_HOSTS:
         host = "127.0.0.1"
@@ -61,12 +87,11 @@ def validate_demo_database(value: str | None, application_urls: tuple[str | None
     for application_url in application_urls:
         if application_url:
             try:
-                # The task URL itself rejects all query options. For the existing app URL,
-                # ignore options after comparing its visible endpoint so shared/local aliases
-                # are caught without exposing or routing through that URL.
+                # Routing query options are rejected above; harmless options like sslmode
+                # do not change the visible endpoint used to detect shared/local aliases.
                 same_target = _database_identity(application_url, reject_query=False) == identity
-            except DemoConfigurationError:
-                same_target = False
+            except DemoConfigurationError as exc:
+                raise DemoConfigurationError("Cannot safely verify the configured application database target") from exc
             if same_target:
                 raise DemoConfigurationError("TASK01 demo database must differ from the configured application database")
     return value
@@ -99,8 +124,20 @@ def validate_test_certificate_origin(value: str) -> str:
     return f"https://{parsed.netloc}"
 
 
+def _validate_libpq_routing_environment(
+    env: Mapping[str, str], dotenv: Mapping[str, str | None]
+) -> None:
+    for source in (env, dotenv):
+        for name in LIBPQ_ROUTING_ENVIRONMENT:
+            value = source.get(name)
+            # Empty values are removed before any connection; whitespace is still a value.
+            if value is not None and value != "":
+                raise DemoConfigurationError("TASK01 demo refuses libpq routing environment settings")
+
+
 def demo_environment(env: Mapping[str, str], dotenv: Mapping[str, str | None]) -> dict[str, str]:
-    """Validate all settings before enabling payment simulation in a child process."""
+    """Validate all settings before enabling payment simulation or connecting to PostgreSQL."""
+    _validate_libpq_routing_environment(env, dotenv)
     configured_environments = (
         env.get("APP_ENV"),
         dotenv.get("APP_ENV"),
@@ -128,20 +165,36 @@ def demo_environment(env: Mapping[str, str], dotenv: Mapping[str, str | None]) -
     }
 
 
+def apply_demo_environment(settings: Mapping[str, str], dotenv_path: Path) -> None:
+    """Load ordinary dotenv configuration, then remove every validated route override."""
+    load_dotenv(dotenv_path)
+    os.environ.update(settings)
+    for name in LIBPQ_ROUTING_ENVIRONMENT:
+        os.environ.pop(name, None)
+    # Both API and migration modules call load_dotenv; don't let them restore route vars.
+    os.environ["PYTHON_DOTENV_DISABLED"] = "true"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", choices=("127.0.0.1", "0.0.0.0"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--migrate",
+        action="store_true",
+        help="run Alembic upgrade head after validating and sanitizing the local demo database environment, then exit",
+    )
     args = parser.parse_args(argv)
     if not 1024 <= args.port <= 65535:
         parser.error("--port must be between 1024 and 65535")
 
+    dotenv_path = BACKEND_DIR / ".env"
     try:
-        settings = demo_environment(os.environ, dotenv_values(BACKEND_DIR / ".env"))
+        settings = demo_environment(os.environ, dotenv_values(dotenv_path))
     except DemoConfigurationError as exc:
         parser.error(str(exc))
 
-    os.environ.update(settings)
+    apply_demo_environment(settings, dotenv_path)
     # Run the validation used by API startup now, before spawning the server.
     sys.path.insert(0, str(BACKEND_DIR))
     from app.services.certificate_urls import public_certificate_base_url
@@ -150,6 +203,12 @@ def main(argv: list[str] | None = None) -> int:
         public_certificate_base_url()
     except ValueError as exc:
         parser.error(str(exc))
+
+    if args.migrate:
+        return subprocess.call(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=BACKEND_DIR,
+        )
 
     print(
         f"TASK-01 demo API: http://{args.host}:{args.port} "

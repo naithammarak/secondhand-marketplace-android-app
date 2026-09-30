@@ -8,6 +8,7 @@ import { OrderServiceError } from '@/services/order-service';
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 const mockBack = jest.fn();
+let mockAuthState: any;
 
 jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => jest.requireActual('react').useEffect(callback, [callback]),
@@ -16,7 +17,7 @@ jest.mock('expo-router', () => ({
 }));
 
 jest.mock('@/auth/auth-provider', () => ({
-  useAuth: () => ({ session: { user: { id: 'buyer-test' } }, initializing: false }),
+  useAuth: () => mockAuthState,
 }));
 
 const mockCheckoutStore = {
@@ -95,6 +96,7 @@ const paymentAttempt = (outcome: 'SUCCEEDED' | 'FAILED') => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuthState = { session: { user: { id: 'buyer-test' } }, initializing: false };
   mockCheckoutState = {
     ...initialCheckoutState,
     owner: 'buyer-test',
@@ -309,4 +311,59 @@ test('changing checkout product while payment is pending suppresses stale receip
     finishPayment({ attempt: paymentAttempt('SUCCEEDED'), order: paidOrder(42) });
   });
   expect(mockReplace).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/receipt/[orderId]' }));
+});
+
+test('cached UNPAID state plus a failed refresh does not submit a stale payment', async () => {
+  await mockDetailStore.open(42);
+  mockGetOrder.mockRejectedValue(new OrderServiceError('network-error'));
+  mockCheckoutState.createdOrderId = 42;
+  render(<CheckoutScreen productId={7} />);
+  fireEvent.press(screen.getByRole('button', { name: 'จำลองจ่ายสำเร็จ' }));
+  await waitFor(() => expect(screen.getByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy());
+  expect(mockSimulatePayment).not.toHaveBeenCalled();
+  expect(mockReplace).not.toHaveBeenCalled();
+});
+
+test.each(['logout', 'account', 'unmount', 'order'])('pending PAID callback after %s does not navigate', async (change) => {
+  mockCheckoutState.createdOrderId = 42;
+  let finishPayment: (value: unknown) => void = () => undefined;
+  mockSimulatePayment.mockImplementation(() => new Promise(resolve => { finishPayment = resolve; }));
+  const view = render(<CheckoutScreen productId={7} />);
+  fireEvent.press(screen.getByRole('button', { name: 'จำลองจ่ายสำเร็จ' }));
+  await waitFor(() => expect(mockSimulatePayment).toHaveBeenCalledTimes(1));
+
+  if (change === 'unmount') view.unmount();
+  if (change === 'logout') {
+    mockAuthState = { session: null, initializing: false };
+    view.rerender(<CheckoutScreen productId={7} />);
+  }
+  if (change === 'account') {
+    mockAuthState = { session: { user: { id: 'buyer-other' } }, initializing: false };
+    view.rerender(<CheckoutScreen productId={7} />);
+  }
+  if (change === 'order') {
+    mockCheckoutState.createdOrderId = 43;
+    view.rerender(<CheckoutScreen productId={7} />);
+  }
+
+  await act(async () => {
+    finishPayment({ attempt: paymentAttempt('SUCCEEDED'), order: paidOrder(42) });
+  });
+  expect(mockReplace).not.toHaveBeenCalled();
+});
+
+test('uncertain FAILED retry retains its original outcome and idempotency key', async () => {
+  mockCheckoutState.createdOrderId = 42;
+  mockSimulatePayment.mockRejectedValueOnce(new OrderServiceError('timeout')).mockResolvedValueOnce({
+    attempt: paymentAttempt('FAILED'), order: unpaidOrder(42),
+  });
+  render(<CheckoutScreen productId={7} />);
+  fireEvent.press(screen.getByRole('button', { name: 'จำลองจ่ายล้มเหลว' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอเดิม ใช้รหัสเดิม' })).toBeTruthy());
+
+  fireEvent.press(screen.getByRole('button', { name: 'ตรวจสอบผลคำขอเดิม ใช้รหัสเดิม' }));
+  await waitFor(() => expect(mockDetailStore.getSnapshot().lastResult).toBe('failed'));
+  expect(mockSimulatePayment).toHaveBeenCalledTimes(2);
+  expect(mockSimulatePayment.mock.calls[1][1]).toEqual(mockSimulatePayment.mock.calls[0][1]);
+  expect(mockReplace).not.toHaveBeenCalled();
 });

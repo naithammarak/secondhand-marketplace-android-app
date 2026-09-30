@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import secrets
@@ -20,9 +21,10 @@ import jwt
 import uvicorn
 from dotenv import dotenv_values
 from sqlalchemy import func, inspect, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from task01_demo import BACKEND_DIR, DemoConfigurationError, demo_environment
+from task01_demo import BACKEND_DIR, DemoConfigurationError, apply_demo_environment, demo_environment
 
 sys.path.insert(0, str(BACKEND_DIR))
 
@@ -171,6 +173,23 @@ def _assert_counts(engine, order_id: int, *, attempts: int, payments: int, escro
         raise AssertionError(f"TASK-01 payment row counts differ: expected {expected}, received {actual}")
 
 
+def _assert_connected_to_validated_local_target(engine, database_url: str) -> None:
+    expected = make_url(database_url)
+    with engine.connect() as connection:
+        info = connection.connection.driver_connection.info
+        try:
+            actual_host_is_loopback = ipaddress.ip_address(info.hostaddr).is_loopback
+        except (TypeError, ValueError):
+            actual_host_is_loopback = False
+        actual_matches = (
+            actual_host_is_loopback
+            and info.port == (expected.port or 5432)
+            and info.dbname == expected.database
+        )
+    if not actual_matches:
+        raise SystemExit("The PostgreSQL connection did not match the validated local TASK-01 database target")
+
+
 def _create_order(base_url: str, token: str, product_id: int) -> int:
     status, body, _ = _http(
         base_url,
@@ -187,10 +206,11 @@ def _create_order(base_url: str, token: str, product_id: int) -> int:
 
 def run() -> None:
     try:
-        settings = demo_environment(os.environ, dotenv_values(BACKEND_DIR / ".env"))
+        dotenv_path = BACKEND_DIR / ".env"
+        settings = demo_environment(os.environ, dotenv_values(dotenv_path))
     except DemoConfigurationError as exc:
         raise SystemExit(str(exc)) from exc
-    os.environ.update(settings)
+    apply_demo_environment(settings, dotenv_path)
 
     # These short-lived credentials exist only in this local smoke process; none are read or printed.
     test_secret = secrets.token_urlsafe(48)
@@ -207,6 +227,7 @@ def run() -> None:
 
     if engine is None:
         raise SystemExit("TASK01 demo database did not initialize")
+    _assert_connected_to_validated_local_target(engine, settings["DATABASE_URL"])
     tables = set(inspect(engine).get_table_names())
     missing = REQUIRED_TABLES - tables
     if missing:
