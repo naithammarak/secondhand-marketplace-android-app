@@ -569,6 +569,8 @@ def test_payment_request_validation(world, db):
         {"PAYMENT_SIMULATION_ENABLED": ""},
         {"PAYMENT_SIMULATION_ENABLED": "false"},
         {"PAYMENT_SIMULATION_ENABLED": "true", "APP_ENV": "production"},
+        {"PAYMENT_SIMULATION_ENABLED": "true", "APP_ENV": "PROD"},
+        {"PAYMENT_SIMULATION_ENABLED": "true", "APP_ENV": " Production "},
     ],
 )
 def test_simulation_endpoint_is_closed_outside_demo(world, db, monkeypatch, env):
