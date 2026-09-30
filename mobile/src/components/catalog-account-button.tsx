@@ -5,11 +5,13 @@ import { useTheme } from '@/hooks/use-theme';
 import { Colors } from '@/constants/theme';
 import { MarketplaceIcon } from './marketplace-icon';
 import { ThemedText } from './themed-text';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 export function CatalogAccountButton() {
   const { session } = useAuth();
   const theme = useTheme();
   const isDark = theme.background === Colors.dark.background;
+  if (isCatalogOnlyMode()) return null;
 
   if (session) {
     return (

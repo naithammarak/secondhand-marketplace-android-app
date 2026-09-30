@@ -2,12 +2,23 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const project = path.resolve(__dirname, '..');
-require('@expo/env').load(project);
-const required = ['EXPO_PUBLIC_API_BASE_URL', 'EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY'];
+const catalogOnly = process.env.EXPO_PUBLIC_CATALOG_ONLY === 'true';
+if (!catalogOnly) require('@expo/env').load(project);
+const required = catalogOnly
+  ? ['EXPO_PUBLIC_API_BASE_URL']
+  : ['EXPO_PUBLIC_API_BASE_URL', 'EXPO_PUBLIC_SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY'];
 const missing = required.filter(key => !process.env[key]);
 if (missing.length) {
-  console.error(`Live app configuration missing: ${missing.join(', ')}. Set mobile/.env.local before starting.`);
+  const setup = catalogOnly
+    ? 'Provide them in the process environment.'
+    : 'Set mobile/.env.local before starting.';
+  console.error(`Live app configuration missing: ${missing.join(', ')}. ${setup}`);
   process.exit(1);
+}
+if (catalogOnly) {
+  process.env.EXPO_NO_DOTENV = '1';
+  delete process.env.EXPO_PUBLIC_SUPABASE_URL;
+  delete process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 }
 // A live run must never inherit visual fixtures from a previous QA shell.
 delete process.env.WONDEE_VISUAL_QA;

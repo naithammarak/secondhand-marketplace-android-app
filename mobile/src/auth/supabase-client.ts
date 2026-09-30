@@ -1,10 +1,12 @@
 import 'react-native-url-polyfill/auto.js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 let client: SupabaseClient | undefined;
 
 export function getSupabaseClient(): SupabaseClient | null {
+  if (isCatalogOnlyMode()) return null;
   const isWeb = process.env.EXPO_OS === 'web';
   const isWebServer = isWeb && typeof window === 'undefined';
   if (isWebServer) return null;

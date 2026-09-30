@@ -34,6 +34,7 @@ import {
   type ProductListItem,
   type ProductCondition,
 } from '@/services/product-catalog-service';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 const catalogErrorMessages: Record<string, string> = {
   'network-error': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
@@ -77,7 +78,9 @@ function ProductCard({ item, onPress }: { item: ProductListItem; onPress(): void
   const brandText = useProductBrand(item);
   const rawShopName = item.seller?.displayName;
   const shopName =
-    !rawShopName || rawShopName === 'ร้านค้าที่ได้รับอนุมัติ' ? 'ร้านวนดีช็อป' : rawShopName;
+    isCatalogOnlyMode()
+      ? rawShopName || 'ร้านค้าที่ได้รับอนุมัติ'
+      : !rawShopName || rawShopName === 'ร้านค้าที่ได้รับอนุมัติ' ? 'ร้านวนดีช็อป' : rawShopName;
   const badgeTheme = conditionBadgeTheme[item.condition] ?? conditionBadgeTheme.UNKNOWN;
 
   return (

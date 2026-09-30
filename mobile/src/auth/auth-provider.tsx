@@ -14,6 +14,7 @@ import { getSupabaseClient } from './supabase-client';
 import { verifyAccountWithRefresh, withTokenRefresh } from './session-account';
 import { createMeService, MeServiceError, type MeErrorKind, type MeResult,
   type SelectableRole } from '@/services/me-service';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 function getAuthRedirectUri(): string | null {
   if (Platform.OS === 'web' && typeof window === 'undefined') return null;
@@ -66,7 +67,8 @@ function mapMeError(error: unknown): LoginResult {
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const supabase = useMemo(() => getSupabaseClient(), []);
+  const catalogOnly = isCatalogOnlyMode();
+  const supabase = useMemo(() => catalogOnly ? null : getSupabaseClient(), [catalogOnly]);
   const redirectTo = useMemo(() => getAuthRedirectUri(), []);
   const meService = useMemo(() => createMeService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL }), []);
   const [initializing, setInitializing] = useState(supabase !== null);
@@ -82,10 +84,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const currentSessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (!catalogOnly && Platform.OS === 'web' && typeof window !== 'undefined') {
       WebBrowser.maybeCompleteAuthSession();
     }
-  }, []);
+  }, [catalogOnly]);
 
   const loadAccount = useCallback(async (nextSession: Session, signal?: AbortSignal) => {
     if (!supabase) throw new MeServiceError('unauthorized');
@@ -126,7 +128,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [loadAccount]);
 
   const processCallback = useCallback(async (url: string, signal?: AbortSignal): Promise<LoginResult> => {
-    if (!supabase || !redirectTo) return 'oauth-error';
+    if (catalogOnly || !supabase || !redirectTo) return 'oauth-error';
     const existing = activeCallbacks.get(url);
     if (existing) return existing;
     const epoch = authEpoch;
@@ -166,10 +168,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     })().finally(() => activeCallbacks.delete(url));
     activeCallbacks.set(url, operation);
     return operation;
-  }, [redirectTo, supabase, verifyAccount]);
+  }, [catalogOnly, redirectTo, supabase, verifyAccount]);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (catalogOnly || !supabase) return;
     let mounted = true;
     void supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
@@ -222,10 +224,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       roleAbortRef.current?.abort();
       subscription.subscription.unsubscribe();
     };
-  }, [supabase, verifyAccount]);
+  }, [catalogOnly, supabase, verifyAccount]);
 
   useEffect(() => {
-    if (!supabase || Platform.OS === 'web') return;
+    if (catalogOnly || !supabase || Platform.OS === 'web') return;
     const updateRefresh = (state: string) => {
       if (state === 'active') void supabase.auth.startAutoRefresh();
       else void supabase.auth.stopAutoRefresh();
@@ -233,17 +235,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
     updateRefresh(AppState.currentState);
     const subscription = AppState.addEventListener('change', updateRefresh);
     return () => { subscription.remove(); void supabase.auth.stopAutoRefresh(); };
-  }, [supabase]);
+  }, [catalogOnly, supabase]);
 
   useEffect(() => {
+    if (catalogOnly) return;
     const handleUrl = ({ url }: { url: string }) => { void processCallback(url); };
     const subscription = Linking.addEventListener('url', handleUrl);
     void Linking.getInitialURL().then(url => { if (url) void processCallback(url); });
     return () => subscription.remove();
-  }, [processCallback]);
+  }, [catalogOnly, processCallback]);
 
   const loginAdapter = useMemo(() => {
-    if (!supabase || !redirectTo) return undefined;
+    if (catalogOnly || !supabase || !redirectTo) return undefined;
     return createGoogleLoginAdapter({
       platform: Platform.OS === 'web' ? 'web' : 'native',
       redirectTo,
@@ -261,7 +264,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         try { WebBrowser.dismissAuthSession(); } catch { /* no active session */ }
       },
     });
-  }, [processCallback, redirectTo, supabase]);
+  }, [catalogOnly, processCallback, redirectTo, supabase]);
 
   const clearSession = useCallback(async (scope: 'local' | 'global') => {
     authEpoch += 1;

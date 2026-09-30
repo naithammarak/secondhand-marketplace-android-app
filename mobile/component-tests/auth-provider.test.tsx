@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { useEffect } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/auth/auth-provider';
@@ -50,13 +51,14 @@ function makeSupabase() {
 
 function Probe() {
   const auth = useAuth();
-  currentLoginAdapter = auth.loginAdapter;
+  useEffect(() => { currentLoginAdapter = auth.loginAdapter; }, [auth.loginAdapter]);
   return (
     <View>
       <Text>{auth.session ? 'SIGNED_IN' : 'SIGNED_OUT'}</Text>
       <Text testID="account">{auth.account ? `${auth.account.fullName}:${auth.account.role ?? 'NONE'}` : 'NO_ACCOUNT'}</Text>
       <Text testID="saving">{auth.roleSaving ? 'SAVING' : 'IDLE'}</Text>
       <Text testID="role-error">{auth.roleError ?? 'NO_ERROR'}</Text>
+      <Text testID="login-adapter">{auth.loginAdapter ? 'AVAILABLE' : 'DISABLED'}</Text>
       <TouchableOpacity accessibilityRole="button" onPress={() => void auth.selectRole('BUYER')}>
         <Text>SELECT_BUYER</Text>
       </TouchableOpacity>
@@ -76,10 +78,27 @@ beforeEach(() => {
   currentLoginAdapter = undefined;
   mockSupabase = makeSupabase();
   process.env.EXPO_PUBLIC_API_BASE_URL = 'https://api.example.test';
+  delete process.env.EXPO_PUBLIC_CATALOG_ONLY;
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
+  delete process.env.EXPO_PUBLIC_CATALOG_ONLY;
+});
+
+test('catalog-only mode ignores a persisted session and does not initialize auth', async () => {
+  process.env.EXPO_PUBLIC_CATALOG_ONLY = 'true';
+  const fetch = jest.spyOn(global, 'fetch');
+
+  await render(<AuthProvider><Probe /></AuthProvider>);
+
+  expect(screen.getByText('SIGNED_OUT')).toBeTruthy();
+  expect(screen.getByTestId('account').props.children).toBe('NO_ACCOUNT');
+  expect(screen.getByTestId('login-adapter').props.children).toBe('DISABLED');
+  expect(mockSupabase.auth.getSession).not.toHaveBeenCalled();
+  expect(mockSupabase.auth.onAuthStateChange).not.toHaveBeenCalled();
+  expect(mockSupabase.auth.refreshSession).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 test('saves a role and refreshes an expired token only once', async () => {

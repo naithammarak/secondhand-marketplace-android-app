@@ -11,6 +11,7 @@ import { OrdersProvider } from '@/orders/orders-provider';
 import { VerificationProvider } from '@/verification/verification-provider';
 import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
 import { SplashScreenView } from '@/components/wondee/splash-screen';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -20,6 +21,7 @@ export default function TabLayout() {
 
 function AppLayout() {
   const { scheme: colorScheme, ready } = useThemePreference();
+  const catalogOnly = isCatalogOnlyMode();
   const [splashFinished, setSplashFinished] = useState(() => process.env.NODE_ENV === 'test');
   const [fontsLoaded, fontError] = useFonts({
     'Prompt-Regular': require('@/assets/fonts/Prompt-Regular.ttf'),
@@ -35,40 +37,80 @@ function AppLayout() {
   return (
     <ThemeProvider value={{ ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme), colors: { ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme).colors, primary: theme.primary, background: theme.background, card: theme.surface, text: theme.text, border: theme.border } }}>
       <AuthProvider>
-        <VerificationProvider>
-          <ReviewProvider>
-            <OrdersProvider>
-              <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: theme.background },
-                  animation: 'slide_from_right',
-                  animationDuration: 250,
-                }}>
-                <Stack.Screen name="index" />
-                <Stack.Screen name="login" />
-                <Stack.Screen name="profile" />
-                <Stack.Screen name="sell" />
-                <Stack.Screen name="auth/callback" />
-                <Stack.Screen name="seller-verification" />
-                <Stack.Screen name="admin-verifications" />
-                <Stack.Screen name="buy-by-product-id" />
-                <Stack.Screen name="products/index" />
-                <Stack.Screen name="products/[id]" />
-                <Stack.Screen name="product" />
-                <Stack.Screen name="checkout/[productId]" />
-                <Stack.Screen name="orders/index" />
-                <Stack.Screen name="orders/[orderId]" />
-                <Stack.Screen name="receipt/[orderId]" />
-              </Stack>
-              {!splashFinished ? (
-                <SplashScreenView onFinish={() => setSplashFinished(true)} />
-              ) : null}
-            </OrdersProvider>
-          </ReviewProvider>
-        </VerificationProvider>
+        {catalogOnly ? (
+          <AppRoutes
+            theme={theme}
+            catalogOnly
+            splashFinished={splashFinished}
+            onSplashFinish={() => setSplashFinished(true)}
+          />
+        ) : (
+          <VerificationProvider>
+            <ReviewProvider>
+              <OrdersProvider>
+                <AppRoutes
+                  theme={theme}
+                  catalogOnly={false}
+                  splashFinished={splashFinished}
+                  onSplashFinish={() => setSplashFinished(true)}
+                />
+              </OrdersProvider>
+            </ReviewProvider>
+          </VerificationProvider>
+        )}
       </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+const nonCatalogRoutes = [
+  'admin-deliveries',
+  'admin-verifications',
+  'auth/callback',
+  'buy-by-product-id',
+  'certificates/[token]',
+  'checkout/[productId]',
+  'courier/index',
+  'explore',
+  'inspections/index',
+  'inspections/[inspectionId]',
+  'login',
+  'orders/index',
+  'orders/[orderId]',
+  'orders/[orderId]/inspection',
+  'orders/[orderId]/review',
+  'orders/[orderId]/ship-to-center',
+  'product',
+  'profile',
+  'receipt/[orderId]',
+  'sell',
+  'seller-verification',
+] as const;
+
+function AppRoutes({ theme, catalogOnly, splashFinished, onSplashFinish }: {
+  theme: (typeof Colors)[keyof typeof Colors];
+  catalogOnly: boolean;
+  splashFinished: boolean;
+  onSplashFinish(): void;
+}) {
+  return (
+    <>
+      <StatusBar style={theme === Colors.dark ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.background },
+          animation: 'slide_from_right',
+          animationDuration: 250,
+        }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="products/index" />
+        <Stack.Screen name="products/[id]" />
+        <Stack.Protected guard={!catalogOnly}>
+          {nonCatalogRoutes.map(name => <Stack.Screen key={name} name={name} />)}
+        </Stack.Protected>
+      </Stack>
+      {!splashFinished ? <SplashScreenView onFinish={onSplashFinish} /> : null}
+    </>
   );
 }

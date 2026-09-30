@@ -30,6 +30,7 @@ import { productCatalogService, productCatalogStore } from '@/products/product-c
 import { createProductDetailStore } from '@/products/product-detail-store';
 import { setCachedProductBrand } from '@/hooks/use-product-brand';
 import { conditionLabels } from '@/services/product-catalog-service';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 const detailErrorMessages: Record<string, string> = {
   'network-error': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
@@ -113,6 +114,7 @@ export function ProductDetailScreen() {
   const theme = useTheme();
   const { scheme } = useThemePreference();
   const isDark = scheme === 'dark';
+  const catalogOnly = isCatalogOnlyMode();
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width, MaxContentWidth);
 
@@ -174,7 +176,7 @@ export function ProductDetailScreen() {
   );
 
   const handleBuy = async () => {
-    if (!product) return;
+    if (!product || catalogOnly) return;
     if (auth && !auth.session) {
       setGuestSheetVisible(true);
       return;
@@ -186,7 +188,7 @@ export function ProductDetailScreen() {
   };
 
   const handleGuestLogin = async () => {
-    if (!product) return;
+    if (!product || catalogOnly) return;
     setGuestSheetVisible(false);
     await marketplaceReturn.save({ kind: 'checkout', productId: product.id });
     router.push({
@@ -466,7 +468,7 @@ export function ProductDetailScreen() {
                       <ThemedText style={[styles.sellerNameText, { color: theme.text }]} numberOfLines={1}>
                         {product.seller.displayName}
                       </ThemedText>
-                      <Pressable
+                      {!catalogOnly ? <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="ดูรีวิวผู้ขาย"
                         onPress={() => setShowSellerReviews(true)}
@@ -474,7 +476,7 @@ export function ProductDetailScreen() {
                         <ThemedText style={styles.sellerRatingText}>
                           ★ 4.8 <ThemedText style={styles.sellerReviewsText}>(32 รีวิว) ›</ThemedText>
                         </ThemedText>
-                      </Pressable>
+                      </Pressable> : null}
                       {product.seller.verified && (
                         <View style={styles.verifiedBadge}>
                           <CheckmarkIcon size={10} />
@@ -482,11 +484,11 @@ export function ProductDetailScreen() {
                       )}
                     </View>
                     <ThemedText style={styles.sellerSubText}>
-                      ผู้ขายยืนยันตัวตนแล้ว • ตอบกลับเร็วมาก
+                      {catalogOnly ? 'ผู้ขายผ่านการอนุมัติแล้ว' : 'ผู้ขายยืนยันตัวตนแล้ว • ตอบกลับเร็วมาก'}
                     </ThemedText>
                   </View>
 
-                  <Pressable
+                  {!catalogOnly ? <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="ดูร้านค้า"
                     style={({ pressed }) => [
@@ -501,7 +503,7 @@ export function ProductDetailScreen() {
                     <ThemedText style={[styles.viewShopButtonText, { color: theme.text }]}>
                       ดูร้านค้า
                     </ThemedText>
-                  </Pressable>
+                  </Pressable> : null}
                 </View>
               )}
 
@@ -552,7 +554,7 @@ export function ProductDetailScreen() {
               },
             ]}
           >
-            {isOwnProduct ? (
+            {isOwnProduct && !catalogOnly ? (
               <View style={styles.bottomBarRow}>
                 <View style={styles.bottomPriceGroup}>
                   <ThemedText style={styles.bottomPriceLabel}>สินค้าของคุณ</ThemedText>
@@ -581,7 +583,11 @@ export function ProductDetailScreen() {
                   </ThemedText>
                 </View>
 
-                <Pressable
+                {catalogOnly ? (
+                  <ThemedText style={{ color: theme.textSecondary, flex: 1, textAlign: 'right', fontSize: 12 }}>
+                    โหมดนี้ดูสินค้าได้ แต่ยังสั่งซื้อไม่ได้
+                  </ThemedText>
+                ) : <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="ซื้อสินค้า"
                   onPress={() => { void handleBuy(); }}
@@ -591,14 +597,14 @@ export function ProductDetailScreen() {
                   ]}
                 >
                   <ThemedText style={styles.buyButtonText}>ซื้อสินค้า</ThemedText>
-                </Pressable>
+                </Pressable>}
               </View>
             )}
           </View>
         )}
 
         {/* Guest Login Required Bottom Sheet Modal */}
-        <Modal
+        {!catalogOnly ? <Modal
           visible={guestSheetVisible}
           transparent
           animationType="slide"
@@ -652,11 +658,11 @@ export function ProductDetailScreen() {
               </Pressable>
             </Pressable>
           </Pressable>
-        </Modal>
+        </Modal> : null}
 
         <ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
 
-        {product ? (
+        {!catalogOnly && product ? (
           <SellerReviewsModal
             visible={showSellerReviews}
             onClose={() => setShowSellerReviews(false)}

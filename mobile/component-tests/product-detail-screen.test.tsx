@@ -76,6 +76,7 @@ beforeEach(() => {
   mockGetProduct.mockReset();
   mockRefresh.mockReset();
   mockRefresh.mockResolvedValue(undefined);
+  delete process.env.EXPO_PUBLIC_CATALOG_ONLY;
 });
 
 describe('ProductDetailScreen', () => {
@@ -127,6 +128,23 @@ describe('ProductDetailScreen', () => {
       pathname: '/checkout/[productId]',
       params: { productId: '101' },
     });
+  });
+
+  test('catalog-only detail explains that buying is unavailable and hides placeholder reviews', async () => {
+    process.env.EXPO_PUBLIC_CATALOG_ONLY = 'true';
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      seller: { displayName: 'ร้านจริง', verified: true },
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+    expect(screen.getByText('โหมดนี้ดูสินค้าได้ แต่ยังสั่งซื้อไม่ได้')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'ซื้อสินค้า' })).toBeNull();
+    expect(screen.queryByText(/4\.8|32 รีวิว/)).toBeNull();
+    expect(screen.getByText('ผู้ขายผ่านการอนุมัติแล้ว')).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   test('renders placeholder image when product has no images', async () => {

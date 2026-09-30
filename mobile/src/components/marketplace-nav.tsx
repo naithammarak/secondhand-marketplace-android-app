@@ -6,16 +6,19 @@ import { useAuth } from '@/auth/auth-provider';
 import { useTheme } from '@/hooks/use-theme';
 import { ThemedText } from './themed-text';
 import { MarketplaceIcon } from './marketplace-icon';
+import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
 
 export type NavTabKey = 'home' | 'orders' | 'sell' | 'profile' | 'my-shop' | 'shop-orders';
 
 export function MarketplaceNav({ selected }: { selected: NavTabKey }) {
+  const catalogOnly = isCatalogOnlyMode();
   const theme = useTheme();
   const auth = useAuth();
   const [focused, setFocused] = useState(false);
   useFocusEffect(useCallback(() => { setFocused(true); return () => setFocused(false); }, []));
 
   const isSeller = auth.account?.source === 'backend' && auth.account.role === 'SELLER';
+  if (catalogOnly) return null;
 
   const activeColor = '#10b981';
   const inactiveColor = '#94a3b8';
