@@ -7,9 +7,14 @@ jest.mock('expo-router', () => {
   const { Text } = require('react-native');
   const Fragment = React.Fragment;
   const Stack: any = ({ children }: { children: React.ReactNode }) => React.createElement(Fragment, null, children);
-  Stack.Screen = ({ name }: { name: string }) => React.createElement(Text, { testID: `route:${name}` }, name);
-  Stack.Protected = ({ guard, children }: { guard: boolean; children: React.ReactNode }) =>
+  const MockStackScreen: React.FC<{ name: string }> = ({ name }) =>
+    React.createElement(Text, { testID: `route:${name}` }, name);
+  MockStackScreen.displayName = 'MockStackScreen';
+  Stack.Screen = MockStackScreen;
+  const MockStackProtected: React.FC<{ guard: boolean; children: React.ReactNode }> = ({ guard, children }) =>
     guard ? React.createElement(Fragment, null, children) : null;
+  MockStackProtected.displayName = 'MockStackProtected';
+  Stack.Protected = MockStackProtected;
   const Provider = ({ children }: { children: React.ReactNode }) => React.createElement(Fragment, null, children);
   return {
     DarkTheme: { colors: {} },
