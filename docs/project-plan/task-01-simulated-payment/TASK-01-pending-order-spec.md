@@ -24,6 +24,7 @@ Create a real order persisted in the configured Supabase/PostgreSQL database and
 - Local integration coverage proves authorized buyer order creation creates exactly one persisted order with the established `WAITING_PAYMENT` status, reserves the product atomically, and is visible only to its owner.
 - Invalid/duplicate/unavailable product requests cannot create extra orders or reservations; unauthorized users cannot view/cancel another buyer's order.
 - No reachable simulated-payment route can transition the order to `PAID`; no client action or server capability falsely reports successful payment.
+- Buyer checkout starts with empty contact/shipping inputs and saves only buyer-entered data. Prototype address quick-fill and unimplemented address-book save controls are unavailable in this mode.
 - Cancellation follows the existing backend contract and restores availability only when eligible.
 - Existing catalog, auth, and order tests plus focused mobile/web flow checks pass on the exact branch head; secrets and full-app guard remain protected.
 - A separate Sol 6.1 xhigh review approves the exact remote PR head before considering any live server activation. PR is stacked on #119 and is not merged without normal project acceptance.

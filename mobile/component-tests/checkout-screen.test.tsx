@@ -384,3 +384,30 @@ test('buyer-orders checkout creates an unpaid order without QR or simulated paym
     expect(mockSimulatePayment).not.toHaveBeenCalled();
   } finally { delete process.env.EXPO_PUBLIC_BUYER_ORDERS; }
 });
+
+test('buyer-orders checkout submits only entered shipping data without prototype address controls', () => {
+  process.env.EXPO_PUBLIC_BUYER_ORDERS = 'true';
+  try {
+    render(<CheckoutScreen productId={7} />);
+    expect(screen.queryByRole('button', { name: 'ใช้ที่อยู่ล่าสุด' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/สมชาย ใจดี/)).toBeNull();
+    expect(screen.queryByDisplayValue('0812345678')).toBeNull();
+    expect(screen.queryByDisplayValue('128/9 ซอยสุขุมวิท 39')).toBeNull();
+    const shipping = {
+      recipientName: 'ผู้รับที่กรอกเอง', phone: '0898765432', addressLine: '99 ถนนทดสอบ',
+      subdistrict: 'บางซื่อ', district: 'บางซื่อ', province: 'กรุงเทพมหานคร', postalCode: '10800',
+    };
+    const labels = {
+      recipientName: 'ชื่อผู้รับ', phone: 'เบอร์โทรศัพท์', addressLine: 'ที่อยู่',
+      subdistrict: 'ตำบล/แขวง', district: 'อำเภอ/เขต', province: 'จังหวัด', postalCode: 'รหัสไปรษณีย์',
+    };
+    for (const field of Object.keys(shipping) as (keyof typeof shipping)[]) {
+      expect(screen.getByLabelText(labels[field]).props.value).toBe('');
+      fireEvent.changeText(screen.getByLabelText(labels[field]), shipping[field]);
+    }
+    fireEvent.press(screen.getByRole('button', { name: 'สร้างคำสั่งซื้อ' }));
+    expect(mockCheckoutStore.submit).toHaveBeenCalledTimes(1);
+    expect(mockCheckoutStore.submit).toHaveBeenCalledWith(shipping);
+  } finally { delete process.env.EXPO_PUBLIC_BUYER_ORDERS; }
+});

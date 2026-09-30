@@ -228,6 +228,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   };
 
   const useSavedAddress = () => {
+    if (isBuyerOrdersMode()) return;
     setValues(CO_SAVED);
     Object.keys(CO_SAVED).forEach(k => store.clearFieldError(k as keyof AddressFormValues));
   };
@@ -388,9 +389,14 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                 {/* 2. Shipping Address Card */}
                 <View style={[styles.cardBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                   <ThemedText style={styles.sectionHeaderTitle}>ที่อยู่จัดส่ง</ThemedText>
+                  {isBuyerOrdersMode() ? (
+                    <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                      กรุณากรอกข้อมูลผู้รับจริง ข้อมูลนี้จะบันทึกในคำสั่งซื้อที่คุณสร้าง
+                    </ThemedText>
+                  ) : null}
 
                   {/* Feature: Use Saved Address Quick-fill */}
-                  <Pressable
+                  {!isBuyerOrdersMode() ? <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="ใช้ที่อยู่ล่าสุด"
                     onPress={useSavedAddress}
@@ -420,7 +426,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                         {CO_SAVED.addressLine} {CO_SAVED.subdistrict} {CO_SAVED.district} {CO_SAVED.province} {CO_SAVED.postalCode}
                       </ThemedText>
                     </View>
-                  </Pressable>
+                  </Pressable> : null}
 
                   {/* 7 Address Input Fields */}
                   <View style={styles.fieldsContainer}>
@@ -442,7 +448,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                   </View>
 
                   {/* Save address checkbox */}
-                  <Pressable
+                  {!isBuyerOrdersMode() ? <Pressable
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: saveAddressForNextTime }}
                     onPress={() => setSaveAddressForNextTime(prev => !prev)}
@@ -462,7 +468,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                     <ThemedText style={[styles.checkboxLabel, { color: theme.textSecondary }]}>
                       บันทึกที่อยู่นี้ไว้ใช้ครั้งถัดไป
                     </ThemedText>
-                  </Pressable>
+                  </Pressable> : null}
 
                   {state.submitError ? (
                     <View style={[styles.noticeBox, { borderColor: theme.danger }]}>

@@ -46,7 +46,7 @@ export function BuyerOrderScreen({ orderId }: { orderId: number | null }) {
       <Row label="ยอดรวม" value={formatBaht(order.amounts.totalAmount)} />
       {order.paymentStatus === 'UNPAID' && order.status === 'WAITING_PAYMENT' ? <>
         <ThemedText>สร้างคำสั่งซื้อแล้ว • ยังไม่ชำระเงิน</ThemedText>
-        <ThemedText>ยังไม่เปิดรับชำระเงิน สินค้าจองไว้ถึง {formatDateTime(order.expiresAt)} และจะคืนพร้อมขายเมื่อคำสั่งซื้อหมดอายุ</ThemedText>
+        <ThemedText>ยังไม่เปิดรับชำระเงิน สินค้าจองไว้ถึง {formatDateTime(order.expiresAt)} หากไม่ต้องการซื้อ สามารถยกเลิกคำสั่งซื้อได้</ThemedText>
       </> : null}
       {state.cancelError ? <ThemedText>{errorText(state.cancelError, state.cancelCode)}</ThemedText> : null}
       {order.canCancel ? <Button label="ยกเลิกคำสั่งซื้อ" disabled={state.cancelling}

@@ -4,6 +4,8 @@ This runtime preserves the original public catalog and adds real Google/Supabase
 sign-in, buyer registration and orders. Checkout creates `WAITING_PAYMENT` /
 `UNPAID`, reserves the product, and shows the saved order. No payment provider is
 configured, and this runtime has no simulated-payment endpoint or QR display.
+The buyer must enter the recipient and shipping address; prototype address
+quick-fill and an address-book save checkbox are unavailable in this runtime.
 
 ## Runtime boundary
 
