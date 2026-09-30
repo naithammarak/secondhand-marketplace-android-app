@@ -8,9 +8,10 @@ Create a real order persisted in the configured Supabase/PostgreSQL database and
 
 1. Build a limited buyer application stacked on the reviewed real-catalog PR #119. Keep real public catalog browsing and add only required buyer authentication, quote/create, buyer-owned order list/detail, and safe cancellation/receipt routes supported by the existing contract.
 2. Preserve existing order validation, product reservation, amount snapshots, ownership checks, and transaction semantics. A successful checkout must say the order is awaiting payment; it must not show a fake QR, payment success, or `PAID` state.
-3. Keep simulation endpoints unavailable in this runtime. Exclude seller, admin, upload, inspection, certificate, and unrelated write routes. Do not relax the full application certificate startup guard.
+3. Keep simulation endpoints unavailable in this runtime. Exclude seller/storefront order views, admin, upload, inspection, certificate, and unrelated write routes. Do not relax the full application certificate startup guard.
 4. Make web/mobile navigation support browse → sign in → create order → see pending order using the real API. Clearly explain that payment is not yet available. Do not silently fall back to fixture/mock data.
-5. Keep read-only catalog access separate from order/auth write transactions. Reuse current backend contracts rather than inventing parallel payment/order states.
+5. Allow active BUYER and SELLER accounts to act as buyers, preserving the canonical customer-role contract. Always list buyer-owned orders; reject seller views. Detail/cancel/receipt require `order.buyer_id` ownership, and own-product purchasing, staff access and inactive customer access remain forbidden.
+6. Keep read-only catalog access separate from order/auth write transactions. Reuse current backend contracts rather than inventing parallel payment/order states.
 
 ## Safety and test boundaries
 

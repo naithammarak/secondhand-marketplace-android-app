@@ -13,7 +13,7 @@ from app.catalog_database import get_catalog_db
 from app.database import get_db
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
 from app.models.product import Product
-from app.models.user import UserRole
+from app.models.user import UserRole, UserStatus
 from tests.order_helpers import auth_header, create_product, create_user, new_key, order_body, patch_auth
 
 
@@ -85,9 +85,10 @@ def test_pending_order_replay_ownership_and_cancellation(world, monkeypatch):
     assert client.post("/orders", headers={**other, "Idempotency-Key": new_key()}, json=order_body(product)).status_code == 409
     assert client.get(f"/orders/{order_id}", headers=other).status_code == 404
     assert client.post(f"/orders/{order_id}/cancel", headers=other).status_code == 404
-    assert client.get(f"/orders/{order_id}", headers=seller).status_code == 403
-    assert client.post(f"/orders/{order_id}/cancel", headers=seller).status_code == 403
-    assert client.get("/orders", headers=seller).status_code == 403
+    assert client.get(f"/orders/{order_id}", headers=seller).status_code == 404
+    assert client.post(f"/orders/{order_id}/cancel", headers=seller).status_code == 404
+    assert client.get(f"/orders/{order_id}/receipt", headers=seller).status_code == 404
+    assert client.get("/orders", headers=seller).json()["items"] == []
     assert client.get("/orders?role=seller", headers=seller).status_code == 403
     assert client.post(f"/orders/{order_id}/payments/simulate", headers=buyer, json={"outcome": "SUCCESS"}).status_code == 404
     assert client.get(f"/orders/{order_id}/receipt", headers=buyer).status_code == 404
@@ -112,3 +113,54 @@ def test_registration_and_invalid_order_do_not_grant_seller(world):
     assert client.post("/orders", headers={**headers, "Idempotency-Key": new_key()}, json=order_body(product, phone="bad")).status_code == 422
     with sessions() as db:
         assert db.get(Product, product).status == "AVAILABLE"
+
+
+def test_active_seller_purchases_as_buyer_without_seller_order_access(world):
+    client, sessions, _, _, other, owner, product = world
+    with sessions() as db:
+        seller_id, seller = create_user(db, UserRole.SELLER)
+        own_product = create_product(db, seller_id)
+    assert client.get(f"/orders/checkout-quote?product_id={own_product}", headers=seller).status_code == 409
+    assert client.post("/orders", headers={**seller, "Idempotency-Key": new_key()}, json=order_body(own_product)).status_code == 409
+    assert client.get(f"/orders/checkout-quote?product_id={product}", headers=seller).status_code == 200
+    response = client.post("/orders", headers={**seller, "Idempotency-Key": new_key()}, json=order_body(product))
+    assert response.status_code == 201
+    order = response.json()
+    assert order["viewer_role"] == "buyer"
+    assert (order["status"], order["payment_status"], order["can_pay"]) == ("WAITING_PAYMENT", "UNPAID", False)
+    order_id = order["id"]
+    listing = client.get("/orders", headers=seller).json()
+    assert listing["total"] == 1 and listing["items"][0]["viewer_role"] == "buyer"
+    assert client.get("/orders?role=seller", headers=seller).status_code == 403
+    assert client.get(f"/orders/{order_id}", headers=seller).json()["viewer_role"] == "buyer"
+    for headers in (other, owner):
+        assert client.get(f"/orders/{order_id}", headers=headers).status_code == 404
+        assert client.post(f"/orders/{order_id}/cancel", headers=headers).status_code == 404
+        assert client.get(f"/orders/{order_id}/receipt", headers=headers).status_code == 404
+    assert client.get(f"/orders/{order_id}/receipt", headers=seller).status_code == 404
+    assert client.post(f"/orders/{order_id}/cancel", headers=seller).json()["status"] == "CANCELLED"
+    with sessions() as db:
+        assert db.get(Product, product).status == "AVAILABLE"
+        assert db.get(Product, own_product).status == "AVAILABLE"
+
+
+@pytest.mark.parametrize("role", [UserRole.ADMIN, UserRole.COURIER, UserRole.INSPECTOR])
+def test_staff_cannot_use_customer_order_surface(world, role):
+    client, sessions, _, _, _, _, product = world
+    with sessions() as db:
+        _, headers = create_user(db, role)
+    assert client.get("/orders", headers=headers).status_code == 403
+    assert client.get(f"/orders/checkout-quote?product_id={product}", headers=headers).status_code == 403
+    assert client.post("/orders", headers={**headers, "Idempotency-Key": new_key()}, json=order_body(product)).status_code == 403
+    for path, method in (("/orders/1", "get"), ("/orders/1/cancel", "post"), ("/orders/1/receipt", "get")):
+        assert getattr(client, method)(path, headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize("role", [UserRole.BUYER, UserRole.SELLER])
+def test_inactive_customers_cannot_use_orders(world, role):
+    client, sessions, _, _, _, _, product = world
+    with sessions() as db:
+        _, headers = create_user(db, role, status=UserStatus.SUSPENDED)
+    assert client.get("/orders", headers=headers).status_code == 403
+    assert client.get(f"/orders/checkout-quote?product_id={product}", headers=headers).status_code == 403
+    assert client.post("/orders", headers={**headers, "Idempotency-Key": new_key()}, json=order_body(product)).status_code == 403

@@ -12,13 +12,11 @@ from app.api.orders import list_orders, require_buyer, router as orders_router
 from app.schemas.order import OrderDetail, OrderPage
 from app.database import get_db
 from app.models.order import Order
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 def buyer_order_access(request: Request, user: User = Depends(require_buyer),
                        db: Session = Depends(get_db)):
-    if user.role != UserRole.BUYER:
-        raise HTTPException(403, detail={"code": "buyer_role_required"})
     if request.query_params.get("role") == "seller":
         raise HTTPException(403, detail={"code": "buyer_orders_only"})
     order_id = request.path_params.get("order_id")

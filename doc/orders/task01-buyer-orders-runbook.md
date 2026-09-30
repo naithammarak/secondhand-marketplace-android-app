@@ -14,8 +14,11 @@ quick-fill and an address-book save checkbox are unavailable in this runtime.
 - Auth exposes only `POST /auth/google` and `GET /auth/me`; registration assigns
   BUYER using the existing authenticated Supabase JWT contract.
 - Orders expose quote, create, buyer list/detail, cancellation and receipt.
-  Every order route requires an active BUYER; seller/admin/courier/inspector roles
-  cannot use this surface. Detail/cancel/receipt also require order ownership.
+  Every order route requires an active customer (BUYER or SELLER) acting as the
+  buyer. Staff and inactive accounts cannot use this surface. Lists always use
+  buyer ownership; `role=seller` is rejected. Detail/cancel/receipt require
+  `order.buyer_id` ownership, including when the actor has a SELLER account.
+  Self-purchase remains forbidden.
 - Order responses report `can_pay=false`. Payments remain unavailable regardless
   of `APP_ENV` or `PAYMENT_SIMULATION_ENABLED` values. No financial rows are
   created by order creation.
