@@ -16,6 +16,11 @@ export const orderStatusColors: Record<OrderStatus, string> = {
   RECEIVED_AT_CENTER: Colors.light.info,
   INSPECTING: Colors.light.warning,
   RESULT_NOTIFIED: Colors.light.success,
+  SHIPPING_TO_BUYER: Colors.light.info,
+  COMPLETED: Colors.light.success,
+  RETURNING_TO_SELLER: Colors.light.warning,
+  REFUNDED: Colors.light.textSecondary,
+  RETURNED: Colors.light.textSecondary,
   CANCELLED: Colors.light.textSecondary,
   UNKNOWN: Colors.light.textSecondary,
 };

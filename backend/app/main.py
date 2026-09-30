@@ -1,6 +1,8 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin_orders import router as admin_orders_router
@@ -12,12 +14,37 @@ from app.api.products import router as products_router
 from app.api.orders import router as orders_router
 from app.api.inspections import router as inspections_router
 from app.api.verifications import router as verifications_router
+from app.services.certificate_urls import public_certificate_base_url
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Fail at startup before a positive inspection can commit without a usable URL.
+    public_certificate_base_url()
+    yield
 
 
 app = FastAPI(
     title="Project API",
     version="1.0.0",
+    lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def sensitive_result_headers(request: Request, call_next):
+    """Keep private results and public token lookups out of shared caches."""
+    parts = request.url.path.strip("/").split("/")
+    private = (len(parts) in {3, 4} and parts[0] == "orders" and parts[2] == "inspection"
+               and (len(parts) == 3 or parts[3] == "decision"))
+    certificate = len(parts) in {2, 3} and parts[0] == "certificates"
+    response = await call_next(request)
+    if private or certificate:
+        response.headers["Cache-Control"] = "no-store"
+    if certificate:
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Robots-Tag"] = "noindex"
+    return response
 
 # Allow the Expo mobile app to call the API during development.
 app.add_middleware(

@@ -1,11 +1,12 @@
 import { MarketplaceHeader } from '@/components/marketplace-header';
 import { useTheme } from '@/hooks/use-theme';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/auth-provider';
+import { emptyProductFormValues } from '@/products/product-form';
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { ProductForm, type ProductFormValues } from '@/components/product-form';
 import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/constants/theme';
@@ -19,6 +20,22 @@ const productService = createProductService({
 export default function NewProductScreen() {
   const styles = makeStyles(useTheme());
   const { session } = useAuth();
+  const params = typeof useLocalSearchParams === 'function' ? (useLocalSearchParams<{
+    relistOrderId?: string;
+    relistName?: string;
+    relistReason?: string;
+  }>() ?? {}) : {};
+
+  const isRelist = Boolean(params.relistOrderId || params.relistReason === 'fail');
+  const initialValues = useMemo(() => {
+    if (params.relistName || isRelist) {
+      return {
+        ...emptyProductFormValues,
+        name: params.relistName ?? '',
+      };
+    }
+    return undefined;
+  }, [params.relistName, isRelist]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,9 +90,16 @@ export default function NewProductScreen() {
   return (
     <View style={styles.page}>
       <SafeAreaView style={styles.safeArea}>
-        <MarketplaceHeader title="ลงขายสินค้า" back />
+        <MarketplaceHeader title={isRelist ? 'ลงขายอีกครั้ง' : 'ลงขายสินค้า'} back />
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
+            {isRelist && (
+              <View style={styles.relistBanner}>
+                <Text style={styles.relistBannerText}>
+                  ผลตรวจ: ไม่ตรงตามประกาศ — กรุณาแก้สภาพและรายละเอียดให้ตรงกับของจริงก่อนลงขายอีกครั้ง
+                </Text>
+              </View>
+            )}
             {uncertain && (
               <TouchableOpacity accessibilityRole="button" onPress={() => { setCheckedInventory(true); router.push('/product/mine'); }} style={styles.checkButton}>
                 <Text style={styles.checkButtonText}>ตรวจสินค้าของฉันก่อนลงซ้ำ</Text>
@@ -88,6 +112,7 @@ export default function NewProductScreen() {
             )}
             <ProductForm
               mode="create"
+              initialValues={initialValues}
               submitting={submitting}
               submitSuccess={success}
               submitDisabled={uncertain}
@@ -111,6 +136,20 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   card: {
     backgroundColor: theme.surface,
     padding: Spacing.three,
+  },
+  relistBanner: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: Spacing.three,
+    marginBottom: Spacing.three,
+  },
+  relistBannerText: {
+    fontSize: 12,
+    color: '#D97706',
+    fontWeight: '600',
+    lineHeight: 18,
   },
   title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: Spacing.three },
   checkButton: { backgroundColor: theme.primary, padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },

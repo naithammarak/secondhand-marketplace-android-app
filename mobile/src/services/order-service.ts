@@ -8,7 +8,20 @@
  * (ดู doc/orders/contract.md หัวข้อ 2)
  * แอปรุ่นเก่าต้องไม่พังเมื่อเจอค่าที่ยังไม่รู้จัก จึงแปลงเป็น 'UNKNOWN' แล้วแสดงข้อความกลางแทน
  */
-export const KNOWN_ORDER_STATUSES = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', 'RESULT_NOTIFIED', 'CANCELLED'] as const;
+export const KNOWN_ORDER_STATUSES = [
+  'WAITING_PAYMENT',
+  'WAITING_SELLER_SHIP',
+  'SHIPPING_TO_CENTER',
+  'RECEIVED_AT_CENTER',
+  'INSPECTING',
+  'RESULT_NOTIFIED',
+  'SHIPPING_TO_BUYER',
+  'COMPLETED',
+  'RETURNING_TO_SELLER',
+  'REFUNDED',
+  'RETURNED',
+  'CANCELLED',
+] as const;
 export type KnownOrderStatus = (typeof KNOWN_ORDER_STATUSES)[number];
 export type OrderStatus = KnownOrderStatus | 'UNKNOWN';
 export type CancelReason = 'BUYER' | 'EXPIRED';

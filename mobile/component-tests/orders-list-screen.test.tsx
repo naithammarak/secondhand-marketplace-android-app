@@ -27,6 +27,13 @@ test('paid orders have no payment action', () => {
   expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
   expect(screen.getByRole('button', { name: 'ดูรายละเอียด' })).toBeTruthy();
 });
+test('result notification does not claim that every result has a certificate', () => {
+  mockState.items[0].status = 'RESULT_NOTIFIED';
+  mockState.items[0].paymentStatus = 'PAID';
+  render(<OrdersListScreen />);
+  expect(screen.getByText('แจ้งผลการตรวจแล้ว')).toBeTruthy();
+  expect(screen.queryByText(/ออกใบรับรอง/)).toBeNull();
+});
 test.each(['CANCELLED', 'UNKNOWN'])('%s unpaid orders open details without offering payment', (status) => {
   mockState.items[0].status = status;
   render(<OrdersListScreen />);
@@ -82,3 +89,34 @@ test('displays seller countdown label for seller WAITING_PAYMENT order', () => {
   expect(screen.getByText(/⏱ ผู้ซื้อต้องชำระภายใน 19:\d\d|⏱ ผู้ซื้อต้องชำระภายใน 20:00/)).toBeTruthy();
 });
 
+test('RESULT_NOTIFIED with failed inspection displays failed badge and action to choose', () => {
+  mockState.items[0].id = 37;
+  mockState.items[0].status = 'RESULT_NOTIFIED';
+  mockState.items[0].inspectionResult = 'NOT_AS_DESCRIBED';
+  render(<OrdersListScreen />);
+  expect(screen.getByText('🟠 ไม่ตรงตามประกาศ')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ดูผลตรวจและเลือก' })).toBeTruthy();
+});
+
+test('RETURNING_TO_SELLER and REFUNDED display return badges and seller relist action', () => {
+  mockState.items[0].status = 'RETURNING_TO_SELLER';
+  const view = render(<OrdersListScreen />);
+  expect(screen.getByText('กำลังส่งคืนผู้ขาย')).toBeTruthy();
+
+  mockState.items[0].status = 'REFUNDED';
+  mockState.items[0].viewerRole = 'seller';
+  mockState.items[0].product.name = 'แจ็คเก็ตหนัง Zara';
+  view.rerender(<OrdersListScreen />);
+  expect(screen.getByText('คืนเงินแล้ว')).toBeTruthy();
+  const relistBtn = screen.getByRole('button', { name: 'ลงขายอีกครั้ง' });
+  expect(relistBtn).toBeTruthy();
+  fireEvent.press(relistBtn);
+  expect(mockPush).toHaveBeenCalledWith({
+    pathname: '/product/new',
+    params: {
+      relistOrderId: '42',
+      relistName: 'แจ็คเก็ตหนัง Zara',
+      relistReason: 'fail',
+    },
+  });
+});

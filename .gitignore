@@ -24,6 +24,7 @@ dist/
 
 # Node.js / Expo / React Native
 node_modules/
+/mobile/node_modules
 .expo/
 .expo-shared/
 web-build/

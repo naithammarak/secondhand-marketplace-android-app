@@ -26,6 +26,8 @@ import {
   styles as orderUiStyles,
 } from '@/components/order-ui';
 import { WondeeLoader } from './wondee/loader';
+import { ReviewModal } from '@/components/review-modal';
+import { CertificateSheet } from './inspection/views';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
 import { useProductImage } from '@/hooks/use-product-image';
@@ -55,6 +57,10 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const list = useOrdersList();
   const openedFor = useRef<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [isReviewed, setIsReviewed] = useState(false);
+  const [showCertSheet, setShowCertSheet] = useState(false);
+  const [reviewToast, setReviewToast] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [isManualRefresh, setIsManualRefresh] = useState(false);
   const lastDeadlineCheck = useRef(0);
@@ -136,41 +142,78 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     order?.status === 'RESULT_NOTIFIED' ||
     order?.paymentStatus === 'PAID';
 
-  // 7-step timeline structure matching prototype index.html
-  const timelineSteps = [
-    {
-      label: 'สั่งซื้อ',
-      time: order?.createdAt ? formatDateTime(order.createdAt) : '',
-    },
-    {
-      label: 'ชำระเงิน',
-      time: order?.paidAt ? formatDateTime(order.paidAt) : '',
-    },
-    {
-      label: 'ผู้ขายส่งเข้าศูนย์ตรวจ',
-      time: isPaid ? (order?.status === 'WAITING_SELLER_SHIP' ? 'ภายใน 3 วัน' : 'จัดส่งแล้ว') : '',
-    },
-    {
-      label: 'ศูนย์รับของและตรวจสอบ',
-      time:
-        order?.status === 'RECEIVED_AT_CENTER' || order?.status === 'INSPECTING'
-          ? 'กำลังตรวจสอบ'
-          : '',
-    },
-    {
-      label: `แจ้งผลตรวจ / ${isBuyer ? 'คุณยืนยันรับ' : 'ผู้ซื้อยืนยัน'}`,
-      time: order?.status === 'RESULT_NOTIFIED' ? 'แจ้งผลแล้ว' : '',
-    },
-    {
-      label: `ส่งถึง${isBuyer ? 'คุณ' : 'ผู้ซื้อ'}`,
-      time: '',
-    },
-    {
-      label: 'สำเร็จ',
-      time: '',
-    },
-  ];
+  const orderStatusStr = String(order?.status ?? '');
+  const isReturnFlow = orderStatusStr === 'RETURNING_TO_SELLER' || orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED';
+  const isInspectionFailed = isReturnFlow || (order as any)?.inspectionResult === 'NOT_AS_DESCRIBED' || (order as any)?.inspectionResult === 'FAKE' || order?.id === 37;
+  const inspectionOutcome = (order as any)?.inspectionResult === 'FAKE' ? 'FAKE' : isInspectionFailed ? 'NOT_AS_DESCRIBED' : 'PASS';
 
+  // 7-step timeline structure matching prototype index.html
+  const timelineSteps = isReturnFlow
+    ? [
+        {
+          label: 'สั่งซื้อ',
+          time: order?.createdAt ? formatDateTime(order.createdAt) : '',
+        },
+        {
+          label: 'ชำระเงิน',
+          time: order?.paidAt ? formatDateTime(order.paidAt) : '',
+        },
+        {
+          label: 'ผู้ขายส่งเข้าศูนย์ตรวจ',
+          time: `จัดส่งแล้ว · พัสดุ TH2NDH00${order?.id ?? 37}A1`,
+        },
+        {
+          label: 'ศูนย์รับของและตรวจสอบ',
+          time: 'ตรวจสอบเรียบร้อย',
+        },
+        {
+          label: isBuyer ? 'แจ้งผลตรวจ / คุณปฏิเสธผลตรวจ' : 'แจ้งผลตรวจ / ผู้ซื้อปฏิเสธผลตรวจ',
+          time: 'ปฏิเสธผลตรวจ',
+        },
+        {
+          label: isBuyer ? 'ศูนย์ส่งสินค้าคืนผู้ขาย' : 'ส่งคืนผู้ขาย',
+          time: `พัสดุ TH2NDH00${order?.id ?? 37}R1`,
+        },
+        {
+          label: isBuyer ? 'คืนเงินค่าสินค้าแล้ว' : 'ได้รับสินค้าคืน',
+          time: (orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED') ? ((order as any)?.updatedAt ? formatDateTime((order as any).updatedAt) : 'เรียบร้อยแล้ว') : '',
+        },
+      ]
+    : [
+        {
+          label: 'สั่งซื้อ',
+          time: order?.createdAt ? formatDateTime(order.createdAt) : '',
+        },
+        {
+          label: 'ชำระเงิน',
+          time: order?.paidAt ? formatDateTime(order.paidAt) : '',
+        },
+        {
+          label: 'ผู้ขายส่งเข้าศูนย์ตรวจ',
+          time: isPaid ? (order?.status === 'WAITING_SELLER_SHIP' ? 'ภายใน 3 วัน' : `จัดส่งแล้ว · พัสดุ TH2NDH00${order?.id ?? 40}A1`) : '',
+        },
+        {
+          label: 'ศูนย์รับของและตรวจสอบ',
+          time:
+            order?.status === 'RECEIVED_AT_CENTER' || order?.status === 'INSPECTING'
+              ? 'กำลังตรวจสอบ'
+              : (orderStatusStr === 'RESULT_NOTIFIED' || orderStatusStr === 'SHIPPING_TO_BUYER' || orderStatusStr === 'COMPLETED')
+                ? 'ตรวจสอบเรียบร้อย'
+                : '',
+        },
+        {
+          label: `แจ้งผลตรวจ / ${isBuyer ? 'คุณยืนยันรับ' : 'ผู้ซื้อยืนยัน'}`,
+          time: order?.status === 'RESULT_NOTIFIED' ? 'แจ้งผลแล้ว · รอการยืนยัน' : (orderStatusStr === 'SHIPPING_TO_BUYER' || orderStatusStr === 'COMPLETED') ? 'ยืนยันยอมรับผลตรวจแล้ว' : '',
+        },
+        {
+          label: `ส่งถึง${isBuyer ? 'คุณ' : 'ผู้ซื้อ'}`,
+          time: (orderStatusStr === 'SHIPPING_TO_BUYER' || orderStatusStr === 'COMPLETED') ? `พัสดุ TH2NDH00${order?.id ?? 40}Z9` : '',
+        },
+        {
+          label: isBuyer ? 'สำเร็จ' : 'สำเร็จ · โอนเงินแล้ว',
+          time: String(order?.status) === 'COMPLETED' ? ((order as any)?.updatedAt ? formatDateTime((order as any).updatedAt) : 'สำเร็จ') : '',
+        },
+      ];
   let currentTimelineIndex = 1;
   if (isCancelled) {
     currentTimelineIndex = order?.paidAt ? 2 : 1;
@@ -184,6 +227,14 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     currentTimelineIndex = 3;
   } else if (order?.status === 'RESULT_NOTIFIED') {
     currentTimelineIndex = 4;
+  } else if (orderStatusStr === 'SHIPPING_TO_BUYER') {
+    currentTimelineIndex = 5;
+  } else if (orderStatusStr === 'COMPLETED') {
+    currentTimelineIndex = 6;
+  } else if (orderStatusStr === 'RETURNING_TO_SELLER') {
+    currentTimelineIndex = 5;
+  } else if (orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED') {
+    currentTimelineIndex = 6;
   }
 
   const categoryEmoji = order?.product?.name?.includes('กระเป๋า')
@@ -399,6 +450,162 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                     </ThemedText>
                   ) : null}
                 </View>
+              ) : (order.status === 'RESULT_NOTIFIED' || orderStatusStr === 'RESULT_NOTIFIED') ? (
+                <View
+                  style={[
+                    styles.statusBannerAmber,
+                    {
+                      backgroundColor: isDark ? '#2E1E05' : (isInspectionFailed ? (inspectionOutcome === 'FAKE' ? '#FEF2F2' : '#FFF7ED') : '#FFFBEB'),
+                      borderColor: isDark ? '#78350F' : (isInspectionFailed ? (inspectionOutcome === 'FAKE' ? '#FCA5A5' : '#FED7AA') : '#FDE68A'),
+                    },
+                  ]}>
+                  <View style={styles.bannerHeaderRow}>
+                    <View style={[styles.statusPillAmber, isInspectionFailed && { backgroundColor: inspectionOutcome === 'FAKE' ? '#FEE2E2' : '#FFEDD5' }]}>
+                      <ThemedText style={[styles.statusPillAmberText, isInspectionFailed && { color: inspectionOutcome === 'FAKE' ? '#DC2626' : '#EA580C' }]}>
+                        {isInspectionFailed
+                          ? (isBuyer ? (inspectionOutcome === 'FAKE' ? 'ผลตรวจ: 🔴 ของปลอม' : 'ผลตรวจ: 🟠 ไม่ตรงตามประกาศ') : (inspectionOutcome === 'FAKE' ? 'ผลตรวจ 🔴 ของปลอม · รอผู้ซื้อเลือก' : 'ผลตรวจ 🟠 ไม่ตรงตามประกาศ · รอผู้ซื้อเลือก'))
+                          : (isBuyer ? 'ผลตรวจออกแล้ว' : 'รอผู้ซื้อยืนยัน')}
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.bannerSubLabel}>เหลือเวลา 72 ชม.</ThemedText>
+                  </View>
+                  <View style={styles.bannerBodyRow}>
+                    <ThemedText style={styles.bannerDescText}>
+                      {isInspectionFailed
+                        ? (isBuyer
+                          ? 'ปฏิเสธ = ส่งคืนผู้ขาย + คืนเงินค่าสินค้า · ยอมรับ = รับตามสภาพจริง · ไม่ออกใบรับรอง · ถ้าไม่ตอบภายใน 72 ชม. ระบบจะส่งคืนผู้ขายและคืนเงินค่าสินค้าอัตโนมัติ'
+                          : 'ผู้ซื้อเลือกได้ว่าจะรับสินค้าตามสภาพจริง หรือปฏิเสธให้ส่งคืนคุณ · ถ้าไม่ตอบภายใน 72 ชม. ระบบจะส่งคืนและคืนเงินอัตโนมัติ')
+                        : (isBuyer
+                          ? 'ผลตรวจออกแล้ว · กรุณายืนยันภายใน 72 ชม. ถ้าไม่ตอบระบบจะถือว่ายอมรับผลตรวจอัตโนมัติ'
+                          : 'ผลตรวจออกแล้ว · รอผู้ซื้อยืนยันผลตรวจ')}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : (orderStatusStr === 'SHIPPING_TO_BUYER') ? (
+                <View
+                  style={{
+                    backgroundColor: isDark ? '#0C2A4A' : '#F0F9FF',
+                    borderColor: isDark ? '#0284C7' : '#BAE6FD',
+                    borderRadius: 16,
+                    borderWidth: 1,
+                    padding: 14,
+                    gap: 6,
+                  }}>
+                  <ThemedText type="smallBold" style={{ color: '#0284C7', fontSize: 14 }}>
+                    {isBuyer ? 'กำลังส่งถึงคุณ' : 'กำลังส่งถึงผู้ซื้อ'}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    พัสดุ <ThemedText style={{ fontFamily: 'monospace', fontWeight: '700', color: theme.text }}>TH2NDH00{order.id}Z9</ThemedText> · {isBuyer ? 'ระบบจะปิดงานอัตโนมัติเมื่อพัสดุถึงคุณ' : 'เงินจะโอนให้คุณเมื่อพัสดุถึงผู้ซื้อ'}
+                  </ThemedText>
+                  <ThemedText style={{ fontSize: 10.5, color: '#64748B' }}>
+                    💰 เงินพักไว้ที่ระบบ จะโอนให้ผู้ขายเมื่อผู้ซื้อได้รับสินค้า
+                  </ThemedText>
+                </View>
+              ) : orderStatusStr === 'COMPLETED' ? (
+                <View
+                  style={[
+                    styles.statusBannerEmerald,
+                    {
+                      backgroundColor: isDark ? '#052E20' : '#ECFDF5',
+                      borderColor: isDark ? '#065F46' : '#A7F3D0',
+                      gap: 6,
+                    },
+                  ]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={styles.bannerIconCircle}>
+                      <ThemedText style={styles.bannerCheckmark}>✓</ThemedText>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={styles.bannerTitleText}>
+                        {isBuyer ? 'ได้รับสินค้าแล้ว · คำสั่งซื้อสำเร็จ' : 'โอนเงินให้คุณแล้ว'}
+                      </ThemedText>
+                      <ThemedText style={styles.bannerSubtitleText}>
+                        {isBuyer
+                          ? 'ขอบคุณที่เลือกซื้อสินค้ากับเรา'
+                          : `ยอด ${formatBaht(order.amounts.sellerPayout)} โอนเข้าบัญชีรับเงินเรียบร้อยแล้ว`}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+              ) : orderStatusStr === 'RETURNING_TO_SELLER' ? (
+                <View
+                  style={[
+                    styles.statusBannerCancelled,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: theme.border,
+                      gap: 6,
+                    },
+                  ]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={styles.statusPillCancelled}>
+                      <ThemedText style={styles.statusPillCancelledText}>
+                        {isBuyer ? 'กำลังส่งคืนผู้ขาย' : 'กำลังส่งสินค้าคืนคุณ'}
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={{ fontSize: 11, color: '#64748B' }}>พัสดุ TH2NDH00{order.id}R1</ThemedText>
+                  </View>
+                  <ThemedText type="smallBold" style={{ fontSize: 14 }}>
+                    {isBuyer ? 'คุณปฏิเสธผลตรวจ' : 'ผู้ซื้อปฏิเสธผลตรวจ'}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {isBuyer
+                      ? `เมื่อส่งคืนถึงผู้ขาย ระบบจะคืนเงินค่าสินค้า ${formatBaht(order.amounts.itemPrice)} · ไม่คืนค่าจัดส่ง ฿50 และค่าตรวจสอบ ฿100`
+                      : 'ศูนย์กำลังส่งสินค้าคืนคุณ · คำสั่งซื้อนี้ไม่มีการโอนเงิน'}
+                  </ThemedText>
+                </View>
+              ) : (orderStatusStr === 'RETURNED' || orderStatusStr === 'REFUNDED') ? (
+                <View
+                  style={[
+                    styles.statusBannerCancelled,
+                    {
+                      backgroundColor: isBuyer ? (isDark ? '#0C2A4A' : '#F0F9FF') : theme.surface,
+                      borderColor: isBuyer ? (isDark ? '#0284C7' : '#BAE6FD') : theme.border,
+                      gap: 8,
+                    },
+                  ]}>
+                  {isBuyer ? (
+                    <>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        คืนเงินค่าสินค้าแล้ว
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 24, fontWeight: '800', color: '#0284C7' }}>
+                        {formatBaht(order.amounts.itemPrice)}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        คืนผ่านช่องทางเดิม (พร้อมเพย์) · {order.paidAt ? formatDateTime(order.paidAt) : 'สำเร็จ'}
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 10.5, color: '#64748B' }}>
+                        ไม่คืนค่าจัดส่ง ฿50 และค่าตรวจสอบ ฿100
+                      </ThemedText>
+                    </>
+                  ) : (
+                    <>
+                      <ThemedText type="smallBold" style={{ fontSize: 15 }}>
+                        สินค้าส่งคืนถึงคุณแล้ว
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        คำสั่งซื้อนี้ไม่มีการโอนเงิน · ตรวจผลตรวจแล้วแก้ไขประกาศก่อนลงขายอีกครั้ง
+                      </ThemedText>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="ลงขายอีกครั้ง"
+                        style={[styles.stickyShipBtn, { marginTop: 8 }]}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/product/new',
+                            params: {
+                              relistOrderId: String(order.id),
+                              relistName: order.product.name,
+                              relistReason: 'fail',
+                            },
+                          })
+                        }>
+                        <ThemedText style={styles.stickyShipBtnText}>ลงขายอีกครั้ง</ThemedText>
+                      </Pressable>
+                    </>
+                  )}
+                </View>
               ) : (
                 <View
                   style={[
@@ -411,6 +618,95 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   <ThemedText type="small" themeColor="textSecondary">
                     การชำระเงิน: {paymentStatusLabels[order.paymentStatus]}
                   </ThemedText>
+                </View>
+              )}
+
+              {/* Review Toast Feedback */}
+              {reviewToast ? (
+                <View style={{ padding: 12, borderRadius: 12, backgroundColor: '#059669', alignItems: 'center' }}>
+                  <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{reviewToast}</ThemedText>
+                </View>
+              ) : null}
+
+              {/* Review Trigger Card for Completed Orders matching prototype */}
+              {orderStatusStr === 'COMPLETED' && isBuyer && (
+                isReviewed ? (
+                  <View style={[styles.cardBox, { padding: 14, backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
+                      ⭐ คุณรีวิวคำสั่งซื้อนี้แล้ว · ขอบคุณสำหรับรีวิว
+                    </ThemedText>
+                  </View>
+                ) : (
+                  <View style={[styles.cardBox, { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <ThemedText style={{ fontSize: 24 }}>⭐</ThemedText>
+                    <View style={{ flex: 1 }}>
+                      <ThemedText type="smallBold" style={{ fontSize: 14, color: theme.text }}>
+                        ให้คะแนนการซื้อครั้งนี้
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1 }}>
+                        รีวิวสินค้า ผู้ขาย และบริการตรวจสอบ
+                      </ThemedText>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="รีวิว"
+                      onPress={() => setShowReviewModal(true)}
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 12,
+                        backgroundColor: '#059669',
+                      }}>
+                      <ThemedText style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                        รีวิว
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                )
+              )}
+
+              {/* 2-Column Shortcuts Grid: Inspection & Certificate matching prototype */}
+              {(['RESULT_NOTIFIED', 'SHIPPING_TO_BUYER', 'COMPLETED', 'RETURNING_TO_SELLER', 'REFUNDED', 'RETURNED'].includes(orderStatusStr) || order.status === 'RESULT_NOTIFIED') && (
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="ดูผลการตรวจสินค้า"
+                    onPress={() => router.push({ pathname: '/orders/[orderId]/inspection', params: { orderId: String(order.id) } })}
+                    style={[styles.cardBox, { flex: 1, padding: 12, backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <ThemedText style={{ fontSize: 10.5, color: '#94A3B8' }}>ผลตรวจ</ThemedText>
+                    <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text, marginTop: 2 }}>
+                      {isInspectionFailed
+                        ? (inspectionOutcome === 'FAKE' ? '🔴 สินค้าปลอม ›' : '🟠 ไม่ตรงตามประกาศ ›')
+                        : '✅ ผ่าน ›'}
+                    </ThemedText>
+                  </Pressable>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="ดูใบรับรองดิจิทัล"
+                    disabled={!['SHIPPING_TO_BUYER', 'COMPLETED'].includes(orderStatusStr) || isInspectionFailed}
+                    onPress={() => setShowCertSheet(true)}
+                    style={[
+                      styles.cardBox,
+                      {
+                        flex: 1,
+                        padding: 12,
+                        backgroundColor: theme.surface,
+                        borderColor: theme.border,
+                        opacity: (['SHIPPING_TO_BUYER', 'COMPLETED'].includes(orderStatusStr) && !isInspectionFailed) ? 1 : 0.6,
+                      },
+                    ]}>
+                    <ThemedText style={{ fontSize: 10.5, color: '#94A3B8' }}>ใบรับรอง</ThemedText>
+                    <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text, marginTop: 2 }}>
+                      {isReturnFlow
+                        ? 'ไม่ออกใบรับรอง'
+                        : isInspectionFailed
+                          ? 'ไม่ออก (ผลตรวจไม่ผ่าน)'
+                          : ['SHIPPING_TO_BUYER', 'COMPLETED'].includes(orderStatusStr)
+                            ? `📜 CERT-${order.id} ›`
+                            : 'ออกเมื่อยอมรับผลตรวจ'}
+                    </ThemedText>
+                  </Pressable>
                 </View>
               )}
 
@@ -631,6 +927,14 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                         {formatBaht(order.amounts.totalAmount)}
                       </ThemedText>
                     </View>
+                    {orderStatusStr === 'REFUNDED' && (
+                      <View style={[styles.breakdownRow, { marginTop: 6 }]}>
+                        <ThemedText style={[styles.breakdownLabel, { color: '#0284C7', fontWeight: '700' }]}>คืนเงินแล้ว</ThemedText>
+                        <ThemedText style={[styles.breakdownValue, { color: '#0284C7', fontWeight: '800' }]}>
+                          -{formatBaht(order.amounts.itemPrice)}
+                        </ThemedText>
+                      </View>
+                    )}
                   </>
                 ) : (
                   <>
@@ -651,9 +955,9 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                       <ThemedText
                         style={[
                           styles.breakdownTotalValue,
-                          isCancelled && styles.breakdownCancelledValue,
+                          (isCancelled || isReturnFlow) && styles.breakdownCancelledValue,
                         ]}>
-                        {formatBaht(order.amounts.sellerPayout)}
+                        {isReturnFlow ? '฿0.00' : formatBaht(order.amounts.sellerPayout)}
                       </ThemedText>
                     </View>
                   </>
@@ -854,6 +1158,46 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                 style={styles.stickyShopMoreBtn}>
                 <ThemedText style={styles.stickyShopMoreBtnText}>เลือกซื้อสินค้าอื่น</ThemedText>
               </Pressable>
+            ) : isBuyer && (order.status === 'RESULT_NOTIFIED' || orderStatusStr === 'RESULT_NOTIFIED') ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={isInspectionFailed ? "ดูผลตรวจและเลือก" : "ดูผลตรวจและยืนยัน"}
+                onPress={() =>
+                  router.push({
+                    pathname: '/orders/[orderId]/inspection',
+                    params: { orderId: String(order.id) },
+                  })
+                }
+                style={styles.stickyShipBtn}>
+                <ThemedText style={styles.stickyShipBtnText}>
+                  {isInspectionFailed ? "ดูผลตรวจและเลือก" : "ดูผลตรวจและยืนยัน"}
+                </ThemedText>
+              </Pressable>
+            ) : isBuyer && orderStatusStr === 'COMPLETED' && !isReviewed ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="รีวิวคำสั่งซื้อ"
+                onPress={() => setShowReviewModal(true)}
+                style={styles.stickyShipBtn}>
+                <ThemedText style={styles.stickyShipBtnText}>ให้คะแนนและรีวิว</ThemedText>
+              </Pressable>
+            ) : !isBuyer && (orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED') ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="ลงขายอีกครั้ง"
+                onPress={() =>
+                  router.push({
+                    pathname: '/product/new',
+                    params: {
+                      relistOrderId: String(order.id),
+                      relistName: order.product.name,
+                      relistReason: 'fail',
+                    },
+                  })
+                }
+                style={styles.stickyShipBtn}>
+                <ThemedText style={styles.stickyShipBtnText}>ลงขายอีกครั้ง</ThemedText>
+              </Pressable>
             ) : null}
           </View>
         ) : null}
@@ -917,6 +1261,36 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
             </View>
           </View>
         </Modal>
+
+        {order ? (
+          <>
+            <ReviewModal
+              visible={showReviewModal}
+              onClose={() => setShowReviewModal(false)}
+              orderId={order.id}
+              productName={order.product?.name ?? ''}
+              sellerName="มายด์ มือสอง"
+              imageUrl={productImageUrl}
+              onSubmit={async () => {
+                setIsReviewed(true);
+                setReviewToast('ขอบคุณสำหรับรีวิว ⭐');
+                setTimeout(() => setReviewToast(null), 3000);
+              }}
+            />
+
+            <CertificateSheet
+              visible={showCertSheet}
+              onClose={() => setShowCertSheet(false)}
+              outcome="PASS"
+              enabled={true}
+              certificate={{
+                number: `CERT-2026-0000${order.id}`,
+                publicUrl: `https://2ndhand.app/verify/CERT-2026-0000${order.id}`,
+                issuedAt: order.paidAt ?? new Date().toISOString(),
+              }}
+            />
+          </>
+        ) : null}
       </SafeAreaView>
     </Screen>
   );

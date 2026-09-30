@@ -314,7 +314,7 @@ test('สถานะที่ไม่ใช่ข้อความยัง�
 test('ข้อความสถานะกลางถูกใช้แทนค่าว่างเสมอ', () => {
   assert.equal(orderStatusLabel('WAITING_PAYMENT'), 'รอชำระเงิน');
   assert.equal(orderStatusLabel('UNKNOWN'), orderStatusLabels.UNKNOWN);
-  for (const value of ['SHIPPING_TO_BUYER', '', null, undefined]) {
+  for (const value of ['UNKNOWN_FUTURE_STATUS', '', null, undefined]) {
     assert.equal(orderStatusLabel(value), orderStatusLabels.UNKNOWN, `value=${value}`);
   }
   assert.notEqual(orderStatusLabels.UNKNOWN.trim(), '');

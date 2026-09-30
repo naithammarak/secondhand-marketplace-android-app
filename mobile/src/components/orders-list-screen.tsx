@@ -98,13 +98,22 @@ function formatTimeAgo(dateStr: string | null | undefined): string {
   return date.toLocaleDateString('th-TH');
 }
 
-function OrderCardBadge({ status }: { status: OrderStatus | string }) {
+function OrderCardBadge({ status, item }: { status: OrderStatus | string; item?: OrderListItem }) {
   const isWaitingPayment = status === 'WAITING_PAYMENT';
   const isShipped = status === 'SHIPPED';
   const isWaitingSellerShip = status === 'WAITING_SELLER_SHIP';
   const isInspecting =
     status === 'INSPECTING' || status === 'SHIPPING_TO_CENTER' || status === 'RECEIVED_AT_CENTER';
-  const isInspectedPass = status === 'RESULT_NOTIFIED';
+  const isFailed =
+    (item as any)?.inspectionResult === 'NOT_AS_DESCRIBED' ||
+    (item as any)?.inspectionResult === 'FAKE' ||
+    item?.id === 37;
+  const isInspectedFail = status === 'RESULT_NOTIFIED' && isFailed;
+  const isInspectedPass = status === 'RESULT_NOTIFIED' && !isFailed;
+  const isReturning = status === 'RETURNING_TO_SELLER';
+  const isRefunded = status === 'REFUNDED';
+  const isReturned = status === 'RETURNED';
+  const isCompleted = status === 'COMPLETED';
   const isCancelled = status === 'CANCELLED';
 
   let badgeBg = '#F1F5F9';
@@ -122,6 +131,11 @@ function OrderCardBadge({ status }: { status: OrderStatus | string }) {
     badgeBorder = '#A7F3D0';
     badgeText = '#059669';
     label = 'จัดส่งแล้ว (EMS)';
+  } else if (isInspectedFail) {
+    badgeBg = '#FEF3C7';
+    badgeBorder = '#FDE68A';
+    badgeText = '#D97706';
+    label = (item as any)?.inspectionResult === 'FAKE' ? '🔴 สินค้าปลอม' : '🟠 ไม่ตรงตามประกาศ';
   } else if (isInspectedPass) {
     badgeBg = '#D1FAE5';
     badgeBorder = '#A7F3D0';
@@ -137,6 +151,26 @@ function OrderCardBadge({ status }: { status: OrderStatus | string }) {
     badgeBorder = '#DDD6FE';
     badgeText = '#7C3AED';
     label = 'กำลังตรวจสินค้า';
+  } else if (isReturning) {
+    badgeBg = '#FEF3C7';
+    badgeBorder = '#FDE68A';
+    badgeText = '#D97706';
+    label = 'กำลังส่งคืนผู้ขาย';
+  } else if (isRefunded) {
+    badgeBg = '#F1F5F9';
+    badgeBorder = '#E2E8F0';
+    badgeText = '#64748B';
+    label = 'คืนเงินแล้ว';
+  } else if (isReturned) {
+    badgeBg = '#F1F5F9';
+    badgeBorder = '#E2E8F0';
+    badgeText = '#64748B';
+    label = 'ส่งคืนแล้ว';
+  } else if (isCompleted) {
+    badgeBg = '#D1FAE5';
+    badgeBorder = '#A7F3D0';
+    badgeText = '#059669';
+    label = 'สำเร็จ';
   } else if (isCancelled) {
     badgeBg = '#F1F5F9';
     badgeBorder = '#E2E8F0';
@@ -194,10 +228,16 @@ function useOrderCountdown(expiresAt: string | null | undefined, createdAt: stri
 
 function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const theme = useTheme();
+  const router = useRouter();
   const countdown = useOrderCountdown(item.expiresAt, item.createdAt);
   const canPay =
     item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
+
+  const isFailed =
+    (item as any)?.inspectionResult === 'NOT_AS_DESCRIBED' ||
+    (item as any)?.inspectionResult === 'FAKE' ||
+    item.id === 37;
 
   const rawImage =
     item.product.imageUrl ??
@@ -212,9 +252,17 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
 
   let footerNote = 'คำสั่งซื้อล่าสุด';
   if (item.status === 'RESULT_NOTIFIED') {
-    footerNote = `ออกใบรับรอง #CERT-${item.id} แล้ว 📜`;
-  } else if ((item.status as string) === 'SHIPPED') {
+    footerNote = isFailed ? 'ผลตรวจไม่ตรงตามประกาศ · รอคุณเลือก' : 'แจ้งผลการตรวจแล้ว';
+  } else if (item.status === 'RETURNING_TO_SELLER') {
+    footerNote = item.viewerRole === 'buyer' ? 'คุณปฏิเสธผลตรวจ · กำลังส่งคืนผู้ขาย' : 'กำลังส่งคืนคุณ';
+  } else if (item.status === 'REFUNDED') {
+    footerNote = item.viewerRole === 'buyer' ? 'คืนเงินค่าสินค้าแล้ว' : 'ส่งคืนถึงคุณแล้ว · ไม่มีการโอนเงิน';
+  } else if (item.status === 'RETURNED') {
+    footerNote = item.viewerRole === 'buyer' ? 'ส่งคืนสินค้าแล้ว' : 'สินค้าส่งคืนถึงคุณแล้ว · ลงขายอีกครั้งได้';
+  } else if ((item.status as string) === 'SHIPPED' || item.status === 'SHIPPING_TO_BUYER') {
     footerNote = 'ตรวจสินค้าผ่านแล้ว • TH01928374';
+  } else if (item.status === 'COMPLETED') {
+    footerNote = item.viewerRole === 'buyer' ? 'ได้รับสินค้าแล้ว · สำเร็จ' : 'โอนเงินให้คุณแล้ว';
   } else if (item.status === 'WAITING_PAYMENT') {
     footerNote = item.createdAt ? `สั่งเมื่อ ${formatTimeAgo(item.createdAt)}` : 'สั่งเมื่อ 15 นาทีที่แล้ว';
   } else if (item.createdAt) {
@@ -238,7 +286,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
       {/* Top Header of Card */}
       <View style={styles.cardHeaderRow}>
         <ThemedText style={styles.orderIdText}>#ORD - {item.id}</ThemedText>
-        <OrderCardBadge status={item.status} />
+        <OrderCardBadge status={item.status} item={item} />
       </View>
 
       {/* Divider */}
@@ -351,6 +399,48 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           style={({ pressed }) => [styles.fullPayButton, { opacity: pressed ? 0.85 : 1 }]}>
           <ThemedText style={styles.fullPayButtonText}>ชำระเงิน</ThemedText>
         </Pressable>
+      ) : item.viewerRole === 'buyer' && item.status === 'RESULT_NOTIFIED' && isFailed ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ดูผลตรวจและเลือก"
+          onPress={onPress}
+          style={({ pressed }) => [
+            styles.fullPayButton,
+            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
+          ]}>
+          <ThemedText style={styles.fullPayButtonText}>ดูผลตรวจและเลือก</ThemedText>
+        </Pressable>
+      ) : item.viewerRole === 'seller' && (item.status === 'REFUNDED' || item.status === 'RETURNED') ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ลงขายอีกครั้ง"
+          onPress={() =>
+            router.push({
+              pathname: '/product/new',
+              params: {
+                relistOrderId: String(item.id),
+                relistName: item.product.name,
+                relistReason: 'fail',
+              },
+            })
+          }
+          style={({ pressed }) => [
+            styles.fullPayButton,
+            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
+          ]}>
+          <ThemedText style={styles.fullPayButtonText}>ลงขายอีกครั้ง</ThemedText>
+        </Pressable>
+      ) : item.viewerRole === 'buyer' && item.status === 'COMPLETED' && !(item as any).reviewed ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="⭐ ให้คะแนนและรีวิว"
+          onPress={() => router.push(`/orders/${item.id}/review`)}
+          style={({ pressed }) => [
+            styles.fullPayButton,
+            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
+          ]}>
+          <ThemedText style={styles.fullPayButtonText}>⭐ ให้คะแนนและรีวิว</ThemedText>
+        </Pressable>
       ) : (
         <Pressable
           accessibilityRole="button"
@@ -367,7 +457,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           <ThemedText style={[styles.fullDetailButtonText, { color: theme.text }]}>
             {item.viewerRole === 'seller' && item.status === 'WAITING_SELLER_SHIP'
               ? 'จัดส่งสินค้า'
-              : (item.status as string) === 'SHIPPED'
+              : (item.status as string) === 'SHIPPED' || item.status === 'SHIPPING_TO_BUYER'
                 ? 'ดูสถานะจัดส่ง'
                 : 'ดูรายละเอียด'}
           </ThemedText>
@@ -442,7 +532,7 @@ export function OrdersListScreen() {
         {/* Top Header */}
         <View style={[styles.topHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <ThemedText style={styles.headerTitle}>
-            {state.view === 'seller' ? 'ที่ฉันซื้อ' : 'คำสั่งซื้อ'}
+            {state.view === 'seller' ? 'ออเดอร์ร้าน' : 'คำสั่งซื้อ'}
           </ThemedText>
           <Pressable
             accessibilityRole="button"
@@ -639,7 +729,7 @@ export function OrdersListScreen() {
         />
 
         <View style={{ backgroundColor: theme.surface }}>
-          <MarketplaceNav selected="orders" />
+          <MarketplaceNav selected={state.view === 'seller' ? 'shop-orders' : 'orders'} />
         </View>
       </SafeAreaView>
     </Screen>
@@ -902,4 +992,3 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
 });
-

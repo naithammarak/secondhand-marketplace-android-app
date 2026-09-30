@@ -1,13 +1,18 @@
 import type { CancelReason, OrderStatus, PaymentStatus } from '../services/order-service';
 
 /** ข้อความภาษาไทยของสถานะจาก backend หน้าจอแสดงตามนี้เท่านั้น ไม่คำนวณสถานะเอง */
-export const orderStatusLabels: Record<OrderStatus, string> = {
+export const orderStatusLabels: Record<string, string> = {
   WAITING_PAYMENT: 'รอชำระเงิน',
   WAITING_SELLER_SHIP: 'ชำระแล้ว รอผู้ขายจัดส่ง',
   SHIPPING_TO_CENTER: 'กำลังส่งเข้าศูนย์ตรวจ',
   RECEIVED_AT_CENTER: 'ศูนย์รับสินค้าแล้ว',
   INSPECTING: 'กำลังตรวจสินค้า',
   RESULT_NOTIFIED: 'แจ้งผลตรวจแล้ว',
+  SHIPPING_TO_BUYER: 'กำลังส่งถึงผู้ซื้อ',
+  COMPLETED: 'สำเร็จ',
+  RETURNING_TO_SELLER: 'กำลังส่งคืนผู้ขาย',
+  REFUNDED: 'คืนเงินแล้ว',
+  RETURNED: 'ส่งคืนแล้ว',
   CANCELLED: 'ยกเลิกแล้ว',
   // สถานะที่แอปรุ่นนี้ยังไม่รู้จัก (backend เพิ่มสถานะหลังการจัดส่งในรอบถัดไป)
   UNKNOWN: 'สถานะอื่น ๆ กรุณาอัปเดตแอปเพื่อดูรายละเอียด',
@@ -16,7 +21,7 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
 /** ใช้ตัวนี้เสมอแทนการอ่าน orderStatusLabels ตรง ๆ เพื่อไม่ให้หน้าจอว่างเมื่อเจอสถานะใหม่ */
 export function orderStatusLabel(status: OrderStatus | string | null | undefined): string {
   if (!status) return orderStatusLabels.UNKNOWN;
-  return orderStatusLabels[status as OrderStatus] ?? orderStatusLabels.UNKNOWN;
+  return orderStatusLabels[status] ?? orderStatusLabels.UNKNOWN;
 }
 
 /** ใช้ได้ทั้งมุมมองผู้ซื้อและผู้ขาย จึงไม่เขียนว่า "คุณ" */

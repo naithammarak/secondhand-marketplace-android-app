@@ -52,7 +52,7 @@ const order = (extra: Record<string, unknown> = {}) => ({
 });
 
 function stateWith(current: Record<string, unknown>) {
-  return { ...initialOrderDetailState, owner: 'user-a', orderId: 41, order: current };
+  return { ...initialOrderDetailState, owner: 'user-a', orderId: (current.id as number) ?? 41, order: current };
 }
 
 beforeEach(() => {
@@ -108,4 +108,65 @@ test('order data is hidden immediately when the store still belongs to the previ
   render(<OrderDetailScreen orderId={41} />);
   expect(screen.queryByText('เสื้อ')).toBeNull();
   expect(screen.queryByText('จำลองจ่ายสำเร็จ')).toBeNull();
+});
+
+test('RETURNING_TO_SELLER displays returning banner, shortcuts, and return timeline', () => {
+  mockDetailState = stateWith(order({
+    id: 37,
+    status: 'RETURNING_TO_SELLER',
+    canPay: false,
+    canCancel: false,
+    inspectionResult: 'NOT_AS_DESCRIBED',
+  }));
+  render(<OrderDetailScreen orderId={37} />);
+
+  expect(screen.getByText('กำลังส่งคืนผู้ขาย')).toBeTruthy();
+  expect(screen.getByText('คุณปฏิเสธผลตรวจ')).toBeTruthy();
+  expect(screen.getByText('🟠 ไม่ตรงตามประกาศ ›')).toBeTruthy();
+  expect(screen.getByText('ไม่ออกใบรับรอง')).toBeTruthy();
+  expect(screen.getByText('ศูนย์ส่งสินค้าคืนผู้ขาย')).toBeTruthy();
+});
+
+test('REFUNDED displays refund amount and seller view offers relist button', () => {
+  // Test buyer view on refunded
+  mockDetailState = stateWith(order({
+    id: 37,
+    status: 'REFUNDED',
+    viewerRole: 'buyer',
+    canPay: false,
+    canCancel: false,
+    inspectionResult: 'NOT_AS_DESCRIBED',
+  }));
+  const view = render(<OrderDetailScreen orderId={37} />);
+  expect(screen.getAllByText('คืนเงินค่าสินค้าแล้ว').length).toBeGreaterThan(0);
+  expect(screen.getByText('คืนเงินแล้ว')).toBeTruthy();
+
+  // Test seller view on refunded offers relist button
+  mockDetailState = stateWith(order({
+    id: 37,
+    status: 'REFUNDED',
+    viewerRole: 'seller',
+    canPay: false,
+    canCancel: false,
+    inspectionResult: 'NOT_AS_DESCRIBED',
+  }));
+  view.rerender(<OrderDetailScreen orderId={37} />);
+  expect(screen.getByText('สินค้าส่งคืนถึงคุณแล้ว')).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'ลงขายอีกครั้ง' }).length).toBeGreaterThan(0);
+});
+
+test('RESULT_NOTIFIED with failed inspection displays fail banner and button to choose', () => {
+  mockDetailState = stateWith(order({
+    id: 37,
+    status: 'RESULT_NOTIFIED',
+    viewerRole: 'buyer',
+    canPay: false,
+    canCancel: false,
+    inspectionResult: 'NOT_AS_DESCRIBED',
+  }));
+  render(<OrderDetailScreen orderId={37} />);
+
+  expect(screen.getByText(/ผลตรวจ: 🟠 ไม่ตรงตามประกาศ/)).toBeTruthy();
+  expect(screen.getByText(/ถ้าไม่ตอบภายใน 72 ชม./)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ดูผลตรวจและเลือก' })).toBeTruthy();
 });

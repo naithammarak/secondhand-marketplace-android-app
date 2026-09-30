@@ -78,6 +78,8 @@ from app.services.order_pricing import (
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
+BUYER_ACCOUNT_ROLES = frozenset({UserRole.BUYER, UserRole.SELLER})
+
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
@@ -175,9 +177,9 @@ def require_idempotency_key(
 
 
 def require_buyer(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role not in {UserRole.BUYER, UserRole.SELLER}:
+    if current_user.role not in BUYER_ACCOUNT_ROLES:
         raise api_error(
-            status.HTTP_403_FORBIDDEN, "buyer_role_required", "เฉพาะบัญชีผู้ซื้อเท่านั้นที่สั่งซื้อได้"
+            status.HTTP_403_FORBIDDEN, "buyer_role_required", "เฉพาะบัญชีผู้ซื้อหรือผู้ขายเท่านั้นที่สั่งซื้อได้"
         )
     ensure_active(current_user)
     return current_user
@@ -257,8 +259,10 @@ def viewer_role_for(order: Order, user: User) -> ViewerRole | None:
     return None
 
 
-def load_order_for(db: Session, order_id: int, user: User, lock: bool = False) -> tuple[Order, ViewerRole]:
-    ensure_active(user)
+def load_order_for(db: Session, order_id: int, user: User, lock: bool = False,
+                   allow_inactive: bool = False) -> tuple[Order, ViewerRole]:
+    if not allow_inactive:
+        ensure_active(user)
     query = select(Order).where(Order.id == order_id)
     if lock:
         # ล็อกแถว Order ไว้จนจบ transaction ให้คำขอจ่ายเงินของ Order เดียวกันเข้าแถวทีละคำขอ

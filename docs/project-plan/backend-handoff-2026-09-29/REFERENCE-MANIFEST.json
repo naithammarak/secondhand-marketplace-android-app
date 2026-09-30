@@ -1,0 +1,63 @@
+{
+  "captured_at_utc": "2026-09-28T17:10:38.224229+00:00",
+  "repository": "https://github.com/naithammarak/secondhand-marketplace-android-app",
+  "a234_head": "d02408ff048f3e1aece9dfbb34db3e9c07305f21",
+  "reference_policy": "Historical documentation snapshots. Reconcile against CONTEXT and the exact implementation revision; no live environment acceptance is implied. Source-code links resolve in the recipient repository, not in this documentation-only package.",
+  "files": [
+    {
+      "path": "references/project-plan/FINISH-spec.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/FINISH-spec.md",
+      "sha256": "13eeed5bc486428eca316b0a51a157d0f331f50932400054e8a85135c16cde30"
+    },
+    {
+      "path": "references/project-plan/FINISH-AI-handoff.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/FINISH-AI-handoff.md",
+      "sha256": "f9ebc13d323b91262fdc09f3951d875404040f3ad4332e32d5d4e9e9d52a76ac"
+    },
+    {
+      "path": "references/project-plan/FULFILLMENT-00-delivery-proof-and-deadlines.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/FULFILLMENT-00-delivery-proof-and-deadlines.md",
+      "sha256": "25cd7c74688b48f6e649edc777536b1b4c89ba6e82e62e4d590b2a36d5e39091"
+    },
+    {
+      "path": "references/project-plan/CERT-spec.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/CERT-spec.md",
+      "sha256": "a6373edefb7c9dbe1bc5a7e933111ee312edd549c55ffe0751052ae9a5b2b76f"
+    },
+    {
+      "path": "references/project-plan/INSPECT-spec.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/INSPECT-spec.md",
+      "sha256": "e8e39b3193a62c8855a971d7d293fcbf42faff21d8eef5758574aed7ab29e778"
+    },
+    {
+      "path": "references/project-plan/GitHub_Prototype_Backlog.md",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/project-plan/GitHub_Prototype_Backlog.md",
+      "sha256": "ccccc9bd1e33289e14f29ea6d8b731083f283a2ead46eeec12c5ca304b1a1ba9"
+    },
+    {
+      "path": "references/state-diagram/Order State Diagram.puml",
+      "source": "/home/tmk/project/market-place-mobile-app/docs/state-diagram/Order State Diagram.puml",
+      "sha256": "b9b79a90b62c8d7ba2de2e489145a3676d4279f61399f21c5b53eb58190ba804"
+    },
+    {
+      "path": "references/repository/doc/orders/contract.md",
+      "source": "/home/tmk/.codex/worktrees/a234/secondhand-marketplace-android-app/doc/orders/contract.md",
+      "sha256": "ad088dd24d7967e7117a3577be0ea33f14048f6737ffa99e94ef7c074d1da31e"
+    },
+    {
+      "path": "references/repository/docs/features/UX-01-wondee-marketplace.md",
+      "source": "/home/tmk/.codex/worktrees/a234/secondhand-marketplace-android-app/docs/features/UX-01-wondee-marketplace.md",
+      "sha256": "d970c4037b8d5aa399dca4f61562f89f48728d438302553b8b9563cb1f791676"
+    },
+    {
+      "path": "references/repository/docs/features/WONDEE-INTEGRATION-ROLLOUT.md",
+      "source": "/home/tmk/.codex/worktrees/a234/secondhand-marketplace-android-app/docs/features/WONDEE-INTEGRATION-ROLLOUT.md",
+      "sha256": "eb83f280918936c6cd07f969ba78b61dcefb5caddd9506968c9219d21129469e"
+    },
+    {
+      "path": "references/repository/docs/features/VERIFY-00-seller-verification.md",
+      "source": "/home/tmk/.codex/worktrees/a234/secondhand-marketplace-android-app/docs/features/VERIFY-00-seller-verification.md",
+      "sha256": "f122dc5f104989fd4642167885d59b2e1a7e9f1d7893185a7b363eb20a7c347d"
+    }
+  ]
+}

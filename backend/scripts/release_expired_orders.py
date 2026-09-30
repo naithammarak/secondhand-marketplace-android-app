@@ -1,91 +1,99 @@
-"""ยกเลิก Order ที่เลยเส้นตายการจ่ายเงินและปล่อยสินค้ากลับไปขายต่อ (NFR-10, D-05)
+"""Scan unpaid Order deadlines once or every five minutes; dry-run by default.
 
-รันจากโฟลเดอร์ backend: python -m scripts.release_expired_orders [--apply]
-ค่าเริ่มต้นเป็นโหมดดูอย่างเดียว ต้องใส่ --apply ถึงจะเขียนจริง
+Run from backend with an explicitly named URL variable and expected database:
+python -m scripts.release_expired_orders --url-env ORDER_EXPIRY_DATABASE_URL \
+    --target order_test --environment local [--apply] [--repeat]
 
-ระบบยกเลิกให้เองอยู่แล้วเมื่อมีคนมาแตะ Order (lazy expiry ใน app/api/orders.py) และเมื่อผู้ดูแล
-เปิดหน้ารายการ Order สคริปต์นี้มีไว้สำหรับกรณีที่ไม่มีใครมาแตะเลย เช่น สินค้าที่ถูกจองแล้ว
-ผู้ซื้อหายไป และไม่มีผู้ซื้อรายอื่นเปิดดูสินค้าชิ้นนั้น สินค้าจะค้าง RESERVED จนกว่าจะมีคนกวาด
-ให้รันสคริปต์นี้เป็นงานประจำ (เช่น วันละครั้ง) จนกว่าจะมี Background Job จริง
+The command never repairs orphan Product rows. See doc/orders/unpaid-expiry-runbook.md.
 """
 
 import argparse
+import logging
+import os
+import signal
+from threading import Event
 
-from sqlalchemy import func, select
-
-from app.database import SessionLocal
-from app.models.order import Order
-from app.models.product import Product
-from app.services.order_pricing import (
-    ORDER_WAITING_PAYMENT,
-    PRODUCT_RESERVED,
-    utcnow,
-)
+from sqlalchemy.engine import make_url
 
 
-def expired_orders(db, now):
-    return db.scalars(
-        select(Order)
-        .where(Order.status == ORDER_WAITING_PAYMENT, Order.expires_at <= now)
-        .order_by(Order.id)
-    ).all()
-
-
-def stuck_products(db):
-    """สินค้าที่ยังถูกจองทั้งที่ไม่มี Order ที่ยังมีผลผูกอยู่ ต้องไม่เหลือค้างหลังรันสคริปต์นี้"""
-    active_product_ids = select(Order.product_id).where(Order.status != "CANCELLED")
-    return db.scalars(
-        select(Product.id)
-        .where(
-            Product.status == PRODUCT_RESERVED,
-            Product.deleted_at.is_(None),
-            Product.id.not_in(active_product_ids),
-        )
-        .order_by(Product.id)
-    ).all()
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="เขียนจริง (ไม่ใส่ = ดูอย่างเดียว)")
-    args = parser.parse_args()
-
-    if SessionLocal is None:
-        raise SystemExit("DATABASE_URL is not set")
-
-    # นำเข้าเมื่อถึงเวลาใช้ เพื่อให้สคริปต์ใช้ตรรกะเดียวกับ API ไม่ใช่สำเนาที่แยกกันไปคนละทาง
-    from app.api.orders import release_reserved_products, sweep_expired_orders
-
-    db = SessionLocal()
+def target_url(args: argparse.Namespace, parser: argparse.ArgumentParser) -> str:
+    if args.url_env == "DATABASE_URL":
+        parser.error("use a dedicated URL variable, not DATABASE_URL")
+    raw_url = os.getenv(args.url_env)
+    if not raw_url:
+        parser.error("the explicitly named URL variable is empty or unset")
     try:
-        now = utcnow()
-        pending = expired_orders(db, now)
-        orphans = stuck_products(db)
-        print(f"เวลาปัจจุบัน (UTC): {now.isoformat()}")
-        print(f"Order ที่เลยเส้นตายและยังรอชำระเงิน: {len(pending)}")
-        for order in pending:
-            print(f"  - order {order.id} product {order.product_id} expires_at {order.expires_at}")
-        print(f"สินค้าที่ค้างสถานะ RESERVED โดยไม่มี Order ที่ยังมีผล: {len(orphans)}")
-        for product_id in orphans:
-            print(f"  - product {product_id}")
+        parsed = make_url(raw_url)
+    except Exception:
+        parser.error("the target URL is invalid")
+    if parsed.get_backend_name() != "postgresql":
+        parser.error("the target must be PostgreSQL")
+    if parsed.database != args.target:
+        parser.error("target database name does not match --target")
+    if parsed.host not in {"localhost", "127.0.0.1", "::1"} and not args.allow_remote:
+        parser.error("remote target requires --allow-remote")
+    if args.apply and args.confirm_target != args.target:
+        parser.error("--apply requires --confirm-target matching --target")
+    return raw_url
 
-        if not args.apply:
-            print("โหมดดูอย่างเดียว ยังไม่เขียนอะไร ใส่ --apply เพื่อยกเลิกจริง")
-            return
 
-        cancelled = sweep_expired_orders(db)
-        if orphans:
-            release_reserved_products(db, list(orphans))
-            db.commit()
-        remaining = db.scalar(
-            select(func.count()).select_from(Order).where(
-                Order.status == ORDER_WAITING_PAYMENT, Order.expires_at <= utcnow()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--url-env", required=True, help="name of a dedicated URL environment variable")
+    parser.add_argument("--target", required=True, help="expected database name")
+    parser.add_argument("--environment", required=True, choices=("local", "staging", "production"))
+    parser.add_argument("--allow-remote", action="store_true", help="acknowledge a non-local PostgreSQL host")
+    parser.add_argument("--apply", action="store_true", help="commit eligible cancellations")
+    parser.add_argument("--confirm-target", help="repeat the database name when applying")
+    parser.add_argument("--repeat", action="store_true", help="scan immediately, then at each interval")
+    parser.add_argument("--interval-seconds", type=int, default=300)
+    parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument("--max-batches", type=int, default=10)
+    args = parser.parse_args(argv)
+    url = target_url(args, parser)
+    if not 1 <= args.interval_seconds <= 86400:
+        parser.error("--interval-seconds must be between 1 and 86400")
+    if not 1 <= args.batch_size <= 1000 or not 1 <= args.max_batches <= 1000:
+        parser.error("batch size and max batches must each be between 1 and 1000")
+
+    # app.database loads backend/.env at import time. Set this explicit target
+    # first so it cannot silently choose a frontend or application DATABASE_URL.
+    os.environ["DATABASE_URL"] = url
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.services.unpaid_expiry_worker import run_once, run_recurring
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logger = logging.getLogger(__name__)
+    engine = create_engine(url, pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    stop = Event()
+    if args.repeat:
+        signal.signal(signal.SIGTERM, lambda *_: stop.set())
+        signal.signal(signal.SIGINT, lambda *_: stop.set())
+    try:
+        options = dict(apply=args.apply, batch_size=args.batch_size, max_batches=args.max_batches)
+        if args.repeat:
+            logger.info(
+                "unpaid expiry start environment=%s target=%s mode=%s interval_seconds=%s",
+                args.environment, args.target, "apply" if args.apply else "dry-run", args.interval_seconds,
             )
+            failures = run_recurring(factory, stop, interval_seconds=args.interval_seconds, **options)
+            return 1 if failures else 0
+        result = run_once(factory, **options)
+        logger.info(
+            "unpaid expiry environment=%s target=%s mode=%s scanned=%s eligible=%s cancelled=%s failed=%s skipped=%s batches=%s limit_reached=%s",
+            args.environment, args.target, "apply" if args.apply else "dry-run",
+            result.scanned, result.eligible, result.cancelled, result.failed,
+            result.skipped, result.batches, result.limit_reached,
         )
-        print(f"ยกเลิกแล้ว {cancelled} รายการ ปล่อยสินค้าค้างจอง {len(orphans)} ชิ้น เหลือค้าง {remaining}")
+        return 1 if result.failed else 0
+    except Exception as exc:
+        logger.error("unpaid expiry scan failed error_type=%s", type(exc).__name__)
+        return 1
     finally:
-        db.close()
+        engine.dispose()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

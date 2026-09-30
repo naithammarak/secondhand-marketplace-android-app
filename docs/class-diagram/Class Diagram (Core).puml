@@ -1,0 +1,432 @@
+@startuml Class_Diagram_Core
+title Class Diagram (Core / Prototype Scope)
+
+' ---- render settings ----
+skinparam dpi 96
+skinparam classAttributeIconSize 0
+skinparam nodesep 25
+skinparam ranksep 45
+hide circle
+hide empty members
+
+note as N1
+  รูปนี้แสดงคลาสหลักและความสัมพันธ์
+  ค่า Enum/ชนิดข้อมูลให้ยึดสเปก INSPECT, CERT และ FULFILLMENT-00
+  รวม UserRole COURIER และสถานะ Order ปลายทาง
+end note
+
+interface NotificationService <<interface>> {
+  + send(n:Notification) : void
+}
+interface PaymentGateway <<interface>> {
+  + charge(amt:decimal) : PaymentResult
+  + refund(gatewayTransactionId:String) : void
+}
+interface ShippingProvider <<interface>> {
+  + createShipment(s:Shipment) : String
+  + track(trackingNo:String) : ShipmentStatus
+}
+class MockPaymentGateway {
+  + charge(amt:decimal) : PaymentResult
+  + refund(gatewayTransactionId:String) : void
+}
+class MockShippingProvider {
+  + createShipment(s:Shipment) : String
+  + track(trackingNo:String) : ShipmentStatus
+}
+package "User Management" {
+  abstract class User {
+    - userId : int
+    - email : String
+    - fullName : String
+    - avatarUrl : String
+    - phone : String
+    - role : UserRole
+    - status : UserStatus
+    - createdAt : DateTime
+    - isAnonymized : boolean
+    - deviceToken : String
+    - deviceTokenUpdatedAt : DateTime
+    - suspendedAt : DateTime
+    - suspendReason : String
+    --
+    + signInWithGoogle(idToken:String) : boolean
+    + updateProfile() : void
+    + requestDataExport() : void
+    + requestDataDeletion() : void
+  }
+  class Buyer {
+    + searchProduct(filter:SearchFilter) : Product[]
+    + placeOrder(p:Product) : Order
+    + decideInspection(i:Inspection) : void
+    + confirmDeliveryReceipt(o:Order) : void
+    + reportNotReceived(o:Order, reason:String) : void
+    + writeReview(r:Review) : void
+  }
+  class Seller {
+    - trustScore : int
+    - /isVerified : boolean
+    --
+    + verifyIdentity() : void
+    + postProduct() : Product
+    + editProduct() : void
+    + cancelProduct() : void
+    + shipToCenter(o:Order) : Shipment
+  }
+  class Inspector {
+    - employeeId : String
+    --
+    + receiveItem(o:Order) : void
+    + inspectItem(o:Order) : Inspection
+    + recordResult(i:Inspection) : void
+  }
+  class Courier {
+    - employeeId : String
+    --
+    + uploadDeliveryProof(s:Shipment) : void
+    + confirmDelivery(s:Shipment) : void
+  }
+  class Admin {
+    + manageUser(u:User) : void
+    + suspendAccount(u:User) : void
+    + revokeCertificate(c:Certificate) : void
+    + resolveMissingDelivery(o:Order, reason:String) : void
+  }
+  class SellerVerification {
+    - verificationId : int
+    - idCardImageUrl : String
+    - bankAccountNo : String
+    - bankName : String
+    - status : VerificationStatus
+    - submittedAt : DateTime
+    - verifiedAt : DateTime
+    - reviewedAt : DateTime
+    - rejectReason : String
+    - purgeAfter : DateTime
+    --
+    + submit() : void
+    + approve() : void
+    + reject() : void
+  }
+  class Wallet {
+    - walletId : int
+    - pendingBalance : decimal
+    - availableBalance : decimal
+    --
+    + credit(amt:decimal) : void
+    + debit(amt:decimal) : void
+  }
+  class SocialAccount {
+    - socialAccountId : int
+    - provider : AuthProvider
+    - providerUserId : String
+    - linkedAt : DateTime
+    --
+    + link() : void
+    + unlink() : void
+  }
+  class Consent {
+    - consentId : int
+    - type : ConsentType
+    - grantedAt : DateTime
+    - revokedAt : DateTime
+    --
+    + grant() : void
+    + revoke() : void
+  }
+}
+package "Catalog & Product" {
+  class Category {
+    - categoryId : int
+    - name : String
+    --
+    + addSubCategory() : void
+  }
+  class Brand {
+    - brandId : int
+    - name : String
+  }
+  class Product {
+    - productId : int
+    - name : String
+    - description : String
+    - size : String
+    - condition : ConditionGrade
+    - price : decimal
+    - saleType : SaleType
+    - status : ProductStatus
+    - postedAt : DateTime
+    - closedAt : DateTime
+    --
+    + publish() : void
+    + edit() : void
+    + cancel() : void
+    + isEditable() : boolean
+    + addImage(url:String) : void
+  }
+  class ProductImage {
+    - imageId : int
+    - url : String
+    - fileSize : int
+    - uploadedAt : DateTime
+  }
+  class ProductHistory {
+    - historyId : int
+    - action : ProductAction
+    - changeDetail : String
+    - changedAt : DateTime
+  }
+}
+package "Order & Payment" {
+  class Order {
+    - orderId : int
+    - orderNo : String
+    - itemPrice : decimal
+    - shippingFee : decimal
+    - inspectionFee : decimal
+    - commissionRate : decimal
+    - totalAmount : decimal
+    - shippingAddress : ShippingAddressSnapshot
+    - status : OrderStatus
+    - cancelReason : CancelReason
+    - createdAt : DateTime
+    - paymentDeadline : DateTime
+    - shipDeadline : DateTime
+    - receiptDeadlineAt : DateTime
+    --
+    + create() : void
+    + updateStatus(s:OrderStatus) : void
+    + cancel(r:CancelReason) : void
+    + autoReleaseIfReceiptDeadlineExpired() : void
+    + getProgress() : OrderStatusHistory[]
+  }
+  class OrderStatusHistory {
+    - historyId : int
+    - fromStatus : OrderStatus
+    - toStatus : OrderStatus
+    - changedAt : DateTime
+  }
+  class Payment {
+    - paymentId : int
+    - amount : decimal
+    - method : PaymentMethod
+    - status : PaymentStatus
+    - createdAt : DateTime
+    - paidAt : DateTime
+    - gatewayTransactionId : String
+    --
+    + process() : boolean
+    + refund() : void
+  }
+  class Escrow {
+    - escrowId : int
+    - amount : decimal
+    - state : EscrowState
+    - heldAt : DateTime
+    - releasedAt : DateTime
+    --
+    + hold() : void
+    + release(to:Wallet, commission:decimal, fee:decimal) : void
+    + refund() : void
+  }
+  class Receipt {
+    - receiptId : int
+    - receiptNo : String
+    - type : ReceiptType
+    - issuedAt : DateTime
+    --
+    + issue() : void
+  }
+  class FeeSetting {
+    - feeId : int
+    - commissionRate : decimal
+    - inspectionFee : decimal
+    - effectiveFrom : DateTime
+    --
+    + apply() : void
+  }
+  class Transaction {
+    - transactionId : int
+    - type : TransactionType
+    - amount : decimal
+    - balanceAfter : decimal
+    - note : String
+    - createdAt : DateTime
+    --
+    + record() : void
+  }
+  class Shipment {
+    - shipmentId : int
+    - leg : ShipmentLeg
+    - carrier : String
+    - trackingNo : String
+    - status : ShipmentStatus
+    - shippedAt : DateTime
+    - deliveredAt : DateTime
+    - deliveryProofConfirmedAt : DateTime
+    - assignedCourierId : int
+    --
+    + createLabel() : void
+    + track() : ShipmentStatus
+  }
+  class ShipmentDeliveryProof {
+    - proofId : int
+    - objectKey : String
+    - sha256 : String
+    - mimeType : String
+    - sizeBytes : int
+    - uploadedAt : DateTime
+  }
+  class DeliveryReceipt {
+    - receiptDecisionId : int
+    - deadlineAt : DateTime
+    - confirmedAt : DateTime
+    - confirmationSource : ReceiptConfirmationSource
+    - reportedMissingAt : DateTime
+  }
+}
+package "Inspection & Certification" {
+  class Inspection {
+    - inspectionId : int
+    - receivedAt : DateTime
+    - resultDeadline : DateTime
+    - authenticityResult : boolean
+    - conditionResult : ConditionGrade
+    - matchesDescription : boolean
+    - detail : String
+    - result : InspectionResult
+    - inspectedAt : DateTime
+    --
+    + recordReceiving() : void
+    + evaluate() : void
+    + saveResult() : void
+    + notifyBuyer() : void
+  }
+  class InspectionPhoto {
+    - photoId : int
+    - url : String
+    - photoType : PhotoType
+    - takenAt : DateTime
+  }
+  class InspectionDecision {
+    - decisionId : int
+    - decision : DecisionType
+    - reason : String
+    - decidedAt : DateTime
+    --
+    + confirm() : void
+    + reject() : void
+  }
+  class Certificate {
+    - certificateId : int
+    - certNo : String
+    - qrCodeUrl : String
+    - status : CertificateStatus
+    - issuedAt : DateTime
+    - revokedAt : DateTime
+    - revokeReason : String
+    --
+    + {static} issue(i:Inspection) : Certificate
+    + generateQR() : String
+    + revoke(reason:String) : void
+    + {static} verifyPublic(certNo:String) : PublicCertificateView
+  }
+}
+package "Communication & Support" {
+  class Notification {
+    - notificationId : int
+    - type : NotificationType
+    - title : String
+    - content : String
+    - isRead : boolean
+    - createdAt : DateTime
+    --
+    + send() : void
+    + markAsRead() : void
+  }
+}
+package "Review, Dispute & Admin" {
+  class Review {
+    - reviewId : int
+    - reviewType : ReviewType
+    - rating : int {1..5}
+    - comment : String
+    - createdAt : DateTime
+    --
+    + submit() : void
+  }
+  class AuditLog {
+    - logId : int
+    - action : String
+    - targetType : String
+    - targetId : int
+    - ipAddress : String
+    - occurredAt : DateTime
+    --
+    + record() : void
+  }
+}
+
+Buyer --|> User
+Seller --|> User
+Inspector --|> User
+Courier --|> User
+Admin --|> User
+Seller "1" *-- "0..1" SellerVerification : has
+Admin "0..1" -- "0..*" SellerVerification : reviews
+Seller "1" *-- "1" Wallet : owns
+Wallet "0..1" -- "0..*" Transaction : logs
+User "1" *-- "0..*" SocialAccount : authenticates via
+User "1" *-- "0..*" Consent : agrees to
+Category "0..1" -- "0..*" Category : parent of
+Category "1" -- "0..*" Product : classifies
+Brand "1" -- "0..*" Product : branded as
+Product "1" *-- "0..10" ProductImage : contains
+Product "1" *-- "0..*" ProductHistory : logs
+Seller "1" -- "0..*" Product : posts
+Buyer "1" -- "0..*" Order : places
+Product "1" -- "0..*" Order : sold via
+Order "1" *-- "1..*" OrderStatusHistory : tracks
+Order "1" -- "0..*" Payment : paid by
+Order "1" -- "0..1" Escrow : held in
+Payment "1" -- "0..1" Receipt : issues
+Escrow "0..1" -- "0..*" Transaction : logs
+Order "1" -- "0..2" Shipment : shipped by
+Shipment "1" *-- "0..3" ShipmentDeliveryProof : delivery evidence
+Courier "1" -- "0..*" Shipment : assigned to
+Order "1" -- "0..1" DeliveryReceipt : receipt or non-receipt
+Buyer "1" -- "0..*" DeliveryReceipt : confirms or reports
+Escrow ..> FeeSetting : uses
+Order "1" -- "0..1" Inspection : inspected by
+Inspector "1" -- "0..*" Inspection : performs
+Inspection "1" *-- "0..*" InspectionPhoto : evidences
+Inspection "1" -- "0..1" InspectionDecision : answered by
+Buyer "1" -- "0..*" InspectionDecision : for
+Inspection "1" -- "0..1" Certificate : certifies
+Admin "0..1" -- "0..*" Certificate : revokes
+User "1" -- "0..*" Notification : receives
+Buyer "1" -- "0..*" Review : writes
+Seller "0..1" -- "0..*" Review : rated in
+Order "1" -- "0..3" Review : reviewed in
+User "0..1" -- "0..*" AuditLog : performs
+Admin ..> User : manages
+Order ..> Notification : triggers
+Payment ..> PaymentGateway : uses
+Shipment ..> ShippingProvider : uses
+Notification ..> NotificationService : uses
+MockPaymentGateway ..|> PaymentGateway
+MockShippingProvider ..|> ShippingProvider
+
+note as N_CORE_RULES
+  **กฎสำคัญของ Prototype**
+  Authentication ใช้ Google Sign-In เท่านั้น; การเข้าใช้ครั้งแรกจะสร้าง User อัตโนมัติ
+  1 Google account = 1 role; Buyer/Seller เลือก role ครั้งแรก ส่วน Admin/Inspector/Courier กำหนดโดยเจ้าหน้าที่
+  User.role เป็น discriminator และ subclasses เป็น {complete, disjoint}
+  Payment เป็นผู้เรียก PaymentGateway เพียงจุดเดียว; Escrow.refund() เปลี่ยน state/ledger ภายใน
+  Escrow.release() ต้องระบุ Wallet ปลายทาง และทุก Transaction ต้องผูก Wallet หรือ Escrow 1 ฝั่ง
+  Certificate.issue() ทำพร้อมผล Inspection PASS/MINOR_ISSUE โดยไม่รอ Buyer ยอมรับผลตรวจ
+  InspectionDecision = ยอมรับ/ปฏิเสธผลตรวจ; DeliveryReceipt = ยืนยันรับ/แจ้งว่าไม่ได้รับสินค้า
+  หลัง Courier ส่งถึงผู้ซื้อพร้อมรูป เริ่มนับ 72 ชั่วโมง; ไม่มีรายงานไม่รับจึงปล่อยเงินอัตโนมัติ
+  Order เก็บ ShippingAddressSnapshot ตอนสร้าง; Review ไม่ซ้ำ ReviewType ใน Order เดียว
+end note
+@enduml

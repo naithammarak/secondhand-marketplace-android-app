@@ -5,7 +5,11 @@ import type { OrderStatus } from './order-service';
 export type InspectionResult = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export type EvidenceFile = { uri: string; name: string; type: string; size?: number; file?: unknown };
 export type Evidence = { id: number; mime_type: string; size_bytes: number; url: string; expires_at?: string | null };
-export type Certificate = { certificate_no: string; public_url: string; issued_at: string };
+export type CertificateStatus = 'ISSUED' | 'REVOKED';
+export type Certificate = { certificate_no: string; public_url: string; issued_at: string; status: CertificateStatus };
+export type BuyerDecision = 'CONFIRM' | 'REJECT';
+export type BuyerDecisionRecord = { decision: BuyerDecision; reason: string | null; decided_at: string };
+export type CourierShipmentScope = 'pending' | 'history' | 'all';
 export type Progress = {
   order_id: number; order_status: OrderStatus;
   shipment: { carrier: string; tracking_number: string; shipped_at: string; courier_delivered_at: string | null; received_at: string | null } | null;
@@ -18,11 +22,17 @@ export type WorkDetail = {
   started_at: string | null; result: InspectionResult | null;
   summary: string | null; inspected_at: string | null;
   evidence: Evidence[]; certificate: Certificate | null;
-  next_action: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | null;
+  next_action: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | 'SHIP_TO_BUYER' | null;
 };
-export type BuyerResult = Pick<WorkDetail, 'order_id' | 'order_status' | 'result' | 'summary' | 'inspected_at' | 'evidence' | 'certificate' | 'next_action'>;
+export type BuyerResult = Pick<WorkDetail, 'order_id' | 'order_status' | 'result' | 'summary' | 'inspected_at' | 'evidence' | 'certificate' | 'next_action'> & {
+  decision: BuyerDecisionRecord | null; can_decide: boolean;
+};
 
 export type CourierShipment = { id: number; order_id: number; status: string; courier_delivered_at: string | null; proofs: Evidence[] };
+export type CourierShipmentsPage = {
+  items: CourierShipment[]; scope: CourierShipmentScope; offset: number; limit: number;
+  has_more: boolean; next_offset: number | null;
+};
 export type AdminInboundOrder = { id: number; product: { name: string }; status: OrderStatus };
 
 export class InspectionServiceError extends Error {
@@ -86,11 +96,28 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
 
   return {
     couriers: (token: string, offset = 0) => request<{ items: { id: number; name: string }[]; total: number }>(token, `/admin/couriers?limit=20&offset=${offset}`),
-    publicCertificate: (publicToken: string) => request<{ certificate_no: string; result: InspectionResult; issued_at: string }>(null,
-      `/certificates/${encodeURIComponent(publicToken)}`, {}, options.timeoutMs ?? 20_000, true),
+    publicCertificate: (publicToken: string) => request<{ certificate_no: string; result: InspectionResult; issued_at: string; status: CertificateStatus }>(null,
+      `/certificates/${encodeURIComponent(publicToken)}/json`, {}, options.timeoutMs ?? 20_000, true),
     adminOrders: (token: string, offset = 0) => request<{ items: AdminInboundOrder[]; total: number }>(token, `/admin/orders?status=SHIPPING_TO_CENTER&limit=20&offset=${offset}`),
     assignCourier: (token: string, orderId: number, courierId: number, key: string) => request<{ shipment_id: number; courier_id: number }>(token, `/admin/orders/${orderId}/assign-courier`, json({ courier_id: courierId }, key)),
-    courierShipments: (token: string) => request<{ items: CourierShipment[] }>(token, '/courier/shipments'),
+    courierShipments: async (token: string, scope: CourierShipmentScope = 'pending'): Promise<CourierShipmentsPage> => {
+      const items: CourierShipment[] = [];
+      const seen = new Set<number>();
+      let offset = 0;
+      for (;;) {
+        const page = await request<CourierShipmentsPage>(token,
+          `/courier/shipments?scope=${scope}&offset=${offset}&limit=100`);
+        if (page.scope !== scope || page.offset !== offset || !Array.isArray(page.items) || !Number.isInteger(page.limit) || page.limit < 1) {
+          throw new InspectionServiceError(502, 'invalid_pagination');
+        }
+        for (const item of page.items) if (!seen.has(item.id)) { items.push(item); seen.add(item.id); }
+        if (page.next_offset === null) return { ...page, items, offset: 0, has_more: false, next_offset: null };
+        if (!page.has_more || !Number.isInteger(page.next_offset) || page.next_offset <= offset) {
+          throw new InspectionServiceError(502, 'invalid_pagination');
+        }
+        offset = page.next_offset;
+      }
+    },
     confirmDelivery: (token: string, id: number, key: string) => request<{ shipment_id: number; courier_delivered_at: string }>(token, `/courier/shipments/${id}/confirm-delivery`, json({}, key)),
     uploadProof: (token: string, id: number, file: EvidenceFile, key: string) => {
       const form = new FormData();
@@ -101,6 +128,9 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
     ship: (token: string, orderId: number, input: { carrier: string; tracking_number: string }, key: string) =>
       request<Progress>(token, `/orders/${orderId}/ship-to-center`, json(input, key)),
     getBuyerResult: (token: string, orderId: number) => request<BuyerResult>(token, `/orders/${orderId}/inspection`),
+    decideBuyerInspection: (token: string, orderId: number, payload: { decision: BuyerDecision; reason?: string | null }) =>
+      request<{ decision: BuyerDecisionRecord; next_action: 'SHIP_TO_BUYER' | 'RETURN_TO_SELLER' }>(token,
+        `/orders/${orderId}/inspection/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
     list: (token: string, offset = 0, status?: OrderStatus) => request<{ items: WorkDetail[]; total: number; limit: number; offset: number }>(
       token, `/inspections?limit=20&offset=${offset}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
     detail: (token: string, id: number) => request<WorkDetail>(token, `/inspections/${id}`),

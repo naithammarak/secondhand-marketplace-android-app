@@ -6,10 +6,12 @@ import { ProductServiceError } from '@/services/product-service';
 const mockPush = jest.fn();
 const mockCreate = jest.fn();
 let mockDraft: any;
+let mockParams: any = {};
 
 jest.mock('expo-router', () => ({
   router: { push: (...args: any[]) => mockPush(...args), replace: jest.fn() },
   useFocusEffect: () => {},
+  useLocalSearchParams: () => mockParams,
 }));
 jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: { access_token: 'seller-token' } }) }));
 jest.mock('@/products/product-runtime', () => ({ isProductMockModeEnabled: () => false }));
@@ -76,4 +78,15 @@ test('a second timeout requires a new inventory check before the draft can be su
   expect(mockPush).toHaveBeenCalledTimes(2);
   fireEvent.press(screen.getByText('ตรวจแล้วไม่พบสินค้า ใช้แบบร่างนี้ต่อ'));
   expect(screen.getByText('draft-ready')).toBeTruthy();
+});
+
+test('relisting renders relist title and banner and passes pre-filled values', () => {
+  mockParams = {
+    relistOrderId: '37',
+    relistName: 'แจ็คเก็ตหนัง Zara ไซซ์ L',
+    relistReason: 'fail',
+  };
+  render(<NewProductScreen />);
+  expect(screen.getByText('ลงขายอีกครั้ง')).toBeTruthy();
+  expect(screen.getByText(/ผลตรวจ: ไม่ตรงตามประกาศ — กรุณาแก้สภาพและรายละเอียดให้ตรงกับของจริงก่อนลงขายอีกครั้ง/)).toBeTruthy();
 });

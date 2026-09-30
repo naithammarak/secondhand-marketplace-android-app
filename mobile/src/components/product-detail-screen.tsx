@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
+  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -11,6 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import { useOptionalAuth } from '@/auth/auth-provider';
+import { marketplaceReturn } from '@/auth/marketplace-return-instance';
+
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
 import { GeometricMascot } from './wondee/brand';
@@ -19,6 +23,7 @@ import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, MaxContentWidth } from '@/constants/theme';
+import { SellerReviewsModal } from '@/components/seller-reviews-modal';
 import { formatBaht } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
@@ -115,6 +120,9 @@ export function ProductDetailScreen() {
   const [selection, setSelection] = useState({ productId: NaN, index: 0 });
   const [isLiked, setIsLiked] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [guestSheetVisible, setGuestSheetVisible] = useState(false);
+  const [showSellerReviews, setShowSellerReviews] = useState(false);
+  const auth = useOptionalAuth();
   const params = useLocalSearchParams<{ id: string }>();
   const id = parseRouteId(params.id) ?? NaN;
 
@@ -151,17 +159,41 @@ export function ProductDetailScreen() {
     try {
       await Share.share({
         title: product.productName,
-        message: `${product.productName} ราคา ${formatBaht(product.price)} ที่ Wondee Marketplace`,
+        message: `${product.productName} ราคา ${formatBaht(product.price)} ที่ 2NDHAND Marketplace`,
       });
     } catch {
       // ignore user cancel
     }
   };
 
-  const parsedPrice = product ? Number(product.price) : 0;
-  const strikePrice = Math.round(parsedPrice * 2.2);
-  const views = product ? 120 + ((product.id * 37) % 180) : 148;
-  const bottomBarPrice = product ? `฿${Math.round(parsedPrice).toLocaleString()}` : '';
+  const isOwnProduct = Boolean(
+    product &&
+    auth?.session?.user?.id &&
+    (product.seller as any)?.id &&
+    String((product.seller as any).id) === String(auth.session.user.id)
+  );
+
+  const handleBuy = async () => {
+    if (!product) return;
+    if (auth && !auth.session) {
+      setGuestSheetVisible(true);
+      return;
+    }
+    router.push({
+      pathname: '/checkout/[productId]',
+      params: { productId: String(product.id) },
+    });
+  };
+
+  const handleGuestLogin = async () => {
+    if (!product) return;
+    setGuestSheetVisible(false);
+    await marketplaceReturn.save({ kind: 'checkout', productId: product.id });
+    router.push({
+      pathname: '/login',
+      params: { reason: 'เข้าสู่ระบบเพื่อซื้อสินค้าชิ้นนี้' },
+    });
+  };
 
   return (
     <Screen>
@@ -323,7 +355,7 @@ export function ProductDetailScreen() {
                 </ScrollView>
               )}
 
-              {/* Card 1: Price, Condition Badge, Title & Views */}
+              {/* Card 1: Clean Price, Condition Badge, Title & Metadata */}
               <View
                 style={[
                   styles.card,
@@ -333,21 +365,11 @@ export function ProductDetailScreen() {
                   },
                 ]}
               >
-                {/* Price & Badges Row */}
+                {/* Price & Condition Badge Row */}
                 <View style={styles.priceRow}>
-                  <View style={styles.priceGroup}>
-                    <ThemedText style={styles.priceText}>
-                      {formatBaht(product.price)}
-                    </ThemedText>
-                    {strikePrice > 0 && (
-                      <ThemedText style={styles.strikethroughPrice}>
-                        {`฿${strikePrice.toLocaleString()}`}
-                      </ThemedText>
-                    )}
-                    <View style={styles.discountBadge}>
-                      <ThemedText style={styles.discountBadgeText}>-55%</ThemedText>
-                    </View>
-                  </View>
+                  <ThemedText style={styles.priceText}>
+                    {formatBaht(product.price)}
+                  </ThemedText>
 
                   {/* Condition badge */}
                   <View
@@ -373,49 +395,12 @@ export function ProductDetailScreen() {
                 {/* Metadata Row */}
                 <View style={styles.metaRow}>
                   <ThemedText style={styles.metaText}>
-                    {formatRelativeTime(product.createdAt)} • ยอดดู {views} ครั้ง
+                    {formatRelativeTime(product.createdAt)}
                   </ThemedText>
                 </View>
               </View>
 
-              {/* Card 2: Wondee Inspect Escrow Card */}
-              <View
-                style={[
-                  styles.inspectCard,
-                  {
-                    backgroundColor: isDark ? '#042F2E40' : '#ECFDF5',
-                    borderColor: isDark ? '#0D948880' : '#A7F3D0',
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.inspectMascotBox,
-                    {
-                      backgroundColor: isDark ? '#0F766E40' : '#CCFBF1',
-                      borderColor: isDark ? '#14B8A680' : '#99F6E4',
-                    },
-                  ]}
-                >
-                  <GeometricMascot size={36} seed={product.id} inspector />
-                </View>
-
-                <View style={styles.inspectInfo}>
-                  <View style={styles.inspectHeaderRow}>
-                    <ThemedText style={styles.inspectTitle}>
-                      รับประกันการตรวจสอบ (Wondee Inspect)
-                    </ThemedText>
-                    <View style={styles.legitBadge}>
-                      <ThemedText style={styles.legitBadgeText}>100% Legit</ThemedText>
-                    </View>
-                  </View>
-                  <ThemedText style={styles.inspectSubtitle}>
-                    น้องวนดีและทีมผู้เชี่ยวชาญจะตรวจของแท้และสภาพจริง ก่อนส่งมอบเงิน Escrow
-                  </ThemedText>
-                </View>
-              </View>
-
-              {/* Card 3: Specifications 2x2 Grid */}
+              {/* Card 2: Specifications 2x2 Grid */}
               <View
                 style={[
                   styles.card,
@@ -460,7 +445,7 @@ export function ProductDetailScreen() {
                 </View>
               </View>
 
-              {/* Card 4: Seller Shop Card (rendered when seller info exists) */}
+              {/* Card 3: Seller Shop Card (rendered only when seller info exists) */}
               {product.seller && (
                 <View
                   style={[
@@ -481,9 +466,15 @@ export function ProductDetailScreen() {
                       <ThemedText style={[styles.sellerNameText, { color: theme.text }]} numberOfLines={1}>
                         {product.seller.displayName}
                       </ThemedText>
-                      <ThemedText style={styles.sellerRatingText}>
-                        ★ 4.8 <ThemedText style={styles.sellerReviewsText}>(32 รีวิว) ›</ThemedText>
-                      </ThemedText>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="ดูรีวิวผู้ขาย"
+                        onPress={() => setShowSellerReviews(true)}
+                        hitSlop={8}>
+                        <ThemedText style={styles.sellerRatingText}>
+                          ★ 4.8 <ThemedText style={styles.sellerReviewsText}>(32 รีวิว) ›</ThemedText>
+                        </ThemedText>
+                      </Pressable>
                       {product.seller.verified && (
                         <View style={styles.verifiedBadge}>
                           <CheckmarkIcon size={10} />
@@ -514,7 +505,7 @@ export function ProductDetailScreen() {
                 </View>
               )}
 
-              {/* Card 5: Seller Additional Description Card */}
+              {/* Card 4: Seller Additional Description Card */}
               <View
                 style={[
                   styles.card,
@@ -561,33 +552,117 @@ export function ProductDetailScreen() {
               },
             ]}
           >
-            <View style={styles.bottomPriceGroup}>
-              <ThemedText style={styles.bottomPriceLabel}>ราคาสินค้า</ThemedText>
-              <ThemedText style={styles.bottomPriceValue}>
-                {bottomBarPrice}
-              </ThemedText>
-            </View>
+            {isOwnProduct ? (
+              <View style={styles.bottomBarRow}>
+                <View style={styles.bottomPriceGroup}>
+                  <ThemedText style={styles.bottomPriceLabel}>สินค้าของคุณ</ThemedText>
+                  <ThemedText style={[styles.bottomPriceOwnStatus, { color: theme.textSecondary }]}>
+                    กำลังลงขาย · {formatBaht(product.price)}
+                  </ThemedText>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="แก้ไขสินค้า"
+                  onPress={() => router.push(`/product/${product.id}/edit`)}
+                  style={({ pressed }) => [
+                    styles.editOwnBtn,
+                    { opacity: pressed ? 0.8 : 1 },
+                  ]}
+                >
+                  <ThemedText style={styles.editOwnBtnText}>แก้ไขสินค้า</ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.bottomBarRow}>
+                <View style={styles.bottomPriceGroup}>
+                  <ThemedText style={styles.bottomPriceLabel}>ราคาสินค้า</ThemedText>
+                  <ThemedText style={styles.bottomPriceValue}>
+                    {`฿${Math.round(Number(product.price)).toLocaleString()}`}
+                  </ThemedText>
+                </View>
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="ซื้อสินค้า"
-              onPress={() =>
-                router.push({
-                  pathname: '/checkout/[productId]',
-                  params: { productId: String(product.id) },
-                })
-              }
-              style={({ pressed }) => [
-                styles.buyButton,
-                { opacity: pressed ? 0.9 : 1 },
-              ]}
-            >
-              <ThemedText style={styles.buyButtonText}>ซื้อสินค้า</ThemedText>
-            </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="ซื้อสินค้า"
+                  onPress={() => { void handleBuy(); }}
+                  style={({ pressed }) => [
+                    styles.buyButton,
+                    { opacity: pressed ? 0.9 : 1 },
+                  ]}
+                >
+                  <ThemedText style={styles.buyButtonText}>ซื้อสินค้า</ThemedText>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
 
+        {/* Guest Login Required Bottom Sheet Modal */}
+        <Modal
+          visible={guestSheetVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setGuestSheetVisible(false)}
+        >
+          <Pressable
+            style={styles.sheetOverlay}
+            onPress={() => setGuestSheetVisible(false)}
+          >
+            <Pressable
+              style={[
+                styles.sheetPanel,
+                {
+                  backgroundColor: isDark ? '#131D2E' : '#FFFFFF',
+                  borderTopColor: isDark ? '#1E293B' : '#E2E8F0',
+                },
+              ]}
+              onPress={e => e.stopPropagation()}
+            >
+              <View style={styles.sheetHandle} />
+              <ThemedText style={[styles.sheetTitle, { color: theme.text }]}>
+                เข้าสู่ระบบเพื่อซื้อสินค้า
+              </ThemedText>
+              <ThemedText style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
+                เข้าสู่ระบบแล้วจะกลับมาที่สินค้าชิ้นนี้ทันที
+              </ThemedText>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="เข้าสู่ระบบด้วย Google"
+                onPress={() => { void handleGuestLogin(); }}
+                style={({ pressed }) => [
+                  styles.sheetLoginBtn,
+                  { opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <ThemedText style={styles.sheetLoginBtnText}>
+                  เข้าสู่ระบบด้วย Google
+                </ThemedText>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="ไว้ทีหลัง"
+                onPress={() => setGuestSheetVisible(false)}
+                style={styles.sheetCancelBtn}
+              >
+                <ThemedText style={[styles.sheetCancelBtnText, { color: theme.textSecondary }]}>
+                  ไว้ทีหลัง
+                </ThemedText>
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
         <ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
+
+        {product ? (
+          <SellerReviewsModal
+            visible={showSellerReviews}
+            onClose={() => setShowSellerReviews(false)}
+            sellerName={product.seller?.displayName ?? 'ผู้ขาย'}
+          />
+        ) : null}
       </SafeAreaView>
     </Screen>
   );
@@ -930,5 +1005,86 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.displayBold,
     fontSize: 15,
     fontWeight: '700',
+  },
+  bottomBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  bottomPriceOwnStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editOwnBtn: {
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#059669',
+    backgroundColor: '#ECFDF5',
+  },
+  editOwnBtnText: {
+    color: '#059669',
+    fontFamily: Fonts.displayBold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheetPanel: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 32,
+    alignItems: 'center',
+    gap: 10,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(100, 116, 139, 0.4)',
+    marginBottom: 8,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontFamily: Fonts.displayBold,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  sheetSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  sheetLoginBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetLoginBtnText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.displayBold,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sheetCancelBtn: {
+    paddingVertical: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  sheetCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

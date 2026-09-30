@@ -1,6 +1,6 @@
 import { useTheme } from '@/hooks/use-theme';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import {
   addProductImage,
@@ -237,6 +237,8 @@ export function ProductForm({
     });
   }
 
+  const [showPreview, setShowPreview] = useState(false);
+
   function handleSubmit() {
     if (cannotSubmit) return;
     const errors = validateProductForm(values, priceText, { categories, brands });
@@ -254,6 +256,16 @@ export function ProductForm({
   const conditionError = serverFieldErrors?.condition;
   const imagesError = fieldErrors.images || serverFieldErrors?.images || serverFieldErrors?.photos || serverFieldErrors?.product_images;
 
+  const PF_COND_DESC: Record<string, string> = {
+    NEW: 'ของใหม่ ยังไม่เคยใช้งาน',
+    LIKE_NEW: 'ใช้งานน้อย แทบไม่มีร่องรอย',
+    GOOD: 'มีร่องรอยใช้งานเล็กน้อย ใช้งานได้ปกติ',
+    FAIR: 'มีร่องรอย/ตำหนิชัดเจน แต่ยังใช้งานได้',
+  };
+
+  const numericPrice = parseFloat(priceText) || 0;
+  const netPayout = Math.max(0, Math.round(numericPrice * 0.95));
+
   return (
     <View style={styles.form}>
       {optionsError && (
@@ -270,157 +282,161 @@ export function ProductForm({
         </View>
       )}
 
-      <View style={styles.field}>
-        <Text style={styles.label}>รูปภาพ * ({values.images.length}/{MAX_PRODUCT_IMAGES})</Text>
-        <Text style={styles.optionsInlineLoadingText}>JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป</Text>
-        <View style={styles.imageGrid}>
-          {values.images.map((url, index) => (
-            <View key={url} style={styles.imageTile}>
-              <Image source={{ uri: url }} style={styles.imageThumbnail} />
+      {/* Card 1: รูปภาพ */}
+      <View style={styles.cardSection}>
+        <View style={styles.field}>
+          <Text style={styles.cardHeaderTitle}>รูปภาพ * ({values.images.length}/{MAX_PRODUCT_IMAGES})</Text>
+          <Text style={styles.optionsInlineLoadingText}>JPEG หรือ PNG ขนาดไม่เกิน 5 MiB ต่อรูป แนบ 1–10 รูป</Text>
+          <Text style={styles.tipText}>💡 ถ่ายตำหนิให้ชัด ช่วยให้ขายได้เร็วขึ้น</Text>
+          <View style={styles.imageGrid}>
+            {values.images.map((url, index) => (
+              <View key={url} style={styles.imageTile}>
+                <Image source={{ uri: url }} style={styles.imageThumbnail} />
 
-              {index === 0 ? (
-                <View style={styles.mainBadge}>
-                  <Text style={styles.mainBadgeText}>★ รูปหลัก</Text>
-                </View>
-              ) : (
+                {index === 0 ? (
+                  <View style={styles.mainBadge}>
+                    <Text style={styles.mainBadgeText}>★ รูปหลัก</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.setMainButton}
+                    onPress={() => setAsMainImage(url)}
+                    disabled={disabled}
+                    accessibilityRole="button"
+                    accessibilityLabel="ตั้งเป็นรูปหลัก"
+                  >
+                    <Text style={styles.setMainButtonText}>รูปหลัก</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
-                  style={styles.setMainButton}
-                  onPress={() => setAsMainImage(url)}
+                  style={styles.imageRemoveBadge}
+                  onPress={() => handleRemoveImage(url)}
                   disabled={disabled}
                   accessibilityRole="button"
-                  accessibilityLabel="ตั้งเป็นรูปหลัก"
+                  accessibilityLabel="ลบรูปภาพ"
                 >
-                  <Text style={styles.setMainButtonText}>รูปหลัก</Text>
+                  <Text style={styles.imageRemoveBadgeText}>✕</Text>
                 </TouchableOpacity>
-              )}
 
-              <TouchableOpacity
-                style={styles.imageRemoveBadge}
-                onPress={() => handleRemoveImage(url)}
-                disabled={disabled}
-                accessibilityRole="button"
-                accessibilityLabel="ลบรูปภาพ"
-              >
-                <Text style={styles.imageRemoveBadgeText}>✕</Text>
-              </TouchableOpacity>
-
-              {values.images.length > 1 && (
-                <View style={styles.reorderBar}>
-                  {index > 0 ? (
-                    <TouchableOpacity
-                      style={styles.reorderBtn}
-                      onPress={() => moveImage(index, index - 1)}
-                      disabled={disabled}
-                      accessibilityRole="button"
-                      accessibilityLabel="เลื่อนรูปไปซ้าย"
-                    >
-                      <Text style={styles.reorderBtnText}>◀</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.reorderBtnPlaceholder} />
-                  )}
-                  {index < values.images.length - 1 ? (
-                    <TouchableOpacity
-                      style={styles.reorderBtn}
-                      onPress={() => moveImage(index, index + 1)}
-                      disabled={disabled}
-                      accessibilityRole="button"
-                      accessibilityLabel="เลื่อนรูปไปขวา"
-                    >
-                      <Text style={styles.reorderBtnText}>▶</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.reorderBtnPlaceholder} />
-                  )}
-                </View>
+                {values.images.length > 1 && (
+                  <View style={styles.reorderBar}>
+                    {index > 0 ? (
+                      <TouchableOpacity
+                        style={styles.reorderBtn}
+                        onPress={() => moveImage(index, index - 1)}
+                        disabled={disabled}
+                        accessibilityRole="button"
+                        accessibilityLabel="เลื่อนรูปไปซ้าย"
+                      >
+                        <Text style={styles.reorderBtnText}>◀</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.reorderBtnPlaceholder} />
+                    )}
+                    {index < values.images.length - 1 ? (
+                      <TouchableOpacity
+                        style={styles.reorderBtn}
+                        onPress={() => moveImage(index, index + 1)}
+                        disabled={disabled}
+                        accessibilityRole="button"
+                        accessibilityLabel="เลื่อนรูปไปขวา"
+                      >
+                        <Text style={styles.reorderBtnText}>▶</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.reorderBtnPlaceholder} />
+                    )}
+                  </View>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.addImageTile}
+              onPress={() => { void handleAddImage(); }}
+              disabled={uploadingImage || disabled || values.images.length >= MAX_PRODUCT_IMAGES}
+              accessibilityRole="button"
+              accessibilityLabel="เพิ่มรูป"
+            >
+              {uploadingImage ? (
+                <ActivityIndicator color={ACCENT} />
+              ) : (
+                <>
+                  <Text style={styles.addImageIcon}>+</Text>
+                  <Text style={styles.addImageLabel}>เพิ่มรูป</Text>
+                </>
               )}
-            </View>
-          ))}
-          <TouchableOpacity
-            style={styles.addImageTile}
-            onPress={() => { void handleAddImage(); }}
-            disabled={uploadingImage || disabled || values.images.length >= MAX_PRODUCT_IMAGES}
-            accessibilityRole="button"
-            accessibilityLabel="เพิ่มรูป"
-          >
-            {uploadingImage ? (
-              <ActivityIndicator color={ACCENT} />
-            ) : (
-              <>
-                <Text style={styles.addImageIcon}>+</Text>
-                <Text style={styles.addImageLabel}>เพิ่มรูป</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
+          {uploadError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{uploadError}</Text>}
+          {imagesError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{imagesError}</Text>}
         </View>
-        {uploadError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{uploadError}</Text>}
-        {imagesError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{imagesError}</Text>}
       </View>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>ชื่อสินค้า *</Text>
-        <TextInput
-          style={[styles.input, nameError && styles.inputError]}
-          value={values.name}
-          onChangeText={name => setValues(current => ({ ...current, name }))}
-          accessibilityLabel="ชื่อสินค้า"
-          placeholder="เช่น เสื้อยืดสีขาว"
-          placeholderTextColor={theme.textSecondary}
-          editable={!disabled}
-        />
-        {nameError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{nameError}</Text>}
-      </View>
+      {/* Card 2: ข้อมูลสินค้า */}
+      <View style={styles.cardSection}>
+        <Text style={styles.cardHeaderTitle}>ข้อมูลสินค้า</Text>
 
-      <View style={styles.field}>
-        <Text style={styles.label}>รายละเอียด</Text>
-        <TextInput
-          style={[styles.input, styles.multiline, descError && styles.inputError]}
-          value={values.description}
-          onChangeText={description => setValues(current => ({ ...current, description }))}
-          accessibilityLabel="รายละเอียดสินค้า"
-          placeholder="อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ"
-          placeholderTextColor={theme.textSecondary}
-          multiline
-          editable={!disabled}
-        />
-        {descError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{descError}</Text>}
-      </View>
-
-      <View style={styles.row}>
-        <View style={[styles.field, styles.rowItem]}>
-          <Text style={styles.label}>แบรนด์</Text>
+        <View style={styles.field}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.label}>ชื่อสินค้า *</Text>
+            <Text style={styles.counterText}>{values.name.length}/255</Text>
+          </View>
           <TextInput
-            style={[styles.input, brandError && styles.inputError]}
-            value={values.brand}
-            onChangeText={brand => {
-              const matched = brands.find(b => b.name.trim().toLowerCase() === brand.trim().toLowerCase());
-              setValues(current => ({
-                ...current,
-                brand,
-                brandId: matched ? matched.id : undefined,
-              }));
-            }}
-            accessibilityLabel="แบรนด์"
-          placeholder="เช่น Uniqlo"
+            style={[styles.input, nameError && styles.inputError]}
+            value={values.name}
+            maxLength={255}
+            onChangeText={name => setValues(current => ({ ...current, name }))}
+            accessibilityLabel="ชื่อสินค้า"
+            placeholder="เช่น เสื้อยืดสีขาว"
             placeholderTextColor={theme.textSecondary}
-            editable={!disabled && !loadingOptions}
+            editable={!disabled}
           />
+          {nameError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{nameError}</Text>}
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>สภาพสินค้า</Text>
+          <View style={styles.chipRow}>
+            {CONDITION_OPTIONS.map(option => (
+              <TouchableOpacity
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected: values.condition === option, disabled }}
+                style={[styles.chip, values.condition === option && styles.chipSelected]}
+                onPress={() => setValues(current => ({ ...current, condition: option }))}
+                disabled={disabled}
+              >
+                <Text style={[styles.chipText, values.condition === option && styles.chipTextSelected]}>
+                  {CONDITION_LABELS[option] ?? option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {PF_COND_DESC[values.condition] && (
+            <Text style={styles.condDescText}>{PF_COND_DESC[values.condition]}</Text>
+          )}
+          {conditionError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{conditionError}</Text>}
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>หมวดหมู่ *</Text>
           {loadingOptions ? (
             <View style={styles.optionsInlineLoading}>
               <ActivityIndicator size="small" color={ACCENT} />
-              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
+              <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
             </View>
-          ) : brands.length === 0 ? null : (
-            <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
-              {brands.map(option => {
-                const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
+          ) : categories.length === 0 ? null : (
+            <View style={styles.chipRow}>
+              {categories.map(option => {
+                const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
                 return (
                   <TouchableOpacity
                     key={option.id}
                     accessibilityRole="button"
                     accessibilityState={{ selected: isSelected, disabled }}
                     style={[styles.chip, isSelected && styles.chipSelected]}
-                    onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
+                    onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
                     disabled={disabled}
                   >
                     <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
@@ -431,113 +447,181 @@ export function ProductForm({
               })}
             </View>
           )}
-          {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
+          {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
         </View>
-        <View style={[styles.field, styles.rowItem]}>
-          <Text style={styles.label}>ไซซ์</Text>
+
+        <View style={styles.row}>
+          <View style={[styles.field, styles.rowItem]}>
+            <Text style={styles.label}>แบรนด์</Text>
+            <TextInput
+              style={[styles.input, brandError && styles.inputError]}
+              value={values.brand}
+              onChangeText={brand => {
+                const matched = brands.find(b => b.name.trim().toLowerCase() === brand.trim().toLowerCase());
+                setValues(current => ({
+                  ...current,
+                  brand,
+                  brandId: matched ? matched.id : undefined,
+                }));
+              }}
+              accessibilityLabel="แบรนด์"
+              placeholder="เช่น Uniqlo"
+              placeholderTextColor={theme.textSecondary}
+              editable={!disabled && !loadingOptions}
+            />
+            {loadingOptions ? (
+              <View style={styles.optionsInlineLoading}>
+                <ActivityIndicator size="small" color={ACCENT} />
+                <Text style={styles.optionsInlineLoadingText}>กำลังโหลดแบรนด์...</Text>
+              </View>
+            ) : brands.length === 0 ? null : (
+              <View style={[styles.chipRow, { marginTop: Spacing.one }]}>
+                {brands.map(option => {
+                  const isSelected = values.brandId ? values.brandId === option.id : values.brand === option.name;
+                  return (
+                    <TouchableOpacity
+                      key={option.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected, disabled }}
+                      style={[styles.chip, isSelected && styles.chipSelected]}
+                      onPress={() => setValues(current => ({ ...current, brand: option.name, brandId: option.id }))}
+                      disabled={disabled}
+                    >
+                      <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                        {option.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+            {brandError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{brandError}</Text>}
+          </View>
+          <View style={[styles.field, styles.rowItem]}>
+            <Text style={styles.label}>ไซซ์</Text>
+            <TextInput
+              style={[styles.input, sizeError && styles.inputError]}
+              value={values.size}
+              onChangeText={size => setValues(current => ({ ...current, size }))}
+              accessibilityLabel="ไซซ์"
+              placeholder="เช่น M, 42"
+              placeholderTextColor={theme.textSecondary}
+              editable={!disabled}
+            />
+            {sizeError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{sizeError}</Text>}
+          </View>
+        </View>
+      </View>
+
+      {/* Card 3: ราคา */}
+      <View style={styles.cardSection}>
+        <View style={styles.field}>
+          <Text style={styles.label}>ราคา *</Text>
+          <View style={[styles.priceInputWrapper, priceError && styles.inputError]}>
+            <Text style={styles.pricePrefix}>฿</Text>
+            <TextInput
+              style={styles.priceInput}
+              value={priceText}
+              onChangeText={setPriceText}
+              accessibilityLabel="ราคา (บาท)"
+              placeholder="0"
+              placeholderTextColor={theme.textSecondary}
+              keyboardType="numeric"
+              editable={!disabled}
+            />
+          </View>
+          {priceError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{priceError}</Text>}
+
+          {/* Live payout fee box */}
+          <View style={styles.netPayoutBox}>
+            <Text style={styles.netPayoutLabel}>คุณจะได้รับ <Text style={styles.netPayoutSub}>(หักค่าธรรมเนียม 5%)</Text></Text>
+            <Text style={styles.netPayoutValue}>฿{netPayout.toLocaleString()}</Text>
+          </View>
+          <Text style={styles.saleFormatText}>รูปแบบการขาย: ขายราคาปกติ</Text>
+        </View>
+      </View>
+
+      {/* Card 4: รายละเอียด */}
+      <View style={styles.cardSection}>
+        <View style={styles.field}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.label}>รายละเอียด</Text>
+            <Text style={styles.counterText}>{values.description.length}/1000</Text>
+          </View>
           <TextInput
-            style={[styles.input, sizeError && styles.inputError]}
-            value={values.size}
-            onChangeText={size => setValues(current => ({ ...current, size }))}
-            accessibilityLabel="ไซซ์"
-          placeholder="เช่น M, 42"
+            style={[styles.input, styles.multiline, descError && styles.inputError]}
+            value={values.description}
+            maxLength={1000}
+            onChangeText={description => setValues(current => ({ ...current, description }))}
+            accessibilityLabel="รายละเอียดสินค้า"
+            placeholder="อธิบายสภาพ ตำหนิ หรือรายละเอียดอื่น ๆ"
             placeholderTextColor={theme.textSecondary}
+            multiline
             editable={!disabled}
           />
-          {sizeError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{sizeError}</Text>}
+          {descError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{descError}</Text>}
         </View>
       </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>ราคา *</Text>
-        <View style={[styles.priceInputWrapper, priceError && styles.inputError]}>
-          <Text style={styles.pricePrefix}>฿</Text>
-          <TextInput
-            style={styles.priceInput}
-            value={priceText}
-            onChangeText={setPriceText}
-            accessibilityLabel="ราคา (บาท)"
-          placeholder="0"
-            placeholderTextColor={theme.textSecondary}
-            keyboardType="numeric"
-            editable={!disabled}
-          />
-        </View>
-        {priceError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{priceError}</Text>}
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>หมวดหมู่ *</Text>
-        {loadingOptions ? (
-          <View style={styles.optionsInlineLoading}>
-            <ActivityIndicator size="small" color={ACCENT} />
-            <Text style={styles.optionsInlineLoadingText}>กำลังโหลดหมวดหมู่...</Text>
-          </View>
-        ) : categories.length === 0 ? null : (
-          <View style={styles.chipRow}>
-            {categories.map(option => {
-              const isSelected = values.categoryId ? values.categoryId === option.id : values.category === option.name;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected, disabled }}
-                  style={[styles.chip, isSelected && styles.chipSelected]}
-                  onPress={() => setValues(current => ({ ...current, category: option.name, categoryId: option.id }))}
-                  disabled={disabled}
-                >
-                  <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                    {option.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-        {categoryError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{categoryError}</Text>}
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>สภาพสินค้า</Text>
-        <View style={styles.chipRow}>
-          {CONDITION_OPTIONS.map(option => (
-            <TouchableOpacity
-              key={option}
-              accessibilityRole="button"
-              accessibilityState={{ selected: values.condition === option, disabled }}
-              style={[styles.chip, values.condition === option && styles.chipSelected]}
-              onPress={() => setValues(current => ({ ...current, condition: option }))}
-              disabled={disabled}
-            >
-              <Text style={[styles.chipText, values.condition === option && styles.chipTextSelected]}>
-                {CONDITION_LABELS[option] ?? option}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {conditionError && <Text accessibilityLiveRegion="polite" style={styles.fieldErrorText}>{conditionError}</Text>}
-      </View>
-
 
       {submitError && <Text accessibilityLiveRegion="polite" style={styles.formErrorText}>{submitError}</Text>}
 
-      <View style={styles.field}><Text style={styles.label}>รูปแบบการขาย</Text><Text style={styles.input}>ราคาปกติ</Text></View>
-      <TouchableOpacity
-        accessibilityRole="button"
-        accessibilityState={{ disabled: cannotSubmit, busy: !!submitting }}
-        style={[styles.submitButton, cannotSubmit && !submitSuccess && styles.submitButtonDisabled,
-          submitSuccess && styles.submitButtonSuccess]}
-        disabled={cannotSubmit}
-        onPress={handleSubmit}
-      >
-        {submitting ? (
-          <ActivityIndicator color={theme.onPrimary} />
-        ) : submitSuccess ? (
-          <Text style={styles.submitButtonText}>✓ สำเร็จ</Text>
-        ) : (
-          <Text style={styles.submitButtonText}>{mode === 'create' ? 'ลงขายสินค้า' : 'บันทึกการแก้ไข'}</Text>
-        )}
-      </TouchableOpacity>
+      {/* Bottom Action Bar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={styles.previewBtn}
+          onPress={() => setShowPreview(true)}
+          accessibilityRole="button"
+          accessibilityLabel="ดูตัวอย่าง"
+        >
+          <Text style={styles.previewBtnText}>ดูตัวอย่าง</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityState={{ disabled: cannotSubmit, busy: !!submitting }}
+          style={[
+            styles.submitButton,
+            cannotSubmit && !submitSuccess && styles.submitButtonDisabled,
+            submitSuccess && styles.submitButtonSuccess,
+          ]}
+          disabled={cannotSubmit}
+          onPress={handleSubmit}
+        >
+          {submitting ? (
+            <ActivityIndicator color={theme.onPrimary} />
+          ) : submitSuccess ? (
+            <Text style={styles.submitButtonText}>✓ สำเร็จ</Text>
+          ) : (
+            <Text style={styles.submitButtonText}>{mode === 'create' ? 'ลงขายสินค้า' : 'บันทึกการแก้ไข'}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Preview Modal */}
+      <Modal visible={showPreview} transparent animationType="fade" onRequestClose={() => setShowPreview(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>ตัวอย่างการ์ดในหน้าแรก</Text>
+            <View style={styles.previewCard}>
+              {values.images.length > 0 ? (
+                <Image source={{ uri: values.images[0] }} style={styles.previewImage} />
+              ) : (
+                <View style={styles.previewImagePlaceholder}>
+                  <Text style={{ fontSize: 36 }}>📷</Text>
+                </View>
+              )}
+              <View style={styles.previewCardBody}>
+                <Text style={styles.previewBrand}>{values.brand || 'ไม่ระบุแบรนด์'}</Text>
+                <Text style={styles.previewName} numberOfLines={2}>{values.name || 'ชื่อสินค้า'}</Text>
+                <Text style={styles.previewPrice}>฿{priceText || '0'}</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowPreview(false)}>
+              <Text style={styles.closeModalBtnText}>ปิด</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -713,7 +797,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   addImageLabel: { fontFamily: Fonts.sans, fontSize: 12, color: theme.primary, fontWeight: '600' },
   formErrorText: { fontFamily: Fonts.sans, fontSize: 13, color: theme.danger, textAlign: 'center' },
   submitButton: {
-    marginTop: Spacing.two,
+    flex: 1,
     backgroundColor: theme.primary,
     borderRadius: 10,
     paddingVertical: Spacing.three,
@@ -727,4 +811,164 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   submitButtonDisabled: { backgroundColor: theme.textSecondary, shadowOpacity: 0 },
   submitButtonSuccess: { backgroundColor: theme.success },
   submitButtonText: { color: theme.onPrimary, fontFamily: Fonts.sans, fontSize: 16, fontWeight: '700' },
+  cardSection: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 16,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  cardHeaderTitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.text,
+  },
+  tipText: {
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    color: theme.primary,
+    marginTop: 2,
+  },
+  counterText: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    color: theme.textSecondary,
+  },
+  condDescText: {
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    color: theme.textSecondary,
+    marginTop: 2,
+  },
+  netPayoutBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: theme.backgroundElement,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+    marginTop: Spacing.two,
+  },
+  netPayoutLabel: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    color: theme.textSecondary,
+  },
+  netPayoutSub: {
+    fontSize: 10,
+    color: theme.textSecondary,
+  },
+  netPayoutValue: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.primary,
+  },
+  saleFormatText: {
+    fontFamily: Fonts.sans,
+    fontSize: 11,
+    color: theme.textSecondary,
+    marginTop: 4,
+  },
+  bottomBar: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    alignItems: 'center',
+    marginTop: Spacing.two,
+  },
+  previewBtn: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+    backgroundColor: theme.backgroundElement,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewBtnText: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.text,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    padding: Spacing.four,
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  modalTitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.text,
+  },
+  previewCard: {
+    width: 180,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  previewImage: {
+    width: '100%',
+    height: 140,
+  },
+  previewImagePlaceholder: {
+    width: '100%',
+    height: 140,
+    backgroundColor: theme.backgroundElement,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewCardBody: {
+    padding: 10,
+    gap: 2,
+  },
+  previewBrand: {
+    fontFamily: Fonts.sans,
+    fontSize: 10,
+    color: theme.textSecondary,
+  },
+  previewName: {
+    fontFamily: Fonts.sans,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.text,
+    minHeight: 32,
+  },
+  previewPrice: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.primary,
+  },
+  closeModalBtn: {
+    width: '100%',
+    paddingVertical: 10,
+    backgroundColor: theme.backgroundElement,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeModalBtnText: {
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.text,
+  },
 });

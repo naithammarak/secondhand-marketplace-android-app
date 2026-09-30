@@ -13,6 +13,7 @@ import { MarketplaceNav } from './marketplace-nav';
 import { Button, Loading, Screen } from './order-ui';
 import { ThemedText } from './themed-text';
 import { WondeeMascot, type MascotVariant } from './wondee/brand';
+import { WondeeLoader } from './wondee/loader';
 
 const statusLabels = {
   NOT_SUBMITTED: 'ขอเปิดร้านค้า',
@@ -237,94 +238,120 @@ export function ProfileScreen() {
                 )}
               </View>
 
-              {/* Card 2: Open Shop Banner (Buyer/Guest) OR Approved Seller Management */}
+              {/* Card 2: Open Shop Card (Prototype vfRenderCard: NONE / PENDING / REJECTED) */}
               {customer && !approved && (
                 <View
                   style={[
                     styles.sellerBanner,
                     isDark ? styles.sellerBannerDark : styles.sellerBannerLight,
                   ]}>
-                  <View style={styles.sellerBannerHeader}>
-                    <View
-                      style={[
-                        styles.opportunityBadge,
-                        isDark ? styles.opportunityBadgeDark : styles.opportunityBadgeLight,
-                      ]}>
-                      <ThemedText
-                        style={[
-                          styles.opportunityBadgeText,
-                          isDark ? styles.opportunityBadgeTextDark : styles.opportunityBadgeTextLight,
+                  {record?.status === 'PENDING' ? (
+                    <View style={{ gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <WondeeLoader size={36} accessibilityLabel="กำลังตรวจสอบคำขอเปิดร้าน" />
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
+                            กำลังตรวจสอบคำขอเปิดร้าน
+                          </ThemedText>
+                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
+                            ปกติใช้เวลา 1–2 วันทำการ
+                          </ThemedText>
+                        </View>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={openShopBtnLabel}
+                        onPress={() => router.push('/seller-verification')}
+                        style={({ pressed }) => [
+                          styles.openShopButton,
+                          isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
+                          { opacity: pressed ? 0.85 : 1, width: '100%' },
                         ]}>
-                        ✨ {waitingSellerAccess ? 'อนุมัติแล้ว' : 'โอกาสสำหรับคุณ'}
+                        <ThemedText style={styles.openShopButtonText}>ดูสถานะคำขอ</ThemedText>
+                      </Pressable>
+                    </View>
+                  ) : record?.status === 'REJECTED' ? (
+                    <View style={{ gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <View style={[styles.tagIconCircle, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2' }]}>
+                          <ThemedText style={{ fontSize: 18, color: '#EF4444', fontWeight: '800' }}>!</ThemedText>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.sellerBannerTitle, { color: '#EF4444' }]}>
+                            คำขอเปิดร้านถูกปฏิเสธ
+                          </ThemedText>
+                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
+                            ดูเหตุผลแล้วแก้ไขส่งใหม่ได้
+                          </ThemedText>
+                        </View>
+                      </View>
+                      {!!record?.rejectReason && (
+                        <View style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FCA5A5' }}>
+                          <ThemedText style={{ color: '#EF4444', fontSize: 12, lineHeight: 16 }}>
+                            {record.rejectReason}
+                          </ThemedText>
+                        </View>
+                      )}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={openShopBtnLabel}
+                        onPress={() => router.push('/seller-verification')}
+                        style={({ pressed }) => [
+                          styles.openShopButton,
+                          { backgroundColor: '#059669', opacity: pressed ? 0.85 : 1, width: '100%' },
+                        ]}>
+                        <ThemedText style={[styles.openShopButtonText, { color: '#FFFFFF' }]}>แก้ไขและส่งใหม่</ThemedText>
+                      </Pressable>
+                    </View>
+                  ) : waitingSellerAccess ? (
+                    <View style={{ gap: 12 }}>
+                      <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
+                        คำขอร้านได้รับอนุมัติแล้ว
                       </ThemedText>
+                      <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
+                        บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล
+                      </ThemedText>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={openShopBtnLabel}
+                        onPress={() => { void auth.retryAccount(); }}
+                        style={({ pressed }) => [
+                          styles.openShopButton,
+                          isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
+                          { opacity: pressed ? 0.85 : 1, width: '100%' },
+                        ]}>
+                        <ThemedText style={styles.openShopButtonText}>{openShopBtnLabel}</ThemedText>
+                      </Pressable>
                     </View>
-                    <View
-                      style={[
-                        styles.tagIconCircle,
-                        isDark ? styles.tagIconCircleDark : styles.tagIconCircleLight,
-                      ]}>
-                      <ThemedText style={{ fontSize: 18 }}>🏷️</ThemedText>
+                  ) : (
+                    <View style={{ gap: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                        <View style={[styles.tagIconCircle, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5' }]}>
+                          <ThemedText style={{ fontSize: 20 }}>🏪</ThemedText>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
+                            เปิดร้าน ขายของได้ใน 3 ขั้น
+                          </ThemedText>
+                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight, { marginTop: 2 }]}>
+                            ยืนยันตัวตนด้วยบัตรประชาชนและบัญชีธนาคาร แล้วเริ่มลงขายได้เลย
+                          </ThemedText>
+                        </View>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={openShopBtnLabel}
+                        onPress={() => router.push('/seller-verification')}
+                        style={({ pressed }) => [
+                          styles.openShopButton,
+                          { backgroundColor: '#059669', opacity: pressed ? 0.85 : 1, width: '100%' },
+                        ]}>
+                        <ThemedText style={[styles.openShopButtonText, { color: '#FFFFFF' }]}>
+                          {openShopBtnLabel === 'ขอเปิดร้านค้า' ? 'เริ่มยืนยันตัวตน' : openShopBtnLabel}
+                        </ThemedText>
+                      </Pressable>
                     </View>
-                  </View>
-
-                  <ThemedText
-                    style={[
-                      styles.sellerBannerTitle,
-                      isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight,
-                    ]}>
-                    {waitingSellerAccess
-                      ? 'คำขอร้านได้รับอนุมัติแล้ว'
-                      : 'ต้องการเปิดร้านขายสินค้า?'}
-                  </ThemedText>
-
-                  <ThemedText
-                    style={[
-                      styles.sellerBannerSubtitle,
-                      isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight,
-                    ]}>
-                    {waitingSellerAccess
-                      ? 'บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล'
-                      : 'ยกระดับบัญชีเป็นผู้ขาย ส่งต่อของรัก สร้างรายได้ง่ายๆ พร้อมระบบคุ้มครอง'}
-                  </ThemedText>
-
-                  {!!record?.rejectReason && (
-                    <ThemedText style={[styles.sellerBannerSubtitle, { color: '#f87171', marginTop: 4 }]}>
-                      {record.rejectReason}
-                    </ThemedText>
                   )}
-
-                  <View
-                    style={[
-                      styles.sellerBannerDivider,
-                      isDark ? styles.sellerBannerDividerDark : styles.sellerBannerDividerLight,
-                    ]}
-                  />
-
-                  <View style={styles.sellerBannerFooter}>
-                    <ThemedText
-                      style={[
-                        styles.idCardNotice,
-                        isDark ? styles.idCardNoticeDark : styles.idCardNoticeLight,
-                      ]}>
-                      ยืนยันตัวตนด้วยบัตร ปชช.
-                    </ThemedText>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={openShopBtnLabel}
-                      onPress={() => {
-                        if (waitingSellerAccess) void auth.retryAccount();
-                        else router.push('/seller-verification');
-                      }}
-                      style={({ pressed }) => [
-                        styles.openShopButton,
-                        isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
-                        { opacity: pressed ? 0.85 : 1 },
-                      ]}>
-                      <ThemedText style={styles.openShopButtonText}>
-                        {waitingSellerAccess ? openShopBtnLabel : `${openShopBtnLabel} >`}
-                      </ThemedText>
-                    </Pressable>
-                  </View>
                 </View>
               )}
 
@@ -1238,5 +1265,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
-
-
