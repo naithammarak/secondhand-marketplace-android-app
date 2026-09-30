@@ -6,7 +6,6 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
-from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -82,6 +81,8 @@ async def parse_buyer_decision(request: Request) -> BuyerDecisionRequest:
             fields = {"body": "Invalid JSON body"}
         raise decision_validation_error(fields) from exc
     reason = body.reason.strip() if body.reason is not None else None
+    if reason is not None and any(char == "\x00" or 0xD800 <= ord(char) <= 0xDFFF for char in reason):
+        raise decision_validation_error({"reason": "Reason contains unsupported characters"})
     if body.decision == "CONFIRM" and reason is not None:
         raise decision_validation_error({"reason": "CONFIRM does not accept a reason"})
     if body.decision == "REJECT" and reason is not None and len(reason) > 500:

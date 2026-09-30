@@ -1,6 +1,7 @@
 """Real PostgreSQL end-to-end INSPECT API flow; never touches a shared DB."""
 
 import os
+import json
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -723,6 +724,45 @@ def test_decision_permissions_read_after_suspension_and_validation(world):
     assert client.get(url, headers=buyer).status_code == 200
     inactive = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
     assert inactive.status_code == 403 and inactive.json()["detail"]["code"] == "account_inactive"
+
+
+@pytest.mark.parametrize("reason", ["reason\u0000text", "reason\ud800text", "reason\udffftext"], ids=["nul", "high-surrogate", "low-surrogate"])
+def test_decision_unstorable_reason_returns_field_error(world, reason):
+    client, engine, buyer, *_ = world
+    order_id, _, _ = completed_work(world)
+    url = f"/orders/{order_id}/inspection/decision"
+    response = client.post(url, content=json.dumps({"decision": "REJECT", "reason": reason}),
+                           headers={**buyer, "Content-Type": "application/json"})
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "validation_error"
+    assert "reason" in response.json()["detail"]["fields"]
+    assert response.headers["cache-control"] == "no-store"
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+    # Valid Unicode, including a non-BMP character, can still be saved after correction.
+    corrected = client.post(url, json={"decision": "REJECT", "reason": "  ไม่ตรงตามที่ต้องการ 📦  "}, headers=buyer)
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["decision"]["reason"] == "ไม่ตรงตามที่ต้องการ 📦"
+
+
+@pytest.mark.parametrize("prefix", ["", "/api", "/gateway/api"])
+def test_inspection_error_no_store_under_root_path(world, prefix):
+    _, _, buyer, *_ = world
+    order_id, _ = started_work(world)
+    with TestClient(app, root_path=prefix) as client:
+        url = f"{prefix}/orders/{order_id}/inspection"
+        responses = [
+            (client.get(url), 401, None),
+            (client.get(url, headers=buyer), 404, "inspection_not_ready"),
+            (client.post(f"{url}/decision", json={"decision": "MAYBE"}, headers=buyer), 422, "validation_error"),
+            (client.post(f"{url}/decision", json={"decision": "CONFIRM"}), 401, None),
+            (client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer), 409, "inspection_not_ready"),
+        ]
+        for response, status, code in responses:
+            assert response.status_code == status, response.text
+            assert response.headers.get("cache-control") == "no-store"
+            if code:
+                assert response.json()["detail"]["code"] == code
 
 
 def test_missing_certificate_fails_closed_and_concurrent_decisions_choose_once(world, monkeypatch):

@@ -34,7 +34,12 @@ app = FastAPI(
 @app.middleware("http")
 async def private_inspection_no_store(request: Request, call_next):
     """Keep buyer inspection details and error responses out of shared caches."""
-    parts = request.url.path.strip("/").split("/")
+    path = request.scope["path"]
+    root_path = request.scope.get("root_path", "").rstrip("/")
+    # ASGI servers may include the mount/proxy prefix in path, or strip it.
+    if root_path and path.startswith(root_path + "/"):
+        path = path[len(root_path):]
+    parts = path.strip("/").split("/")
     private = (len(parts) in {3, 4} and parts[0] == "orders" and parts[2] == "inspection"
                and (len(parts) == 3 or parts[3] == "decision"))
     response = await call_next(request)
