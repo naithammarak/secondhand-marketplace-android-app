@@ -1,3 +1,4 @@
+import { isBuyerOrdersMode } from '@/runtime/catalog-capability';
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -231,7 +232,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const router = useRouter();
   const countdown = useOrderCountdown(item.expiresAt, item.createdAt);
   const canPay =
-    item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
+    !isBuyerOrdersMode() && item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
 
   const isFailed =
@@ -399,7 +400,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           style={({ pressed }) => [styles.fullPayButton, { opacity: pressed ? 0.85 : 1 }]}>
           <ThemedText style={styles.fullPayButtonText}>ชำระเงิน</ThemedText>
         </Pressable>
-      ) : item.viewerRole === 'buyer' && item.status === 'RESULT_NOTIFIED' && isFailed ? (
+      ) : !isBuyerOrdersMode() && item.viewerRole === 'buyer' && item.status === 'RESULT_NOTIFIED' && isFailed ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="ดูผลตรวจและเลือก"
@@ -430,7 +431,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           ]}>
           <ThemedText style={styles.fullPayButtonText}>ลงขายอีกครั้ง</ThemedText>
         </Pressable>
-      ) : item.viewerRole === 'buyer' && item.status === 'COMPLETED' && !(item as any).reviewed ? (
+      ) : !isBuyerOrdersMode() && item.viewerRole === 'buyer' && item.status === 'COMPLETED' && !(item as any).reviewed ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="⭐ ให้คะแนนและรีวิว"
@@ -500,7 +501,7 @@ export function OrdersListScreen() {
 
   useEffect(() => {
     if (!customer) return;
-    void store.setView(view === 'seller' && auth.account?.role === 'SELLER' ? 'seller' : 'buyer');
+    void store.setView(!isBuyerOrdersMode() && view === 'seller' && auth.account?.role === 'SELLER' ? 'seller' : 'buyer');
   }, [customer, view, auth.account?.role, store]);
 
   useEffect(() => {
@@ -568,7 +569,7 @@ export function OrdersListScreen() {
                 คำสั่งซื้อที่ฉันซื้อ
               </ThemedText>
             </Pressable>
-            <Pressable
+            {!isBuyerOrdersMode() ? (            <Pressable
               accessibilityRole="tab"
               accessibilityLabel="คำสั่งซื้อร้านของฉัน"
               accessibilityState={{ selected: state.view === 'seller' }}
@@ -584,7 +585,7 @@ export function OrdersListScreen() {
                 ]}>
                 คำสั่งซื้อร้านของฉัน
               </ThemedText>
-            </Pressable>
+            </Pressable>) : null}
           </View>
 
           {/* Status Filter Chips */}

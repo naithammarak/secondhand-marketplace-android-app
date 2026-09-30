@@ -367,3 +367,20 @@ test('uncertain FAILED retry retains its original outcome and idempotency key', 
   expect(mockSimulatePayment.mock.calls[1][1]).toEqual(mockSimulatePayment.mock.calls[0][1]);
   expect(mockReplace).not.toHaveBeenCalled();
 });
+
+
+test('buyer-orders checkout creates an unpaid order without QR or simulated payment controls', () => {
+  process.env.EXPO_PUBLIC_BUYER_ORDERS = 'true';
+  try {
+    const view = render(<CheckoutScreen productId={7} />);
+    expect(screen.getByRole('button', { name: 'สร้างคำสั่งซื้อ' })).toBeTruthy();
+    expect(screen.getByText('ยังไม่เปิดรับชำระเงิน')).toBeTruthy();
+    expect(screen.queryByText('QR สำหรับการสาธิต')).toBeNull();
+    mockCheckoutState = { ...mockCheckoutState, createdOrderId: 42 };
+    view.rerender(<CheckoutScreen productId={7} />);
+    expect(mockReplace).toHaveBeenCalledWith({ pathname: '/orders/[orderId]', params: { orderId: '42' } });
+    expect(screen.queryByRole('button', { name: 'จำลองจ่ายสำเร็จ' })).toBeNull();
+    expect(screen.queryByText('ภาพ QR นี้เป็นภาพประกอบเท่านั้นและสแกนไม่ได้')).toBeNull();
+    expect(mockSimulatePayment).not.toHaveBeenCalled();
+  } finally { delete process.env.EXPO_PUBLIC_BUYER_ORDERS; }
+});

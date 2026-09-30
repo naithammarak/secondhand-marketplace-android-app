@@ -3,6 +3,10 @@ const { spawn } = require('node:child_process');
 
 const project = path.resolve(__dirname, '..');
 const catalogOnly = process.env.EXPO_PUBLIC_CATALOG_ONLY === 'true';
+if (catalogOnly && process.env.EXPO_PUBLIC_BUYER_ORDERS === 'true') {
+  console.error('Choose either catalog-only or buyer-orders mode.');
+  process.exit(1);
+}
 if (!catalogOnly) require('@expo/env').load(project);
 const required = catalogOnly
   ? ['EXPO_PUBLIC_API_BASE_URL']

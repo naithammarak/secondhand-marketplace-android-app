@@ -11,7 +11,7 @@ import { OrdersProvider } from '@/orders/orders-provider';
 import { VerificationProvider } from '@/verification/verification-provider';
 import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
 import { SplashScreenView } from '@/components/wondee/splash-screen';
-import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
+import { isCatalogOnlyMode, isBuyerOrdersMode } from '@/runtime/catalog-capability';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -22,6 +22,7 @@ export default function TabLayout() {
 function AppLayout() {
   const { scheme: colorScheme, ready } = useThemePreference();
   const catalogOnly = isCatalogOnlyMode();
+  const buyerOrders = isBuyerOrdersMode();
   const [splashFinished, setSplashFinished] = useState(() => process.env.NODE_ENV === 'test');
   const [fontsLoaded, fontError] = useFonts({
     'Prompt-Regular': require('@/assets/fonts/Prompt-Regular.ttf'),
@@ -44,6 +45,11 @@ function AppLayout() {
             splashFinished={splashFinished}
             onSplashFinish={() => setSplashFinished(true)}
           />
+        ) : buyerOrders ? (
+          <OrdersProvider>
+            <AppRoutes theme={theme} catalogOnly={false} splashFinished={splashFinished}
+              onSplashFinish={() => setSplashFinished(true)} />
+          </OrdersProvider>
         ) : (
           <VerificationProvider>
             <ReviewProvider>
@@ -87,6 +93,11 @@ const nonCatalogRoutes = [
   'seller-verification',
 ] as const;
 
+const buyerRoutes: readonly string[] = [
+  'auth/callback', 'checkout/[productId]', 'login', 'orders/index',
+  'orders/[orderId]', 'profile', 'receipt/[orderId]',
+];
+
 function AppRoutes({ theme, catalogOnly, splashFinished, onSplashFinish }: {
   theme: (typeof Colors)[keyof typeof Colors];
   catalogOnly: boolean;
@@ -107,7 +118,10 @@ function AppRoutes({ theme, catalogOnly, splashFinished, onSplashFinish }: {
         <Stack.Screen name="products/index" />
         <Stack.Screen name="products/[id]" />
         <Stack.Protected guard={!catalogOnly}>
-          {nonCatalogRoutes.map(name => <Stack.Screen key={name} name={name} />)}
+          {nonCatalogRoutes.filter(name => buyerRoutes.includes(name)).map(name => <Stack.Screen key={name} name={name} />)}
+        </Stack.Protected>
+        <Stack.Protected guard={!catalogOnly && !isBuyerOrdersMode()}>
+          {nonCatalogRoutes.filter(name => !buyerRoutes.includes(name)).map(name => <Stack.Screen key={name} name={name} />)}
         </Stack.Protected>
       </Stack>
       {!splashFinished ? <SplashScreenView onFinish={onSplashFinish} /> : null}

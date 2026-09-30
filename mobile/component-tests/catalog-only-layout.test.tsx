@@ -80,3 +80,18 @@ test('full mode continues to register login, profile, selling and order screens'
     expect(screen.getByTestId(`route:${route}`)).toBeTruthy();
   }
 });
+
+
+test('buyer-orders stack includes purchase routes and excludes seller/inspection capabilities', () => {
+  process.env.EXPO_PUBLIC_CATALOG_ONLY = 'false';
+  process.env.EXPO_PUBLIC_BUYER_ORDERS = 'true';
+  try {
+    render(<TabLayout />);
+    for (const route of ['login', 'auth/callback', 'checkout/[productId]', 'orders/index', 'orders/[orderId]', 'profile']) {
+      expect(screen.getByTestId(`route:${route}`)).toBeTruthy();
+    }
+    for (const route of ['sell', 'product', 'admin-verifications', 'orders/[orderId]/inspection', 'certificates/[token]']) {
+      expect(screen.queryByTestId(`route:${route}`)).toBeNull();
+    }
+  } finally { delete process.env.EXPO_PUBLIC_BUYER_ORDERS; }
+});

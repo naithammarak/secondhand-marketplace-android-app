@@ -120,3 +120,15 @@ test('RETURNING_TO_SELLER and REFUNDED display return badges and seller relist a
     },
   });
 });
+
+
+test('buyer-orders runtime opens unpaid details without offering payment or seller views', () => {
+  process.env.EXPO_PUBLIC_BUYER_ORDERS = 'true';
+  try {
+    render(<OrdersListScreen />);
+    expect(screen.queryByRole('button', { name: 'ชำระเงิน' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'คำสั่งซื้อร้านของฉัน' })).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: 'ดูรายละเอียด' }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/orders/[orderId]', params: { orderId: '42' } });
+  } finally { delete process.env.EXPO_PUBLIC_BUYER_ORDERS; }
+});

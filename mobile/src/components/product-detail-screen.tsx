@@ -30,7 +30,7 @@ import { productCatalogService, productCatalogStore } from '@/products/product-c
 import { createProductDetailStore } from '@/products/product-detail-store';
 import { setCachedProductBrand } from '@/hooks/use-product-brand';
 import { conditionLabels } from '@/services/product-catalog-service';
-import { isCatalogOnlyMode } from '@/runtime/catalog-capability';
+import { isCatalogOnlyMode, isBuyerOrdersMode } from '@/runtime/catalog-capability';
 
 const detailErrorMessages: Record<string, string> = {
   'network-error': 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่',
@@ -468,7 +468,7 @@ export function ProductDetailScreen() {
                       <ThemedText style={[styles.sellerNameText, { color: theme.text }]} numberOfLines={1}>
                         {product.seller.displayName}
                       </ThemedText>
-                      {!catalogOnly ? <Pressable
+                      {!catalogOnly && !isBuyerOrdersMode() ? <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="ดูรีวิวผู้ขาย"
                         onPress={() => setShowSellerReviews(true)}
@@ -488,7 +488,7 @@ export function ProductDetailScreen() {
                     </ThemedText>
                   </View>
 
-                  {!catalogOnly ? <Pressable
+                  {!catalogOnly && !isBuyerOrdersMode() ? <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="ดูร้านค้า"
                     style={({ pressed }) => [
@@ -662,7 +662,7 @@ export function ProductDetailScreen() {
 
         <ImageViewer uri={zoom} label="รูปสินค้า" onClose={() => setZoom(null)} />
 
-        {!catalogOnly && product ? (
+        {!catalogOnly && !isBuyerOrdersMode() && product ? (
           <SellerReviewsModal
             visible={showSellerReviews}
             onClose={() => setShowSellerReviews(false)}

@@ -1,3 +1,4 @@
+import { isBuyerOrdersMode } from '@/runtime/catalog-capability';
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -184,7 +185,13 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const activeOrderId = state.owner === auth.session?.user.id && state.productId === productId
     ? state.createdOrderId : null;
-  const qrModalVisible = activeOrderId !== null && dismissedOrderId !== activeOrderId;
+  const qrModalVisible = !isBuyerOrdersMode() && activeOrderId !== null && dismissedOrderId !== activeOrderId;
+
+  useEffect(() => {
+    if (isBuyerOrdersMode() && activeOrderId !== null) {
+      router.replace({ pathname: '/orders/[orderId]', params: { orderId: String(activeOrderId) } });
+    }
+  }, [activeOrderId, router]);
 
   useEffect(() => {
     if (!state.owner || productId === null) return;
@@ -242,7 +249,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
     const buyerId = auth.session?.user.id ?? null;
     const orderId = activeOrderId;
     const product = productId;
-    if (!buyerId || orderId === null || paymentInFlight.current) return;
+    if (isBuyerOrdersMode() || !buyerId || orderId === null || paymentInFlight.current) return;
 
     const operation = ++paymentOperation.current;
     paymentInFlight.current = true;
@@ -319,7 +326,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <SafeAreaView style={styles.content}>
-            <MarketplaceHeader title="สั่งซื้อและชำระเงิน" back />
+            <MarketplaceHeader title={isBuyerOrdersMode() ? "สร้างคำสั่งซื้อ" : "สั่งซื้อและชำระเงิน"} back />
 
             {productId === null ? <ThemedText>รหัสสินค้าไม่ถูกต้อง</ThemedText> : null}
             {state.quoteLoading ? <Loading label="กำลังโหลดราคาสินค้า" /> : null}
@@ -482,13 +489,13 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                         backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)',
                       },
                     ]}>
-                    <View style={styles.demoPaymentBadge}>
+                    {!isBuyerOrdersMode() ? <View style={styles.demoPaymentBadge}>
                       <ThemedText style={styles.demoPaymentBadgeText}>DEMO</ThemedText>
-                    </View>
+                    </View> : null}
                     <View style={{ flex: 1 }}>
-                      <ThemedText style={styles.paymentMethodTitle}>QR สำหรับการสาธิต</ThemedText>
+                      <ThemedText style={styles.paymentMethodTitle}>{isBuyerOrdersMode() ? 'ยังไม่เปิดรับชำระเงิน' : 'QR สำหรับการสาธิต'}</ThemedText>
                       <ThemedText style={[styles.paymentMethodSubtitle, { color: theme.textSecondary }]}>
-                        การชำระเงินในแอปนี้เป็นการจำลอง
+                        {isBuyerOrdersMode() ? 'สร้างคำสั่งซื้อและจองสินค้าโดยยังไม่ชำระเงิน' : 'การชำระเงินในแอปนี้เป็นการจำลอง'}
                       </ThemedText>
                     </View>
                     <View style={styles.paymentCheckedCircle}>
@@ -556,7 +563,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
           ) : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="ชำระเงิน"
+              accessibilityLabel={isBuyerOrdersMode() ? "สร้างคำสั่งซื้อ" : "ชำระเงิน"}
               disabled={busy}
               onPress={() => { void store.submit(values); }}
               style={({ pressed }) => [
@@ -567,7 +574,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <ThemedText style={styles.payButtonText}>
-                  {state.uncertain ? 'ตรวจสอบและลองอีกครั้ง' : 'ชำระเงิน'}
+                  {state.uncertain ? 'ตรวจสอบและลองอีกครั้ง' : isBuyerOrdersMode() ? 'สร้างคำสั่งซื้อ' : 'ชำระเงิน'}
                 </ThemedText>
               )}
             </Pressable>
