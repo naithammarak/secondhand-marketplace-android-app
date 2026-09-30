@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { ProductListScreen } from '@/components/product-list-screen';
 import type { ProductCatalogState } from '@/products/product-catalog-store';
@@ -131,6 +132,21 @@ describe('ProductListScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/login');
   });
 
+  test('long category labels truncate visually and retain the complete accessible name', () => {
+    const fullCategoryName = 'อุปกรณ์ถ่ายภาพและอิเล็กทรอนิกส์รุ่นพิเศษที่มีชื่อยาวมาก';
+    mockState = defaultState({
+      categories: [{ id: 42, categoryName: fullCategoryName, parentCategoryId: null }],
+    });
+    render(<ProductListScreen />);
+
+    const chip = screen.getByRole('button', { name: fullCategoryName });
+    const label = screen.getByText(fullCategoryName);
+    expect(chip.props.accessibilityLabel).toBe(fullCategoryName);
+    expect(label.props.numberOfLines).toBe(1);
+    expect(label.props.ellipsizeMode).toBe('tail');
+    expect(StyleSheet.flatten(chip.props.style).maxWidth).toBe(164);
+  });
+
   test('calls store.load() on initial mount when loaded is false', () => {
     mockState = defaultState({ loaded: false });
     render(<ProductListScreen />);
@@ -197,6 +213,9 @@ describe('ProductListScreen', () => {
     render(<ProductListScreen />);
 
     const searchInput = screen.getByPlaceholderText('ค้นหาชื่อสินค้า');
+    expect(searchInput.props.accessibilityLabel).toBe('ค้นหาชื่อสินค้า');
+    expect(searchInput.props.placeholderTextColor).toBe('#CBD5E1');
+    expect(StyleSheet.flatten(searchInput.props.style).fontSize).toBe(14);
     fireEvent.changeText(searchInput, 'เสื้อ');
     expect(mockStore.setQuery).toHaveBeenCalledWith('เสื้อ');
   });

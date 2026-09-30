@@ -1,9 +1,12 @@
 """FastAPI application entry point."""
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.admin_orders import router as admin_orders_router
 from app.api.admin_verifications import router as admin_verifications_router
@@ -15,6 +18,20 @@ from app.api.orders import router as orders_router
 from app.api.inspections import router as inspections_router
 from app.api.verifications import router as verifications_router
 from app.services.certificate_urls import public_certificate_base_url
+
+
+TASK01_DEMO_ASSETS = Path(__file__).resolve().parent / "static" / "task01-demo"
+
+
+def mount_task01_demo_assets(app: FastAPI, app_env: str | None = None) -> None:
+    """Expose only the bundled catalog artwork in the validated local demo app."""
+    environment = (app_env if app_env is not None else os.getenv("APP_ENV", "")).strip().lower()
+    if environment == "demo":
+        app.mount(
+            "/task01-demo-assets",
+            StaticFiles(directory=TASK01_DEMO_ASSETS, html=False),
+            name="task01-demo-assets",
+        )
 
 
 @asynccontextmanager
@@ -67,6 +84,9 @@ app.include_router(orders_router)
 app.include_router(inspections_router)
 # ORDER-09: มุมมอง Order ของผู้ดูแล (ปิดบังข้อมูลส่วนบุคคลเป็นค่าตั้งต้น)
 app.include_router(admin_orders_router)
+
+# Keep static demo artwork out of development defaults and every production app.
+mount_task01_demo_assets(app)
 
 
 @app.get("/health")

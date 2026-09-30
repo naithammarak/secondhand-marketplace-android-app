@@ -293,7 +293,7 @@ export function ProductListScreen() {
               value={state.query}
               onChangeText={text => productCatalogStore.setQuery(text)}
               placeholder="ค้นหาชื่อสินค้า"
-              placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+              placeholderTextColor={isDark ? '#CBD5E1' : '#475569'}
               accessibilityLabel="ค้นหาชื่อสินค้า"
               returnKeyType="search"
             />
@@ -329,13 +329,15 @@ export function ProductListScreen() {
                   style={[
                     styles.chip,
                     {
-                      borderColor: selected ? '#059669' : isDark ? '#334155' : '#E2E8F0',
-                      backgroundColor: selected ? '#059669' : isDark ? '#1E293B' : '#FFFFFF',
+                      borderColor: selected ? '#047857' : isDark ? '#334155' : '#E2E8F0',
+                      backgroundColor: selected ? '#047857' : isDark ? '#1E293B' : '#FFFFFF',
                     },
                   ]}
                 >
                   <ThemedText
                     type="small"
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                     style={[
                       styles.chipText,
                       {
@@ -510,20 +512,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 40,
   },
-  searchInput: { flex: 1, minWidth: 0, height: 40, fontFamily: Fonts.sans, fontSize: 12.5, paddingVertical: 0 },
+  searchInput: { flex: 1, minWidth: 0, height: 40, fontFamily: Fonts.sans, fontSize: 14, lineHeight: 20, paddingVertical: 0 },
   clearSearchBtn: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
   clearSearchText: { fontSize: 11, color: '#475569', fontWeight: '700' },
   chips: { gap: 8, paddingVertical: 2 },
   chip: {
     borderWidth: 1,
     borderRadius: 16,
-    paddingHorizontal: 13,
-    minHeight: 32,
-    height: 32,
+    paddingHorizontal: 12,
+    maxWidth: 164,
+    minHeight: 36,
+    paddingVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  chipText: { fontSize: 12, lineHeight: 16 },
+  chipText: { fontSize: 13, lineHeight: 18, maxWidth: 140 },
 
   /* Brand Banner */
   bannerContainer: {
