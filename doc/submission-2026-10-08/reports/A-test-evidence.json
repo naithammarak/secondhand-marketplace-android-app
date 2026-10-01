@@ -1,0 +1,65 @@
+{
+  "scope": "A FOUNDATION tasks01+02 only; independent review pending",
+  "base_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
+  "implementation_source_sha": "dcab3898fb4164721264310b62311f79bf1b4551",
+  "migration_head": "a02f20261002",
+  "isolated_database": "owned local postgres:16-alpine container; foundation_test, foundation_inspect_test, foundation_migration_test on localhost",
+  "tests": {
+    "backend_default": {
+      "passed": 452,
+      "skipped": 183,
+      "note": "Separate isolated PG commands below; existing dependency/JWT test warnings."
+    },
+    "mobile_typecheck": {
+      "result": "PASS"
+    },
+    "mobile_logic": {
+      "passed": 306
+    },
+    "mobile_components": {
+      "passed": 214,
+      "suites": 29,
+      "note": "Existing React act warnings."
+    },
+    "orders_postgres_all": {
+      "passed": 26,
+      "note": "51 total with prior 25 foundation cases; all Orders tests included."
+    },
+    "foundation_postgres_final": {
+      "passed": 27,
+      "note": "Additional release allocation and opposing-kind checks included."
+    },
+    "inspect_cert_postgres": {
+      "passed": 46,
+      "note": "Local private storage fixture, real PostgreSQL; all retained roles plus latest PR112 regressions."
+    },
+    "migration_postgres": {
+      "passed": 5,
+      "note": "Three supported legacy predecessors, unsafe refusal, RLS client bypass refusal; fresh migration proven by PG fixtures."
+    },
+    "unpaid_worker_postgres": {
+      "passed": 9
+    },
+    "python_compilation": {
+      "result": "PASS"
+    },
+    "credential_signature_and_path_scan": {
+      "result": "PASS",
+      "files_checked": 959,
+      "private_value_scan": "PASS; values not recorded"
+    }
+  },
+  "environment_limits": [
+    "No shared PostgreSQL or Supabase bucket changes",
+    "No real OAuth/Android/public QR/deployed worker proof",
+    "Terminal financial transactions are schema fixtures, not downstream settlement-service acceptance"
+  ],
+  "reproduce": [
+    "cd backend; python -m pytest -q",
+    "cd mobile; npm run typecheck; npm run test:logic; npm run test:components",
+    "ORDER_TEST_DATABASE_URL=<disposable-local-test-db> python -m pytest -q tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py",
+    "ORDER_TEST_DATABASE_URL=<disposable-local-test-db> python -m pytest -q tests/test_unpaid_expiry_postgres.py",
+    "INSPECT_FLOW_TEST_DATABASE_URL=<empty-disposable-local-test-db> python -m pytest -q tests/test_inspection_flow_postgres.py",
+    "FINISH_MIGRATION_TEST_DATABASE_URL=<disposable-local-test-db> FINISH_LEGACY_SOURCE=<PR121-worktree>/backend python -m pytest -q tests/test_finish_foundation_migration.py"
+  ]
+}
