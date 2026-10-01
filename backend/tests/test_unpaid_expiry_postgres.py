@@ -263,9 +263,15 @@ def test_cli_dry_run_apply_and_new_process_restart(db, world):
         assert "scanned=0" in repeating.stderr.readline()  # immediate startup scan
         repeating.terminate()
         _, errors = repeating.communicate(timeout=10)
-        assert repeating.returncode == 0
+        # POSIX terminate sends SIGTERM, which the runner handles gracefully.
+        # Windows terminate uses TerminateProcess: it cannot invoke the Python
+        # signal handler and exits with 1. Verify restart safety on both paths.
+        assert repeating.returncode == (1 if os.name == "nt" else 0)
         assert PG_URL not in errors
     finally:
         if repeating.poll() is None:
             repeating.kill()
             repeating.communicate(timeout=10)
+    after_termination = invoke("--apply", "--confirm-target", target)
+    assert after_termination.returncode == 0 and "cancelled=0" in after_termination.stderr
+    assert state(db, order_id, product_id) == ("CANCELLED", "EXPIRED", "AVAILABLE")
