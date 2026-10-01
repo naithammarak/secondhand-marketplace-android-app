@@ -206,6 +206,7 @@ END $$;
 GUARDS = r"""
 CREATE FUNCTION finish_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'FINISH immutable record: %', TG_TABLE_NAME USING ERRCODE='23514'; END $$;
+CREATE TRIGGER immutable_shipments BEFORE DELETE ON shipments FOR EACH ROW EXECUTE FUNCTION finish_append_only();
 CREATE TRIGGER immutable_payments BEFORE UPDATE OR DELETE ON payments FOR EACH ROW EXECUTE FUNCTION finish_append_only();
 CREATE TRIGGER immutable_receipts BEFORE UPDATE OR DELETE ON receipts FOR EACH ROW EXECUTE FUNCTION finish_append_only();
 CREATE TRIGGER immutable_attempts BEFORE UPDATE OR DELETE ON payment_attempts FOR EACH ROW EXECUTE FUNCTION finish_append_only();

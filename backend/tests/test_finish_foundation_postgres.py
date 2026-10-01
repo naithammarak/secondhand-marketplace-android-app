@@ -66,6 +66,8 @@ def test_private_strict_return_address_replay_freeze(db,world,paid):
         assert client.get(f'/orders/{paid.id}/return-address',headers=world['a']).status_code==403
     db.expire_all()
     with pytest.raises(IntegrityError),db.begin_nested():
+        db.delete(db.scalar(select(Shipment).where(Shipment.order_id==paid.id)));db.flush()
+    with pytest.raises(IntegrityError),db.begin_nested():
         db.get(Order,paid.id).return_address=VALID_ADDRESS;db.flush()
 
 @pytest.mark.parametrize('bad',[{'buyer_id':99999},{'seller_id':99999},{'currency':'USD'},{'held_amount':Decimal('1300'),'buyer_refund':Decimal('1300')},{'buyer_refund':1},{'shipping_amount':-1},{'source':'BUYER_RECEIPT'},{'reason':'RECEIPT_CONFIRMED'}])
