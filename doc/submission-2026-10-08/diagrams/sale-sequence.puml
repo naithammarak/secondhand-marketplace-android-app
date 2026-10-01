@@ -1,0 +1,46 @@
+@startuml
+title Target sale journey - persisted simulations
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+actor Buyer
+actor Seller
+actor Inspector
+actor Courier
+participant "Android app" as App
+participant "FastAPI" as API
+database PostgreSQL as DB
+participant "Private Storage" as Storage
+
+Buyer -> App : browse guest / login when buying
+App -> API : quote / create Order
+API -> DB : reserve stock and immutable quote/address
+Buyer -> App : simulated payment
+App -> API : stable idempotent payment command
+API -> DB : successful Payment + Receipt + HELD once
+Seller -> API : save validated return address / ship center
+API -> DB : freeze Seller snapshot / TO_CENTER
+Courier -> API : upload / confirm assigned center proof
+API -> Storage : private validated objects
+Inspector -> API : canonical center receive / final PASS
+API -> DB : transaction: result + certificate + RESULT_NOTIFIED
+API --> Buyer : authorized result + public QR
+Buyer -> API : CONFIRM inspection result
+API -> DB : one immutable Buyer decision
+Inspector -> API : create server-derived TO_BUYER
+Courier -> API : upload / confirm selected delivery proof
+API -> Storage : verify selected objects remain readable
+API -> DB : DELIVERED_PENDING_BUYER + deadline=proof time+72h
+Buyer -> API : confirm physical receipt (stable key)
+API -> DB : lock Order; fresh DB clock; verify eligibility
+API -> DB : atomic RELEASE + COMPLETED + SOLD
+API --> Buyer : committed settlement / original receipt
+API --> Seller : recorded simulated payout
+Buyer -> API : seller rating + optional comment
+API -> DB : unique completed-Order review
+note over API,DB
+  Worker may release after the same eligible receipt deadline,
+  only without a timely non-receipt report and with readable proof.
+  No provider bank transfer or automatic inspection decision.
+end note
+@enduml

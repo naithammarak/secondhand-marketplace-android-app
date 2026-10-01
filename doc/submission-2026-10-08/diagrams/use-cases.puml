@@ -1,0 +1,48 @@
+@startuml
+!pragma layout smetana
+title 2NDHAND - retained submission use cases
+left to right direction
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+actor Guest
+actor "Signed-in user" as User
+actor "Buyer capability" as Buyer
+actor "Approved Seller" as Seller
+actor Inspector
+actor Courier
+actor Admin
+actor Scheduler
+
+rectangle "2NDHAND prototype" {
+  usecase "Browse / search / product detail" as Browse
+  usecase "Public reviews / QR certificate" as Public
+  usecase "Google login / own profile / policy" as Profile
+  usecase "Apply for Seller verification" as Apply
+  usecase "Order / simulated payment / receipt" as Pay
+  usecase "Inspection decision / physical receipt" as Decision
+  usecase "Missing delivery report / seller review" as Review
+  usecase "Manage listing / center ship / return / payout" as Sell
+  usecase "Receive / inspect / final leg" as Inspect
+  usecase "Assigned delivery / private proof" as Deliver
+  usecase "Approve Seller / assign / resolve / revoke" as Manage
+  usecase "Expire / settle / refund retry / escalate" as Jobs
+}
+Guest --> Browse
+Guest --> Public
+User --> Profile
+User --> Apply
+Buyer --> Pay
+Buyer --> Decision
+Buyer --> Review
+Seller --> Sell
+Seller --> Pay : retains Buyer capability
+Inspector --> Inspect
+Courier --> Deliver
+Admin --> Manage
+Scheduler --> Jobs
+note bottom of Manage
+  Minimal operational administration only.
+  General user management, wallet, push, chat and auction deferred.
+end note
+@enduml

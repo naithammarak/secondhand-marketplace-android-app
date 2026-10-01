@@ -1,0 +1,45 @@
+@startuml
+title Target return / full refund journey
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+actor Buyer
+actor Inspector
+actor Courier
+participant FastAPI as API
+database PostgreSQL as DB
+participant "Private Storage" as Storage
+participant "Scheduled worker" as Worker
+
+Inspector -> API : final result
+alt PASS/MINOR_ISSUE
+  API -> DB : atomic result + certificate
+  Buyer -> API : REJECT result
+  API -> DB : one immutable rejection
+else FAKE/NOT_AS_DESCRIBED
+  API -> DB : negative result; no certificate / no CONFIRM
+end
+Inspector -> API : fulfillment command
+API -> DB : TO_SELLER from frozen return snapshot
+Courier -> API : upload selected private proof
+API -> Storage : validate bound object bytes
+Courier -> API : confirm assigned return delivery
+API -> Storage : verify 1-3 selected objects readable
+API -> DB : commit RETURNED_TO_SELLER + HELD + history/replay
+group Separate settlement transaction
+  API -> DB : lock / verify original charge and return
+  alt settlement succeeds
+    API -> DB : unique full REFUND + REFUNDED + Product CANCELLED
+    API --> Buyer : full held-total refund reference
+  else crash / transient failure
+    API --> Buyer : returned, refund pending (HELD)
+    Worker -> DB : bounded no-HTTP scan / lock / recheck
+    Worker -> DB : same service: unique full REFUND
+  end
+end
+note over API,DB
+  Original successful Payment/Receipt unchanged.
+  No payout, retained fees or automatic relisting on refund.
+  Positive inspection certificate remains an inspection record.
+end note
+@enduml

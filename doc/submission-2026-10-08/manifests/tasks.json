@@ -1,0 +1,130 @@
+{
+  "definition": "Dependencies concern technical implementation/delivery, not overall final READY. Task11 delivers Q01\u2013Q26; task13 finalizes Q27/Q28. INT-01 returns to combine downstream commits before APK build.",
+  "tasks": [
+    {
+      "id": "00",
+      "file": "tasks/00-DOC-01-lead.md",
+      "depends_on": [],
+      "status": "PREPARED"
+    },
+    {
+      "id": "01",
+      "file": "tasks/01-INT-01-release-base.md",
+      "depends_on": [
+        "00"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "02",
+      "file": "tasks/02-FINISH-01-schema.md",
+      "depends_on": [
+        "01"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "03",
+      "file": "tasks/03-FINISH-02-delivery.md",
+      "depends_on": [
+        "02"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "04",
+      "file": "tasks/04-FINISH-03-04-settlement.md",
+      "depends_on": [
+        "02"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "05",
+      "file": "tasks/05-TIMER-01-jobs.md",
+      "depends_on": [
+        "03",
+        "04"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "06",
+      "file": "tasks/06-FINISH-05-ui.md",
+      "depends_on": [
+        "03",
+        "04"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "07",
+      "file": "tasks/07-PROFILE-01.md",
+      "depends_on": [
+        "01",
+        "02"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "08",
+      "file": "tasks/08-REVIEW-01.md",
+      "depends_on": [
+        "02",
+        "04",
+        "07"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "09",
+      "file": "tasks/09-CERT-REVOKE-01-revocation.md",
+      "depends_on": [
+        "01"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "10",
+      "file": "tasks/10-ENV-01-runtime.md",
+      "depends_on": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "11",
+      "file": "tasks/11-QA-01-release.md",
+      "depends_on": [
+        "10",
+        "12"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "12",
+      "file": "tasks/12-APK-01-android.md",
+      "depends_on": [
+        "10"
+      ],
+      "status": "TODO"
+    },
+    {
+      "id": "13",
+      "file": "tasks/13-HANDOVER-01-demo-presentation.md",
+      "depends_on": [
+        "11",
+        "12"
+      ],
+      "status": "TODO"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+@startuml
+!pragma layout smetana
+title 2NDHAND - target Order states (scope 1 Oct 2026)
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam stateBackgroundColor #F1F5F9
+
+[*] --> WAITING_PAYMENT : create/reserve
+WAITING_PAYMENT --> CANCELLED : unpaid cancel / 30-minute expiry
+WAITING_PAYMENT --> WAITING_SELLER_SHIP : persisted payment / HELD
+WAITING_SELLER_SHIP --> REFUNDED : paid_at+72h / no timely shipment
+WAITING_SELLER_SHIP --> SHIPPING_TO_CENTER : validated frozen return address / timely ship
+SHIPPING_TO_CENTER --> RECEIVED_AT_CENTER : canonical Inspector receive
+RECEIVED_AT_CENTER --> INSPECTING : assigned work
+INSPECTING --> RESULT_NOTIFIED : final result + qualifying certificate atomic
+RESULT_NOTIFIED --> SHIPPING_TO_BUYER : PASS/MINOR_ISSUE + Buyer CONFIRM / final leg
+RESULT_NOTIFIED --> RETURNED_TO_SELLER : REJECT or negative / TO_SELLER confirmed proof
+SHIPPING_TO_BUYER --> DELIVERED_PENDING_BUYER : assigned Courier confirms readable proof
+DELIVERED_PENDING_BUYER --> COMPLETED : Buyer receipt OR eligible AUTO / one RELEASE
+DELIVERED_PENDING_BUYER --> DELIVERY_DISPUTED : report before deadline / HELD
+DELIVERY_DISPUTED --> COMPLETED : audited Admin evidence / RELEASE
+DELIVERY_DISPUTED --> REFUNDED : audited Admin evidence / full REFUND
+RETURNED_TO_SELLER --> REFUNDED : durable retry / full held-total REFUND
+CANCELLED --> [*]
+COMPLETED --> [*]
+REFUNDED --> [*]
+
+note right of RESULT_NOTIFIED
+  During return transit Order remains RESULT_NOTIFIED.
+  Shipment holds TO_SELLER IN_TRANSIT, not an extra Order state.
+  Negative results have no CONFIRM or certificate.
+  No automatic inspection decision.
+end note
+note right of DELIVERED_PENDING_BUYER
+  Deadline = confirmed readable TO_BUYER proof + 72h.
+  Fresh DB clock after lock and I/O revalidation governs writes.
+  Timely report blocks AUTO; outage/unreadable proof leaves HELD.
+end note
+note right of RETURNED_TO_SELLER
+  Delivery commits before refund attempt.
+  Failure preserves proof and HELD for scheduled retry.
+end note
+note bottom of REFUNDED
+  Full original held total; original Payment/Receipt unchanged.
+  Product CANCELLED, no automatic relisting.
+end note
+legend bottom
+  Target submission behavior; current baseline still needs FINISH.
+  COMPLETED permits one seller review; refund does not.
+  Inspection overdue escalates without inventing transitions.
+endlegend
+@enduml

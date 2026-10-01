@@ -1,0 +1,27 @@
+{
+  "order_id": 42,
+  "order_status": "DELIVERED_PENDING_BUYER",
+  "server_time": "2026-09-26T10:05:00Z",
+  "shipments": [
+    {
+      "id": 17,
+      "leg": "TO_BUYER",
+      "status": "DELIVERED",
+      "carrier": "Demo Courier",
+      "tracking_number": "DEMO-42",
+      "shipped_at": "2026-09-26T09:00:00Z",
+      "courier_delivered_at": "2026-09-26T10:00:00Z",
+      "proofs": [
+        {"id": 21, "url": "/shipment-delivery-proofs/21"}
+      ]
+    }
+  ],
+  "receipt_deadline_at": "2026-09-29T10:00:00Z",
+  "receipt_confirmed_at": null,
+  "receipt_confirmation_source": null,
+  "delivery_reported_missing_at": null,
+  "can_confirm_receipt": true,
+  "can_report_missing": true,
+  "settlement_status": "HELD",
+  "settlement": null
+}

@@ -1,0 +1,29 @@
+{
+  "checked_at_utc": "2026-09-30T18:16:40.040044+00:00",
+  "scope_prepared_on": "2026-10-01",
+  "scope": "documentation validation only; no application acceptance",
+  "task_files": 14,
+  "dependency_graph": "acyclic",
+  "requirements": 59,
+  "qa_cases": 28,
+  "local_links_checked": 112,
+  "errors": [],
+  "result": "PASS",
+  "pdf_pages": 7,
+  "pdf_requirement_ids_present": 59,
+  "pdf_visual_review": "All seven pages inspected. Embedded fonts and paragraph layout fixed. Final timer paragraph on page6 re-rendered/reviewed after clarification.",
+  "diagram_sources": 6,
+  "diagram_outputs": {
+    "png": 6,
+    "svg": 6
+  },
+  "diagram_validation": "PlantUML 1.2026.8 syntax + local rendering passed; all images visually reviewed",
+  "application_source_hashes_checked": 75,
+  "preexisting_source_changed_since_capture": [],
+  "credential_pattern_hits": [],
+  "original_srs_preserved_path": "docs/requirment/Software Requirements Specification.pdf",
+  "application_tests_rerun": false,
+  "ready_for_submission": false,
+  "pdf_sha256": "74379901a1659e79864ab9c980a69bf56f5b9d232c3300ba8c59007ef648ab90",
+  "last_artifact_check_utc": "2026-09-30T18:21:30.709925+00:00"
+}
