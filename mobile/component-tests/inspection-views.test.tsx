@@ -14,7 +14,7 @@ test('a decision requires all server capabilities and a separate confirmation', 
   view.rerender(<BuyerResultView {...props} outcome="PASS" onDecision={decide} />);
   fireEvent.press(screen.getByText('ยอมรับผลตรวจ'));
   expect(decide).not.toHaveBeenCalled();
-  expect(screen.getByText(/ไม่ใช่การยืนยันรับสินค้า/)).toBeTruthy();
+  expect(screen.getAllByText(/ไม่ใช่การยืนยันรับสินค้า/).length).toBeGreaterThan(0);
   fireEvent.press(screen.getByText('ยืนยันยอมรับผลตรวจ'));
   expect(decide).toHaveBeenCalledWith('CONFIRM');
 });
@@ -81,33 +81,12 @@ test('a saved rejection shows its recorded reason and return next step without d
   expect(screen.queryByText('การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้')).toBeNull();
 });
 
-test('failed inspection offers reject refund and accept as-is options', () => {
+test.each(['NOT_AS_DESCRIBED', 'FAKE'] as const)('negative result %s cannot submit a buyer decision or promise timed acceptance', (outcome) => {
   const decide = jest.fn();
-  render(<BuyerResultView {...props} outcome="NOT_AS_DESCRIBED" canDecide={true} nextAction="WAIT_BUYER_DECISION" onDecision={decide} />);
-  expect(screen.getByText('ปฏิเสธ · คืนเงิน')).toBeTruthy();
-  expect(screen.getByText('ยอมรับตามสภาพจริง')).toBeTruthy();
-  expect(screen.getByText(/ถ้าไม่เลือกภายใน 72 ชม./)).toBeTruthy();
-
-  // Test Reject flow: does not require typing reason
-  fireEvent.press(screen.getByText('ปฏิเสธ · คืนเงิน'));
-  expect(screen.getByText(/ไม่ต้องกรอกเหตุผล/)).toBeTruthy();
-  fireEvent.press(screen.getByText('ยืนยันคืนเงิน'));
-  expect(decide).toHaveBeenCalledWith('REJECT', 'สินค้าไม่ตรงตามประกาศ');
-});
-
-test('failed inspection accept as-is requires acknowledgment checkbox before confirming', () => {
-  const decide = jest.fn();
-  render(<BuyerResultView {...props} outcome="NOT_AS_DESCRIBED" canDecide={true} nextAction="WAIT_BUYER_DECISION" onDecision={decide} />);
-
-  fireEvent.press(screen.getByText('ยอมรับตามสภาพจริง'));
-  expect(screen.getByText(/ไม่ออกใบรับรองดิจิทัล เพราะผลตรวจไม่ผ่าน/)).toBeTruthy();
-
-  // Confirm button disabled before check
-  fireEvent.press(screen.getByText('ยืนยันยอมรับ'));
+  render(<BuyerResultView {...props} outcome={outcome} canDecide={true} nextAction="WAIT_BUYER_DECISION" onDecision={decide} />);
+  expect(screen.queryByText('ยอมรับตามสภาพจริง')).toBeNull();
+  expect(screen.queryByText('ปฏิเสธ · คืนเงิน')).toBeNull();
+  expect(screen.queryByText(/72 ชม/)).toBeNull();
+  expect(screen.getByText(/รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน/)).toBeTruthy();
   expect(decide).not.toHaveBeenCalled();
-
-  // Check the checkbox and confirm
-  fireEvent.press(screen.getByRole('checkbox', { name: 'ฉันเข้าใจเงื่อนไขและต้องการรับสินค้าตามสภาพจริง' }));
-  fireEvent.press(screen.getByText('ยืนยันยอมรับ'));
-  expect(decide).toHaveBeenCalledWith('CONFIRM');
 });

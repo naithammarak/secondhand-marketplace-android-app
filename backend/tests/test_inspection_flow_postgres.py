@@ -1,6 +1,7 @@
 """Real PostgreSQL end-to-end INSPECT API flow; never touches a shared DB."""
 
 import os
+import json
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -24,8 +25,9 @@ from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment
 from app.models.shipment import Shipment, ShipmentDeliveryProof
+from app.models.fulfillment import ShipmentConfirmedProof
 from app.models.user import User, UserRole, UserStatus
-from tests.order_helpers import create_product, create_user, new_key, order_body, patch_auth
+from tests.order_helpers import VALID_ADDRESS, create_product, create_user, new_key, order_body, patch_auth
 
 
 URL = os.getenv("INSPECT_FLOW_TEST_DATABASE_URL")
@@ -60,7 +62,8 @@ def pg_engine():
 def world(pg_engine, monkeypatch, tmp_path):
     patch_auth(monkeypatch)
     monkeypatch.setenv("PAYMENT_SIMULATION_ENABLED", "true")
-    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("FULFILLMENT_SIMULATION_ENABLED", "true")
     monkeypatch.setenv("PUBLIC_CERTIFICATE_BASE_URL", "https://cert.example.test")
     monkeypatch.setenv("INSPECT_PRIVATE_STORAGE_DIR", str(tmp_path / "private-inspection-images"))
 
@@ -129,6 +132,7 @@ def started_work(world):
     paid = client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer))
     assert paid.status_code == 200, paid.text
     assert client.get(f"/orders/{order_id}/inspection-progress", headers=other).status_code == 404
+    assert client.put(f"/orders/{order_id}/return-address", json=VALID_ADDRESS, headers=request_headers(seller)).status_code == 200
     ship_key = new_key()
     shipment = client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo Express", "tracking_number": "DEMO-42"}, headers={**seller, "Idempotency-Key": ship_key})
     assert shipment.status_code == 200, shipment.text
@@ -192,6 +196,8 @@ def review_shipment(session, source, courier_id, *, delivered=False):
         shipment.received_at = timestamp
         shipment.received_by = courier_id
         session.flush()
+        proof = session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment.id).one()
+        session.add(ShipmentConfirmedProof(proof_id=proof.id, shipment_id=shipment.id, courier_id=courier_id, confirmed_at=timestamp))
     return shipment.id
 
 
@@ -566,6 +572,7 @@ def test_admin_revoked_after_auth_cannot_assign_courier(world, monkeypatch):
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
     order_id = created.json()["id"]
     assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+    assert client.put(f"/orders/{order_id}/return-address", json=VALID_ADDRESS, headers=request_headers(seller)).status_code == 200
     assert client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo", "tracking_number": "ADMIN-1"}, headers=request_headers(seller)).status_code == 200
     with Session(engine) as session:
         admin_id = session.query(User).filter_by(role=UserRole.ADMIN).order_by(User.id.desc()).first().id
@@ -592,6 +599,7 @@ def test_concurrent_ship_creates_one_shipment(world):
     order_id = created.json()["id"]
     assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
 
+    assert client.put(f"/orders/{order_id}/return-address", json=VALID_ADDRESS, headers=request_headers(seller)).status_code == 200
     def submit(_):
         return client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo Express", "tracking_number": "DEMO-42"}, headers=request_headers(seller)).status_code
 
@@ -627,6 +635,7 @@ def test_courier_proof_limits_replay_and_storage_failure(world, tmp_path):
     created = client.post("/orders", json=order_body(product), headers=request_headers(buyer))
     order_id = created.json()["id"]
     assert client.post(f"/orders/{order_id}/payments/simulate", json={"outcome": "SUCCESS"}, headers=request_headers(buyer)).status_code == 200
+    assert client.put(f"/orders/{order_id}/return-address", json=VALID_ADDRESS, headers=request_headers(seller)).status_code == 200
     assert client.post(f"/orders/{order_id}/ship-to-center", json={"carrier": "Demo", "tracking_number": "C-123"}, headers=request_headers(seller)).status_code == 200
     with Session(engine) as session:
         shipment_id = session.query(Shipment).filter_by(order_id=order_id, leg="TO_CENTER").one().id
@@ -995,3 +1004,41 @@ def test_revoked_certificate_cannot_be_decided(world):
     assert view.json()["can_decide"] is False
     denied = client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer)
     assert denied.status_code == 409 and denied.json()["detail"]["code"] == "decision_not_allowed"
+
+@pytest.mark.parametrize("reason", ["reason\u0000text", "reason\ud800text", "reason\udffftext"], ids=["nul", "high-surrogate", "low-surrogate"])
+def test_decision_unstorable_reason_returns_field_error(world, reason):
+    client, engine, buyer, *_ = world
+    order_id, _, _ = completed_work(world)
+    url = f"/orders/{order_id}/inspection/decision"
+    response = client.post(url, content=json.dumps({"decision": "REJECT", "reason": reason}),
+                           headers={**buyer, "Content-Type": "application/json"})
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["code"] == "validation_error"
+    assert "reason" in response.json()["detail"]["fields"]
+    assert response.headers["cache-control"] == "no-store"
+    with Session(engine) as session:
+        assert session.query(BuyerInspectionDecision).filter_by(order_id=order_id).count() == 0
+    # Valid Unicode, including a non-BMP character, can still be saved after correction.
+    corrected = client.post(url, json={"decision": "REJECT", "reason": "  ไม่ตรงตามที่ต้องการ 📦  "}, headers=buyer)
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["decision"]["reason"] == "ไม่ตรงตามที่ต้องการ 📦"
+
+
+@pytest.mark.parametrize("prefix", ["", "/api", "/gateway/api"])
+def test_inspection_error_no_store_under_root_path(world, prefix):
+    _, _, buyer, *_ = world
+    order_id, _ = started_work(world)
+    with TestClient(app, root_path=prefix) as client:
+        url = f"{prefix}/orders/{order_id}/inspection"
+        responses = [
+            (client.get(url), 401, None),
+            (client.get(url, headers=buyer), 404, "inspection_not_ready"),
+            (client.post(f"{url}/decision", json={"decision": "MAYBE"}, headers=buyer), 422, "validation_error"),
+            (client.post(f"{url}/decision", json={"decision": "CONFIRM"}), 401, None),
+            (client.post(f"{url}/decision", json={"decision": "CONFIRM"}, headers=buyer), 409, "inspection_not_ready"),
+        ]
+        for response, status, code in responses:
+            assert response.status_code == status, response.text
+            assert response.headers.get("cache-control") == "no-store"
+            if code:
+                assert response.json()["detail"]["code"] == code

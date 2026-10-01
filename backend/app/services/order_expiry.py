@@ -15,6 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.order import Order
+from app.services.transaction_clock import database_now
 from app.models.product import Product
 from app.services.order_pricing import (
     CANCEL_REASON_EXPIRED,
@@ -64,26 +65,34 @@ def has_expired_orders(db: Session, *conditions) -> bool:
     ) is not None
 
 
-def expire_orders_in_transaction(db: Session, *conditions, now: datetime) -> int:
+def expire_orders_in_transaction(db: Session, *conditions, now: datetime | None = None) -> int:
     """Expire and release in the caller's transaction; never commit or roll back here.
 
     The conditional UPDATE rechecks eligibility after PostgreSQL waits for a
     concurrent payment/cancellation lock. Product release is part of the same
     transaction, so either both changes commit or neither does.
     """
+    # Lock Orders in deterministic order before Product updates. Fresh clock is
+    # sampled AFTER waits; explicit now is retained only for deterministic tests.
+    ids = db.scalars(select(Order.id).where(*conditions,
+        Order.status == ORDER_WAITING_PAYMENT, Order.paid_at.is_(None))
+        .order_by(Order.id).with_for_update()).all()
+    if not ids:
+        return 0
+    instant = now if now is not None else database_now(db, fallback=utcnow)
     released = (
         db.execute(
             update(Order)
             .where(
-                *conditions,
+                Order.id.in_(ids),
                 Order.status == ORDER_WAITING_PAYMENT,
                 Order.paid_at.is_(None),
-                Order.expires_at <= now,
+                Order.expires_at <= instant,
             )
             .values(
                 status=ORDER_CANCELLED,
                 cancel_reason=CANCEL_REASON_EXPIRED,
-                cancelled_at=now,
+                cancelled_at=instant,
             )
             .returning(Order.product_id)
             .execution_options(synchronize_session=False)
@@ -102,7 +111,7 @@ def sweep_expired_orders(db: Session, *conditions) -> int:
     ผู้เรียกต้องไม่ถือ row lock ที่ยังต้องใช้ต่อ เพราะฟังก์ชันนี้ปิด transaction ด้วย commit
     """
     try:
-        cancelled = expire_orders_in_transaction(db, *conditions, now=utcnow())
+        cancelled = expire_orders_in_transaction(db, *conditions, now=None)
         db.commit()
     except Exception:
         db.rollback()

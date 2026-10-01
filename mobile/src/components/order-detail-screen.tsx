@@ -143,8 +143,8 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     order?.paymentStatus === 'PAID';
 
   const orderStatusStr = String(order?.status ?? '');
-  const isReturnFlow = orderStatusStr === 'RETURNING_TO_SELLER' || orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED';
-  const isInspectionFailed = isReturnFlow || (order as any)?.inspectionResult === 'NOT_AS_DESCRIBED' || (order as any)?.inspectionResult === 'FAKE' || order?.id === 37;
+  const isReturnFlow = orderStatusStr === 'RETURNING_TO_SELLER' || orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED' || orderStatusStr === 'RETURNED_TO_SELLER';
+  const isInspectionFailed = isReturnFlow || (order as any)?.inspectionResult === 'NOT_AS_DESCRIBED' || (order as any)?.inspectionResult === 'FAKE';
   const inspectionOutcome = (order as any)?.inspectionResult === 'FAKE' ? 'FAKE' : isInspectionFailed ? 'NOT_AS_DESCRIBED' : 'PASS';
 
   // 7-step timeline structure matching prototype index.html
@@ -463,20 +463,20 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                     <View style={[styles.statusPillAmber, isInspectionFailed && { backgroundColor: inspectionOutcome === 'FAKE' ? '#FEE2E2' : '#FFEDD5' }]}>
                       <ThemedText style={[styles.statusPillAmberText, isInspectionFailed && { color: inspectionOutcome === 'FAKE' ? '#DC2626' : '#EA580C' }]}>
                         {isInspectionFailed
-                          ? (isBuyer ? (inspectionOutcome === 'FAKE' ? 'ผลตรวจ: 🔴 ของปลอม' : 'ผลตรวจ: 🟠 ไม่ตรงตามประกาศ') : (inspectionOutcome === 'FAKE' ? 'ผลตรวจ 🔴 ของปลอม · รอผู้ซื้อเลือก' : 'ผลตรวจ 🟠 ไม่ตรงตามประกาศ · รอผู้ซื้อเลือก'))
+                          ? (isBuyer ? (inspectionOutcome === 'FAKE' ? 'ผลตรวจ: 🔴 ของปลอม' : 'ผลตรวจ: 🟠 ไม่ตรงตามประกาศ') : (inspectionOutcome === 'FAKE' ? 'ผลตรวจ 🔴 ของปลอม · รอส่งคืน' : 'ผลตรวจ 🟠 ไม่ตรงตามประกาศ · รอส่งคืน'))
                           : (isBuyer ? 'ผลตรวจออกแล้ว' : 'รอผู้ซื้อยืนยัน')}
                       </ThemedText>
                     </View>
-                    <ThemedText style={styles.bannerSubLabel}>เหลือเวลา 72 ชม.</ThemedText>
+                    <ThemedText style={styles.bannerSubLabel}>{isInspectionFailed ? 'รอส่งคืนผู้ขาย' : 'รอการตัดสินใจ'}</ThemedText>
                   </View>
                   <View style={styles.bannerBodyRow}>
                     <ThemedText style={styles.bannerDescText}>
                       {isInspectionFailed
                         ? (isBuyer
-                          ? 'ปฏิเสธ = ส่งคืนผู้ขาย + คืนเงินค่าสินค้า · ยอมรับ = รับตามสภาพจริง · ไม่ออกใบรับรอง · ถ้าไม่ตอบภายใน 72 ชม. ระบบจะส่งคืนผู้ขายและคืนเงินค่าสินค้าอัตโนมัติ'
-                          : 'ผู้ซื้อเลือกได้ว่าจะรับสินค้าตามสภาพจริง หรือปฏิเสธให้ส่งคืนคุณ · ถ้าไม่ตอบภายใน 72 ชม. ระบบจะส่งคืนและคืนเงินอัตโนมัติ')
+                          ? 'สินค้าต้องส่งคืนผู้ขายตามผลตรวจ รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน'
+                          : 'สินค้าต้องส่งคืนตามผลตรวจ รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน')
                         : (isBuyer
-                          ? 'ผลตรวจออกแล้ว · กรุณายืนยันภายใน 72 ชม. ถ้าไม่ตอบระบบจะถือว่ายอมรับผลตรวจอัตโนมัติ'
+                          ? 'ผลตรวจออกแล้ว · กรุณาเลือกยอมรับหรือปฏิเสธผลตรวจ การยอมรับผลตรวจยังไม่ใช่การยืนยันรับสินค้า'
                           : 'ผลตรวจออกแล้ว · รอผู้ซื้อยืนยันผลตรวจ')}
                     </ThemedText>
                   </View>

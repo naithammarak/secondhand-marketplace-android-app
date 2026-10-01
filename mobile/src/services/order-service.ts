@@ -16,6 +16,9 @@ export const KNOWN_ORDER_STATUSES = [
   'INSPECTING',
   'RESULT_NOTIFIED',
   'SHIPPING_TO_BUYER',
+  'DELIVERED_PENDING_BUYER',
+  'DELIVERY_DISPUTED',
+  'RETURNED_TO_SELLER',
   'COMPLETED',
   'RETURNING_TO_SELLER',
   'REFUNDED',
@@ -25,7 +28,7 @@ export const KNOWN_ORDER_STATUSES = [
 export type KnownOrderStatus = (typeof KNOWN_ORDER_STATUSES)[number];
 export type OrderStatus = KnownOrderStatus | 'UNKNOWN';
 export type CancelReason = 'BUYER' | 'EXPIRED';
-export type PaymentStatus = 'UNPAID' | 'PAID';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
 export type ViewerRole = 'buyer' | 'seller';
 export type PaymentOutcome = 'SUCCESS' | 'FAILED';
 
@@ -245,7 +248,7 @@ export function toOrderDetail(value: unknown): OrderDetail {
   return {
     id: int(data.id),
     status: toStatus(data.status),
-    paymentStatus: data.payment_status === 'PAID' ? 'PAID' : data.payment_status === 'UNPAID' ? 'UNPAID' : bad(),
+    paymentStatus: data.payment_status === 'REFUNDED' ? 'REFUNDED' : data.payment_status === 'PAID' ? 'PAID' : data.payment_status === 'UNPAID' ? 'UNPAID' : bad(),
     viewerRole: toViewerRole(data.viewer_role),
     product: toProduct(data.product),
     amounts: {
@@ -275,7 +278,7 @@ function toListItem(value: unknown): OrderListItem {
   return {
     id: int(data.id),
     status: toStatus(data.status),
-    paymentStatus: data.payment_status === 'PAID' ? 'PAID' : 'UNPAID',
+    paymentStatus: data.payment_status === 'REFUNDED' ? 'REFUNDED' : data.payment_status === 'PAID' ? 'PAID' : 'UNPAID',
     viewerRole: toViewerRole(data.viewer_role),
     product: toProduct(data.product),
     totalAmount: optMoney(data.total_amount),

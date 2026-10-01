@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import MetaData, Table, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
@@ -208,10 +208,34 @@ def insert_order(db, world, product_id=None, key="manual-key-0001", total=Decima
     return order
 
 
+def rebuild_legacy_fixture(db, revision):
+    """Construct an old fixture in the disposable DB; never downgrade final facts.
+
+    FINISH intentionally refuses downgrade. Historical migration tests therefore
+    start at their actual predecessor instead of relaxing the new protections.
+    """
+    assert_isolated_database(PG_URL)
+    tables = ("users", "brands", "categories", "products", *ORDER_TABLES)
+    saved = {name: [dict(row) for row in db.execute(text(f"SELECT * FROM {name} ORDER BY id")).mappings()] for name in tables}
+    db.commit()
+    engine = db.get_bind()
+    with engine.begin() as connection:
+        connection.execute(text("DROP SCHEMA public CASCADE"))
+        connection.execute(text("CREATE SCHEMA public"))
+    run_alembic("upgrade", revision)
+    with engine.begin() as connection:
+        for name, rows in saved.items():
+            if not rows:
+                continue
+            table = Table(name, MetaData(), autoload_with=connection)
+            connection.execute(table.insert(), [{key: value for key, value in row.items() if key in table.c} for row in rows])
+    db.expire_all()
+
+
 # ------------------------------------------------------------------ migration
 
 
-def test_migration_downgrade_and_upgrade_round_trip(pg_engine):
+def test_finish_downgrade_refusal_preserves_existing_schema(pg_engine):
     def tables():
         with pg_engine.connect() as connection:
             return set(
@@ -221,20 +245,11 @@ def test_migration_downgrade_and_upgrade_round_trip(pg_engine):
             )
 
     assert set(ORDER_TABLES) <= tables()
-    # downgrade ปฏิเสธการทำงานเมื่อมี Order สถานะ CANCELLED อยู่ จึงล้างข้อมูลก่อนตรวจ schema
-    with pg_engine.begin() as connection:
-        connection.execute(
-            text(
-                "TRUNCATE receipts, escrows, payments, payment_attempts, orders "
-                "RESTART IDENTITY CASCADE"
-            )
-        )
-    run_alembic("downgrade", BASE_REVISION)
-    remaining = tables()
-    assert not (set(ORDER_TABLES) & remaining)
-    assert {"users", "products", "verifications"} <= remaining  # ตารางเดิมไม่ถูกแตะ
+    before = tables()
+    with pytest.raises(RuntimeError, match="FINISH foundation downgrade refused"):
+        run_alembic("downgrade", BASE_REVISION)
+    assert tables() == before
     run_alembic("upgrade", "head")
-    assert set(ORDER_TABLES) <= tables()
 
     with pg_engine.connect() as connection:
         rls = dict(
@@ -681,7 +696,7 @@ def test_migration_backfills_deadlines_for_pre_existing_orders(db, world):
         text("TRUNCATE receipts, escrows, payments, payment_attempts, orders RESTART IDENTITY CASCADE")
     )
     db.commit()
-    run_alembic("downgrade", PRE_EXPIRY_REVISION)
+    rebuild_legacy_fixture(db, PRE_EXPIRY_REVISION)
 
     legacy_created_at = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
     db.execute(
@@ -765,8 +780,7 @@ def test_expiry_migration_preserves_existing_order_and_money_rows(db, world):
 
     before = snapshots()
     assert all(before[table] for table in ORDER_TABLES)
-    run_alembic("downgrade", PRE_EXPIRY_REVISION)
-    assert snapshots() == before
+    rebuild_legacy_fixture(db, PRE_EXPIRY_REVISION)
     run_alembic("upgrade", "head")
     assert snapshots() == before
     deadlines = db.execute(text("SELECT created_at, expires_at FROM orders")).all()
@@ -779,7 +793,7 @@ def test_expiry_migration_preserves_existing_order_and_money_rows(db, world):
 def test_cancelled_data_blocks_downgrade_without_losing_rows(db, world):
     order_id = create_order(world)
     assert cancel(order_id, world["a"]).status_code == 200
-    with pytest.raises(RuntimeError, match="CANCELLED"):
+    with pytest.raises(RuntimeError, match="FINISH foundation downgrade refused"):
         run_alembic("downgrade", PRE_EXPIRY_REVISION)
     db.expire_all()
     assert db.get(Order, order_id).status == "CANCELLED"

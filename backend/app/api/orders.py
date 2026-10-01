@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
+from app.models.fulfillment import OrderSettlement
 from app.models.product import Product
 from app.models.product_image import ProductImage
 from app.api.products import sign_images
@@ -49,6 +50,7 @@ from app.schemas.order import (
     SimulatePaymentResponse,
     ViewerRole,
 )
+from app.services.transaction_clock import database_now
 from app.services.order_expiry import (
     release_reserved_products,
     sweep_expired_orders,
@@ -83,8 +85,8 @@ BUYER_ACCOUNT_ROLES = frozenset({UserRole.BUYER, UserRole.SELLER})
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
-PHONE_PATTERN = re.compile(r"^0\d{8,9}$")
-POSTAL_CODE_PATTERN = re.compile(r"^\d{5}$")
+PHONE_PATTERN = re.compile(r"^0[0-9]{8,9}$")
+POSTAL_CODE_PATTERN = re.compile(r"^[0-9]{5}$")
 REPLAY_HEADER = "Idempotent-Replayed"
 
 # (ชื่อช่อง, ชื่อที่แสดง, ความยาวต่ำสุด, ความยาวสูงสุด)
@@ -222,7 +224,9 @@ def clean_address(raw: ShippingAddressInput | None) -> tuple[ShippingAddress | N
 
     for name, label, minimum, maximum in ADDRESS_TEXT_FIELDS:
         text = " ".join((getattr(raw, name) or "").split())
-        if not text:
+        if any(char == "\x00" or 0xD800 <= ord(char) <= 0xDFFF for char in text):
+            fields[name] = "ข้อความมีอักขระที่ไม่รองรับ"
+        elif not text:
             fields[name] = f"กรุณากรอก{label}"
         elif len(text) < minimum:
             fields[name] = f"{label}สั้นเกินไป"
@@ -381,6 +385,8 @@ def order_address(order: Order) -> ShippingAddress:
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
     paid = is_paid(order)
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
+    refunded = db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == order.id, OrderSettlement.kind == "REFUND")) is not None
+    payment_status = PaymentStatus.REFUNDED if refunded else PaymentStatus.PAID if paid else PaymentStatus.UNPAID
     # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
     # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
     # จ่ายได้กับยกเลิกได้ตัดสินจากชุดสถานะของตัวเอง ชุดใดชุดหนึ่งเปลี่ยนต้องไม่ลากอีกปุ่มไปด้วย
@@ -401,7 +407,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
         return OrderDetail(
             id=order.id,
             status=OrderStatus(order.status),
-            payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
+            payment_status=payment_status,
             viewer_role=role,
             product=product_snapshot(order, image_url),
             amounts=OrderAmountsView(
@@ -430,7 +436,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
     return OrderDetail(
         id=order.id,
         status=OrderStatus(order.status),
-        payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
+        payment_status=payment_status,
         viewer_role=role,
         product=product_snapshot(order, image_url),
         amounts=OrderAmountsView(
@@ -749,7 +755,7 @@ def cancel_order(
         elif not is_cancellable(order):
             raise not_cancellable()
         else:
-            now = utcnow()
+            now = database_now(db, fallback=utcnow)
             # เลยเวลาไปแล้วให้บันทึกตามความจริงว่าหมดเวลา ผลที่ผู้ใช้เห็นเหมือนกัน
             reason = CANCEL_REASON_EXPIRED if payment_window_passed(order, now) else CANCEL_REASON_BUYER
             if not cancel_waiting_order(db, order, reason, now):
@@ -787,7 +793,7 @@ def simulate_payment(
         # เส้นตายต้องมีผลก่อนทุกอย่าง รวมถึงการส่งซ้ำด้วย key เดิม
         # ถ้าปล่อยให้ replay ตอบก่อน ผู้ซื้อจะได้ยินว่า "ยังรอชำระเงิน" ทั้งที่เลยเวลาแล้ว
         # และสินค้าจะยังค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด
-        expired = payment_window_passed(order, utcnow())
+        expired = payment_window_passed(order, database_now(db, fallback=utcnow))
         if expired:
             # กวาดแล้ว transaction ปิดและล็อกถูกปล่อย เส้นทางนี้จึงมีแต่การอ่านกับการปฏิเสธเท่านั้น
             sweep_expired_orders(db, Order.id == order.id)
@@ -827,7 +833,11 @@ def simulate_payment(
         db.flush()
 
         if attempt.outcome == ATTEMPT_SUCCEEDED:
-            paid_at = utcnow()
+            paid_at = database_now(db, fallback=utcnow)
+            if payment_window_passed(order, paid_at):
+                db.rollback()
+                sweep_expired_orders(db, Order.id == order.id)
+                raise payment_expired_error()
             payment = Payment(
                 order_id=order.id,
                 attempt_id=attempt.id,

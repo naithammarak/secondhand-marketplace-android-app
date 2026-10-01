@@ -40,3 +40,7 @@ __all__ = [
     "UserStatus",
     "Verification",
 ]
+from app.models.fulfillment import (
+    FulfillmentCommand, OrderSettlement, ShipmentConfirmedProof,
+    OrderStatusHistory, DeliveryResolution, DeliveryEvidenceAccess,
+)

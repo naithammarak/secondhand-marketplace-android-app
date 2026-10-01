@@ -337,11 +337,9 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   const [photo, setPhoto] = useState<InspectionPhoto | null>(null);
   const [decision, setDecision] = useState<'CONFIRM' | 'REJECT' | null>(null);
   const [reason, setReason] = useState('');
-  const [ackCondition, setAckCondition] = useState(false);
   const validReason = [...reason.trim()].length <= 500;
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
   const allowed = positive && !!certificate && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
-  const failAllowed = !positive && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
   const nextActionLabel = nextAction === 'RETURN_TO_SELLER'
     ? 'ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย ติดตามความคืบหน้าจากคำสั่งซื้อ'
     : nextAction === 'SHIP_TO_BUYER'
@@ -409,55 +407,11 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       </Card>
     )}
 
-    {/* 72-Hour Decision Countdown Banner matching prototype */}
-    {nextAction === 'WAIT_BUYER_DECISION' && (
-      positive ? (
-        <View style={{
-          padding: 16,
-          borderRadius: 16,
-          backgroundColor: theme.warningSoft ?? '#FEF3C7',
-          borderWidth: 1,
-          borderColor: theme.warning,
-          gap: 6,
-        }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <ThemedText type="smallBold" style={{ color: theme.text }}>กรุณายืนยันภายใน</ThemedText>
-            <ThemedText style={{ fontSize: 16, fontWeight: '800', color: theme.warning }}>72 ชม.</ThemedText>
-          </View>
-          <ThemedText type="small" themeColor="textSecondary">
-            ถ้าไม่ตอบภายใน 72 ชม. ระบบจะถือว่ายอมรับผลตรวจและรับสินค้าโดยอัตโนมัติ
-          </ThemedText>
-        </View>
-      ) : (
-        <View style={{
-          padding: 16,
-          borderRadius: 16,
-          backgroundColor: outcome === 'FAKE' ? '#FEF2F2' : '#FFF7ED',
-          borderWidth: 2,
-          borderColor: outcome === 'FAKE' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(249, 115, 22, 0.4)',
-          gap: 8,
-        }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <ThemedText type="smallBold" style={{ color: theme.text }}>
-              {canDecide ? 'เลือกภายใน' : 'รอผู้ซื้อเลือกภายใน'}
-            </ThemedText>
-            <ThemedText style={{ fontSize: 18, fontWeight: '800', color: outcome === 'FAKE' ? '#EF4444' : '#EA580C' }}>
-              72 ชม.
-            </ThemedText>
-          </View>
-          <View style={{ gap: 4 }}>
-            <ThemedText type="small" themeColor="textSecondary">
-              • <ThemedText type="smallBold">ปฏิเสธ</ThemedText> = ส่งคืนผู้ขาย + คืนเงินค่าสินค้า
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              • <ThemedText type="smallBold">ยอมรับ</ThemedText> = รับสินค้าตามสภาพจริง · ไม่ออกใบรับรอง · ขอคืนเงินภายหลังไม่ได้
-            </ThemedText>
-          </View>
-          <ThemedText style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-            ถ้าไม่เลือกภายใน 72 ชม. ระบบจะส่งคืนผู้ขายและคืนเงินค่าสินค้าให้อัตโนมัติ
-          </ThemedText>
-        </View>
-      )
+    {nextAction === 'WAIT_BUYER_DECISION' && positive && (
+      <Card><ThemedText>กรุณาเลือกยอมรับหรือปฏิเสธผลตรวจ การยอมรับผลตรวจยังไม่ใช่การยืนยันรับสินค้า</ThemedText></Card>
+    )}
+    {!positive && (
+      <Card><ThemedText>สินค้าต้องส่งคืนผู้ขายตามผลตรวจ รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน</ThemedText></Card>
     )}
 
     {/* Status feedback card when rejected or accepted */}
@@ -503,44 +457,6 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
           <Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} />
           <Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} />
         </View>
-      ) : failAllowed ? (
-        <View style={{ gap: 10, marginTop: 8 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ปฏิเสธ · คืนเงิน"
-            disabled={busy}
-            onPress={() => setDecision('REJECT')}
-            style={{
-              paddingVertical: 14,
-              borderRadius: 12,
-              backgroundColor: '#059669',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
-              ปฏิเสธ · คืนเงิน
-            </ThemedText>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="ยอมรับตามสภาพจริง"
-            disabled={busy}
-            onPress={() => { setAckCondition(false); setDecision('CONFIRM'); }}
-            style={{
-              paddingVertical: 13,
-              borderRadius: 12,
-              backgroundColor: 'transparent',
-              borderWidth: 2,
-              borderColor: outcome === 'FAKE' ? 'rgba(239, 68, 68, 0.6)' : 'rgba(249, 115, 22, 0.6)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            <ThemedText style={{ color: outcome === 'FAKE' ? '#EF4444' : '#EA580C', fontWeight: '700', fontSize: 14 }}>
-              ยอมรับตามสภาพจริง
-            </ThemedText>
-          </Pressable>
-        </View>
       ) : positive && !recordedDecision && (
         <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>
       )}
@@ -555,13 +471,13 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       <ThemedText>การตัดสินใจนี้เกี่ยวกับผลตรวจเท่านั้น ไม่ใช่การยืนยันรับสินค้า</ThemedText>
       {decision === 'CONFIRM' && (
         <ThemedText type="small" themeColor="textSecondary">
-          ระบบจะออกใบรับรองดิจิทัล และศูนย์จะส่งสินค้าถึงคุณ · ยอมรับแล้วเปลี่ยนใจไม่ได้
+          ใบรับรองเป็นบันทึกผลตรวจ ศูนย์จะจัดส่งสินค้าหลังบันทึกการยอมรับผลตรวจ · ยอมรับแล้วเปลี่ยนใจไม่ได้
         </ThemedText>
       )}
       {decision === 'REJECT' && (
         <View style={{ gap: 8 }}>
           <ThemedText type="small" style={{ color: theme.danger }}>
-            ⚠️ คุณจะได้รับเงินคืนเฉพาะค่าสินค้า · ไม่คืนค่าจัดส่ง ฿50 และค่าตรวจสอบ ฿100 · สินค้าจะถูกส่งคืนผู้ขาย · ปฏิเสธแล้วเปลี่ยนใจไม่ได้
+            สินค้าจะถูกส่งคืนผู้ขาย รอหลักฐานส่งคืนก่อนคืนยอดเงินที่พักไว้ทั้งหมดในระบบจำลอง · ปฏิเสธแล้วเปลี่ยนใจไม่ได้
           </ThemedText>
           <TextField
             label="เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)"
@@ -588,150 +504,6 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       />
     </ConfirmationSheet>
 
-    {/* Confirmation Sheet for NOT_AS_DESCRIBED / FAKE (Fail Flow) */}
-    <ConfirmationSheet visible={!!decision && failAllowed} title={decision === 'REJECT' ? 'ปฏิเสธและขอคืนเงิน?' : (outcome === 'FAKE' ? 'ยอมรับสินค้าที่ตรวจพบว่าเป็นของปลอม?' : 'ยอมรับสินค้าที่ไม่ตรงตามประกาศ?')} onClose={() => setDecision(null)}>
-      {decision === 'REJECT' ? (
-        <View style={{ gap: 12 }}>
-          <View style={{
-            padding: 14,
-            borderRadius: 12,
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            borderWidth: 1,
-            borderColor: 'rgba(16, 185, 129, 0.4)',
-            gap: 6,
-          }}>
-            <ThemedText type="smallBold" style={{ color: '#059669' }}>
-              ไม่ต้องกรอกเหตุผล · ใช้ผลตรวจ "{outcome === 'FAKE' ? 'ของปลอม' : 'ไม่ตรงตามประกาศ'}" เป็นเหตุผล
-            </ThemedText>
-            <ThemedText type="small">• ศูนย์จะส่งสินค้าคืนผู้ขาย</ThemedText>
-            <ThemedText type="small">• คุณได้รับเงินคืนค่าสินค้า</ThemedText>
-            <ThemedText type="small" style={{ color: '#64748B' }}>• ไม่คืนค่าจัดส่ง ฿50 และค่าตรวจสอบ ฿100</ThemedText>
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="กลับ"
-              onPress={() => setDecision(null)}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: theme.backgroundElement,
-                borderWidth: 1,
-                borderColor: theme.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>กลับ</ThemedText>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="ยืนยันคืนเงิน"
-              disabled={busy}
-              onPress={() => {
-                onDecision?.('REJECT', outcome === 'FAKE' ? 'ตรวจพบว่าเป็นของปลอม' : 'สินค้าไม่ตรงตามประกาศ');
-                setDecision(null);
-              }}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: '#059669',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>ยืนยันคืนเงิน</ThemedText>
-            </Pressable>
-          </View>
-        </View>
-      ) : (
-        <View style={{ gap: 12 }}>
-          <View style={{
-            padding: 14,
-            borderRadius: 12,
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            borderWidth: 2,
-            borderColor: 'rgba(239, 68, 68, 0.4)',
-            gap: 6,
-          }}>
-            <ThemedText type="smallBold" style={{ color: '#DC2626' }}>⚠️ โปรดอ่านก่อนยืนยัน</ThemedText>
-            <ThemedText type="small">• <ThemedText style={{ fontWeight: '700' }}>ไม่ออกใบรับรองดิจิทัล</ThemedText> เพราะผลตรวจไม่ผ่าน</ThemedText>
-            <ThemedText type="small">• เงินจะโอนให้ผู้ขายเมื่อคุณได้รับสินค้า · <ThemedText style={{ fontWeight: '700' }}>ขอคืนเงินภายหลังไม่ได้</ThemedText></ThemedText>
-            <ThemedText type="small">• ยอมรับแล้วเปลี่ยนใจไม่ได้</ThemedText>
-            {outcome === 'FAKE' && (
-              <ThemedText type="small">• สินค้าปลอมอาจมีข้อจำกัดทางกฎหมายในการนำไปขายต่อ</ThemedText>
-            )}
-          </View>
-
-          {/* Mandatory Checkbox */}
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityLabel="ฉันเข้าใจเงื่อนไขและต้องการรับสินค้าตามสภาพจริง"
-            accessibilityState={{ checked: ackCondition }}
-            onPress={() => setAckCondition(v => !v)}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
-            <View style={{
-              width: 22,
-              height: 22,
-              borderRadius: 6,
-              backgroundColor: ackCondition ? '#059669' : 'transparent',
-              borderWidth: 2,
-              borderColor: ackCondition ? '#059669' : '#94A3B8',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              {ackCondition && <ThemedText style={{ color: '#FFFFFF', fontSize: 13, fontWeight: 'bold' }}>✓</ThemedText>}
-            </View>
-            <ThemedText style={{ flex: 1, fontSize: 12, color: theme.text }}>
-              ฉันเข้าใจเงื่อนไขและต้องการรับสินค้าตามสภาพจริง
-            </ThemedText>
-          </Pressable>
-
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="กลับ"
-              onPress={() => setDecision(null)}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: theme.backgroundElement,
-                borderWidth: 1,
-                borderColor: theme.border,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>กลับ</ThemedText>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="ยืนยันยอมรับ"
-              disabled={!ackCondition || busy}
-              onPress={() => {
-                if (ackCondition) {
-                  onDecision?.('CONFIRM');
-                  setDecision(null);
-                }
-              }}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: '#DC2626',
-                opacity: ackCondition ? 1 : 0.4,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>ยืนยันยอมรับ</ThemedText>
-            </Pressable>
-          </View>
-        </View>
-      )}
-    </ConfirmationSheet>
   </View>;
 }
 export function OrderTimeline({ events }: { events: { label: string; at: string; detail?: ReactNode }[] }) {

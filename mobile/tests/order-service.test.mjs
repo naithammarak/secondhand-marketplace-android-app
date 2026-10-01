@@ -345,3 +345,14 @@ test('all PR108 inspection states survive detail decoding', async () => {
     assert.equal((await service.getOrder('tok',41)).status, status);
   }
 });
+
+
+test('FINISH states and a refunded charge retain their server meaning', async () => {
+  for (const status of ['DELIVERED_PENDING_BUYER', 'DELIVERY_DISPUTED', 'RETURNED_TO_SELLER', 'REFUNDED']) {
+    const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => json(200, detail({ status, payment_status: status === 'REFUNDED' ? 'REFUNDED' : 'PAID', can_pay: false, can_cancel: false })) });
+    const result = await service.getOrder('tok', 41);
+    assert.equal(result.status, status);
+    assert.equal(result.paymentStatus, status === 'REFUNDED' ? 'REFUNDED' : 'PAID');
+    assert.notEqual(orderStatusLabel(result.status), orderStatusLabels.UNKNOWN);
+  }
+});

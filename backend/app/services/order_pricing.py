@@ -27,15 +27,8 @@ ORDER_WAITING_PAYMENT = "WAITING_PAYMENT"
 ORDER_WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
 ORDER_CANCELLED = "CANCELLED"
 
-# สถานะ CERT/FINISH ที่ยังไม่รับ; สี่สถานะ INSPECT-00 อยู่ใน Order model แล้ว
-# เก็บไว้เป็นข้อมูลอ้างอิงเท่านั้น ห้ามเขียนค่าเหล่านี้ลงฐานข้อมูลจนกว่าจะมี Feature รองรับ
-# (ดู doc/orders/contract.md หัวข้อ 2 และ doc/orders/next-round-inspector.md)
-ORDER_STATUSES_RESERVED = (
-    "SHIPPING_TO_BUYER",
-    "COMPLETED",
-    "RETURNED_TO_SELLER",
-    "REFUNDED",
-)
+# Final states are installed by FINISH-01; transitions remain downstream work.
+ORDER_STATUSES_RESERVED: tuple[str, ...] = ()  # FINISH states are now active schema values.
 
 # ชุดสถานะที่อนุญาตให้ทำสิ่งนั้นได้ ระบุเป็น "ชุดของสถานะ" ไม่ใช่เงื่อนไขสองทาง
 # เพราะการเพิ่มสถานะหลังการจัดส่งต้องไม่ทำให้ Order กลับมาจ่ายหรือยกเลิกได้อีก
