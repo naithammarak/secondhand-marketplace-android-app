@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-02",
+  "timezone": "Asia/Bangkok",
+  "status": "PREPARATORY_TESTS_PASSED_INTEGRATION_BLOCKED",
+  "inspected_parent_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
+  "contract_code_sha": "7918fc26a40df7eb316850482309600d9051d325",
+  "worker_test_sha": "0b219f262ec670369b22053c8bbbc4654b1cb809",
+  "accepted_release_base_sha": null,
+  "accepted_task02_sha": null,
+  "task02_api_mapping_present": false,
+  "root_or_backend_agents_present": false,
+  "migration_head": "714f11c84d53",
+  "b_migrations_added": 0,
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.5",
+    "postgresql": "18.6",
+    "isolated_cluster_endpoint": "127.0.0.1:55482",
+    "synthetic_databases": ["package_b_order_test", "package_b_inspect_test", "package_b_clock_test"],
+    "storage": "deterministic private byte adapter and fresh pytest private directory",
+    "shared_database_used": false,
+    "shared_storage_used": false
+  },
+  "executed_checks": [
+    {
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_finish_contract.py tests/test_finish_proofs.py tests/test_finish_fixtures.py tests/test_finish_clock_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-contract-tests.xml",
+      "result": "PASS",
+      "passed": 132,
+      "failed": 0,
+      "scope": "131 independent contract/proof/fixture checks plus one real PostgreSQL blocked-lock/fresh-clock test",
+      "evidence": "B-contract-tests.xml"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_unpaid_expiry_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml",
+      "result": "PASS",
+      "passed": 35,
+      "failed": 0,
+      "warnings": 2,
+      "scope": "Existing payment/cancel/expiry/migration constraints and unpaid-only scheduled worker recovery; 9 worker tests",
+      "evidence": "B-order-worker-tests.xml"
+    },
+    {
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_inspection_flow_postgres.py -q --tb=short",
+      "result": "PASS",
+      "passed": 40,
+      "failed": 0,
+      "warnings": 2,
+      "scope": "Existing inbound Courier/private proof/inspection/certificate/decision API flow in isolated PostgreSQL"
+    },
+    {"command": ".venv/Scripts/python.exe -m alembic heads", "result": "PASS", "heads": ["714f11c84d53"]},
+    {"command": "git diff --check", "result": "PASS"},
+    {"command": "backend/.venv/Scripts/python.exe -m compileall -q backend/app/services/finish_policy.py backend/app/services/finish_proofs.py backend/app/services/finish_interfaces.py backend/app/schemas/finish.py", "result": "PASS"}
+  ],
+  "baseline_attempts": [
+    {"suite": "Order/unpaid worker", "passed": 17, "failed": 18, "cause": "Invalid PUBLIC_CERTIFICATE_BASE_URL inherited from local configuration; no FINISH policy code involved"},
+    {"suite": "Order/unpaid worker with explicit synthetic HTTPS origin", "passed": 34, "failed": 1, "cause": "Old POSIX graceful termination expectation on Windows; corrected test distinguishes forced termination and verifies subsequent process restart"}
+  ],
+  "not_run": [
+    "Final fulfillment destination freezing and alternate-final-leg races",
+    "Actual final-leg HTTP private-proof projections and command replay",
+    "Persisted RELEASE/REFUND branches and receipt/report/scoped Admin APIs",
+    "Independent release-versus-refund and report-versus-auto business races",
+    "Durable return delivery followed by actual refund-failure/worker recovery",
+    "All five categories through the implemented full lifecycle runner",
+    "Persistent one-time overdue escalation",
+    "Android two journeys, shared Storage/Auth/QR and real schedule activation"
+  ]
+}
