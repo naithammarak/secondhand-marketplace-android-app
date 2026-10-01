@@ -2,7 +2,7 @@
 
 - Task ID / owner: 03 / FINISH-02 + COURIER-02 / package B, backend.
 - Status: **BLOCKED** for final delivery integration; independent contracts/fixtures/tests prepared and verified.
-- Repo / branch: `naithammarak/SA-Project` / `feat/package-b-delivery-settlement`.
+- Repo / branch: `naithammarak/secondhand-marketplace-android-app` (origin alias `SA-Project`) / `feat/package-b-delivery-settlement`.
 - Upstream SHA: inspected preparatory parent `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`; accepted A release/task02 SHAs not supplied.
 - Delivered SHA: preparatory code `7918fc26a40df7eb316850482309600d9051d325`; complete source inventory below. This is not an implemented task03 release.
 - Migration predecessor/head: existing `714f11c84d53`; no B migration.
@@ -78,4 +78,5 @@ followed by refund failure must be tested against task04's actual service.
 - C/task08: fixture COMPLETED/RELEASED is not review eligibility evidence; await implemented task04 state and accepted SHA.
 - Tasks04/05: prepared `SettlementService.settle` transaction protocol in `finish_interfaces.py`; no implementation or false success stub.
 - No recipient handles or session channel were supplied. The repository handoff is available; direct delivery is not claimed.
+- Published preparatory review: [draft PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124). It uses the inspected source handoff as review parent, not an invented accepted release/task02 base.
 - Candidate merge/retest required after A upstream; Android/shared Storage/runtime acceptance remains pending with E/F/tasks10–12.

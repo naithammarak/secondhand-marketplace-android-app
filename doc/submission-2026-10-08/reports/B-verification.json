@@ -5,6 +5,8 @@
   "inspected_parent_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
   "contract_code_sha": "7918fc26a40df7eb316850482309600d9051d325",
   "worker_test_sha": "0b219f262ec670369b22053c8bbbc4654b1cb809",
+  "handoff_checkpoint_sha": "4507b22afd760359124ec2e6f25b1f10d5f3a074",
+  "published_draft_pr": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124",
   "accepted_release_base_sha": null,
   "accepted_task02_sha": null,
   "task02_api_mapping_present": false,
@@ -19,7 +21,8 @@
     "synthetic_databases": ["package_b_order_test", "package_b_inspect_test", "package_b_clock_test"],
     "storage": "deterministic private byte adapter and fresh pytest private directory",
     "shared_database_used": false,
-    "shared_storage_used": false
+    "shared_storage_used": false,
+    "temporary_cluster_stopped": true
   },
   "executed_checks": [
     {

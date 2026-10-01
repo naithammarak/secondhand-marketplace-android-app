@@ -2,7 +2,7 @@
 
 - Task ID / owner: 05 / TIMER-01 / package B, backend.
 - Status: **BLOCKED** for all-five-job integration; deadline policy and existing unpaid worker recovery verified.
-- Repo / branch: `naithammarak/SA-Project` / `feat/package-b-delivery-settlement`.
+- Repo / branch: `naithammarak/secondhand-marketplace-android-app` (origin alias `SA-Project`) / `feat/package-b-delivery-settlement`.
 - Upstream SHA: inspected preparatory parent `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`; accepted A/task02 and implemented tasks03/04 missing.
 - Delivered SHAs: policy/fixture/test preparation `7918fc26a40df7eb316850482309600d9051d325`; worker process regression `0b219f262ec670369b22053c8bbbc4654b1cb809`.
 - Migration predecessor/head: existing `714f11c84d53`; overdue marker must come from A/task02; no B migration.
@@ -75,3 +75,4 @@ unpaid-only tests or contract fixtures for these checks.
 - F/task10: [isolated runbook](B-VERIFICATION-RUNBOOK.md) and this explicit pending status. Do not activate the unpaid-only runner as full TIMER-01.
 - E/C: final API/settlement/review acceptance remains pending; observed worker outage must display HELD/pending processing.
 - Combined release retest and actual Android/shared Storage/schedule activation are separate required acceptance gates.
+- Published preparation and runbook: [draft PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124); the disposable PostgreSQL cluster has been stopped.

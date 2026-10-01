@@ -13,6 +13,7 @@ mounted. A owns the migration chain and must supply the accepted mapping first.
 | Branch | `feat/package-b-delivery-settlement` |
 | Contract/code/fixture commit | `7918fc26a40df7eb316850482309600d9051d325` |
 | Windows worker regression commit | `0b219f262ec670369b22053c8bbbc4654b1cb809` |
+| Reports / runbook checkpoint | `4507b22afd760359124ec2e6f25b1f10d5f3a074` |
 | Remote `main` observed | `8254f8d224f62aa765f978f65f110139410a09ab` |
 | Remote latest source handoff observed | `cea7624140dc1fa065ebd0c12084a8663e3dcfe3` |
 | Accepted release-base SHA | **NOT SUPPLIED**; do not substitute either source handoff |
@@ -24,6 +25,11 @@ branches found no accepted task02 candidate. The latest handoff explicitly
 excludes the separate A foundation checkpoint. There is no root/backend
 `AGENTS.md`; `mobile/AGENTS.md` does not apply to these backend files. Mobile
 files and current API routers/models/migrations were not edited.
+
+Published for shared review as [draft PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124).
+Push confirmed that origin's `SA-Project` repository alias redirects to
+`naithammarak/secondhand-marketplace-android-app`. The draft's base is the
+inspected source handoff; A must reconcile it with the accepted release/task02.
 
 ## A: missing inputs and model requirements
 
