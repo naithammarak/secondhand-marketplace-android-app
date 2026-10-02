@@ -17,6 +17,8 @@ from app.services.lifecycle_progress import scan_cursor
 from tests.order_helpers import create_product, order_body
 from tests.test_finish_flow_postgres import pg_engine, isolate_rows, world, post, scan
 
+pytestmark = pytest.mark.skipif(not os.getenv('FINISH_TEST_DATABASE_URL'), reason='owned local FINISH test database required')
+
 
 def unpaid_pair(world):
     first = post(world, '/orders', world[2], order_body(world[6]))
