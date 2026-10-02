@@ -6,6 +6,8 @@ from decimal import Decimal
 from itertools import product
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.schemas.finish import (
@@ -215,3 +217,78 @@ def test_commands_forbid_client_money_state_party_destination_and_time(model, bo
 def test_reason_is_required_trimmed_text(model, reason):
     with pytest.raises(ValidationError):
         model(reason=reason)
+
+
+TEXT_COMMANDS = [
+    pytest.param(FulfillmentRequest, {"carrier": "Demo", "tracking_number": "42"},
+                 "carrier", id="fulfillment-carrier"),
+    pytest.param(FulfillmentRequest, {"carrier": "Demo", "tracking_number": "42"},
+                 "tracking_number", id="fulfillment-tracking-number"),
+    pytest.param(ReportNotReceivedRequest, {"reason": "Parcel has not arrived"},
+                 "reason", id="report-not-received-reason"),
+    pytest.param(DeliveryReviewRequest, {"reason": "Review missing parcel"},
+                 "reason", id="delivery-review-reason"),
+    pytest.param(ResolveDeliveryRequest,
+                 {"resolution": "REFUND", "reason": "Valid admin reason",
+                  "evidence_refs": ["delivery-report:42"]},
+                 "reason", id="resolve-delivery-reason"),
+]
+
+
+@pytest.fixture
+def command_client():
+    # These contracts are not mounted yet; exercise FastAPI body validation
+    # with the actual request models without importing shared runtime or DB.
+    def create(model):
+        app = FastAPI()
+        handled = []
+
+        @app.post("/command")
+        def command(body: model):
+            handled.append(body.model_dump())
+            return body.model_dump()
+
+        return TestClient(app), handled
+
+    return create
+
+
+@pytest.mark.parametrize("model,body,field", TEXT_COMMANDS)
+@pytest.mark.parametrize("value", [
+    pytest.param("\x00Parcel has not arrived", id="leading-nul"),
+    pytest.param("Parcel has\x00 not arrived", id="embedded-nul"),
+    pytest.param("Parcel has not arrived\x00", id="trailing-nul"),
+    pytest.param("Parcel has not arrived\n\x00", id="nul-after-newline"),
+])
+def test_text_commands_reject_nul_before_handler(command_client, model, body, field, value):
+    payload = body | {field: value}
+    with pytest.raises(ValidationError) as error:
+        model.model_validate(payload)
+    assert [item["loc"] for item in error.value.errors()] == [(field,)]
+
+    client, handled = command_client(model)
+    with client:
+        response = client.post("/command", json=payload)
+    assert response.status_code == 422
+    assert [item["loc"] for item in response.json()["detail"]] == [["body", field]]
+    assert handled == []
+
+
+@pytest.mark.parametrize("model,body,field", TEXT_COMMANDS)
+@pytest.mark.parametrize("value", [
+    pytest.param("พัสดุยังไม่ถึงบ้าน", id="thai"),
+    pytest.param("📦😀🙂🚚📍✅🎉🏠💬✨", id="emoji"),
+    pytest.param("พัสดุยังไม่ถึงบ้าน 📦🙂", id="thai-and-emoji"),
+    pytest.param("Parcel has\nnot arrived 📦", id="multiline"),
+])
+def test_text_commands_preserve_unicode_and_trim_whitespace(command_client, model, body, field, value):
+    payload = body | {field: f"  {value}  "}
+    expected = body | {field: value}
+    assert model.model_validate(payload).model_dump() == expected
+
+    client, handled = command_client(model)
+    with client:
+        response = client.post("/command", json=payload)
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert handled == [expected]

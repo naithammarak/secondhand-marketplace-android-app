@@ -5,8 +5,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, field_validator
 
 
-ShortText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=1000)]
+# PostgreSQL text rejects NUL; reject it at the request boundary instead.
+ShortText = Annotated[str, StringConstraints(
+    strip_whitespace=True, min_length=1, max_length=100, pattern=r"^[^\x00]*$")]
+Reason = Annotated[str, StringConstraints(
+    strip_whitespace=True, min_length=10, max_length=1000, pattern=r"^[^\x00]*$")]
 PositiveId = Annotated[StrictInt, Field(gt=0)]
 CaseReference = Annotated[str, StringConstraints(
     pattern=r"^(delivery-report|delivery-proof|delivery-audit):[1-9][0-9]*$", max_length=100)]
