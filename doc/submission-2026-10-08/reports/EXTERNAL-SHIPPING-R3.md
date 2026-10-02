@@ -5,7 +5,7 @@
 - PR: https://github.com/naithammarak/secondhand-marketplace-android-app/pull/130
 - Branch: `codex/ab-external-shipping-2026-10-02`, based on PR129 `codex/bcd-integration-2026-10-02`.
 - Upstream SHA: `b531bd1372c0d26b8492fa28ff29ab20a85d7578`.
-- Verified implementation/test/document source commit: `832b1f94d1ed89dafeef69005422e00bba4daeb4`. This report is a documentation-only descendant. Exact final published head is supplied with the reviewer handoff and primary implementation coordination record; it is not a self-referential SHA.
+- Verified implementation/test/document source commit: `4e4db6a297bdfbe7c914388f938fc98e65d2234d`. This report is a documentation-only descendant. Exact final published head is supplied with the reviewer handoff and primary implementation coordination record; it is not a self-referential SHA.
 - Migration predecessor/head: `c08f20261002` → `r01e20261002`, one head.
 - Date: 2–3 October 2026, Asia/Bangkok (2 October UTC).
 
@@ -25,15 +25,15 @@ Executed commands/counts, test source hashes and target identities are in [verif
 
 | Check | Result | Interpretation |
 |---|---:|---|
-| New external-policy API/constraints/races |53 passed|Normal three-leg journeys, money, C/D composition and negative checks; source `tests/test_external_shipping_postgres.py`|
+| New external-policy API/constraints/races |54 passed|Normal three-leg journeys, money, C/D composition and negative checks; source `tests/test_external_shipping_postgres.py`|
 | Legacy-source migration/rollback/RLS |3 passed|Exact PR129 source byte-verified before actual old API journeys; source `tests/test_external_shipping_migration.py`|
 | Retained FINISH flows |45 passed|Legacy fixture explicitly creates LEGACY_V1; not evidence of a no-Courier new flow|
 | Foundation + reviews PostgreSQL |71 passed|Includes synthetic terminal schema fixtures, distinct from normal journey evidence|
 | Composed B/C/D prior-policy API |4 passed|Actual legacy sale/return/profile/review/revocation, current implementation regression|
-| Default backend |627 passed,405 skipped|PostgreSQL-dependent cases skip without owned URLs; they are not counted as passing|
+| Default backend |627 passed,406 skipped|PostgreSQL-dependent cases skip without owned URLs; they are not counted as passing|
 | Syntax/format |PASS|Changed Python compiled; `git diff --check`; six PlantUML sources check/rendered; editable SRS rendered and all7 final PDF pages reviewed|
 
-Earlier expanded tests exposed a wrong expected404/403 and an unapproved Seller review fixture; both fixture expectations were corrected before the final53-case run. Courier assignment on external shipments was a real unhandled constraint error and now returns the explicit409. Existing Starlette/httpx/anyio deprecation and synthetic JWT-key warnings remain, with no test failures. Local logs stay under `/tmp`; failed assertion payloads/tokens are not published.
+Earlier expanded tests exposed a wrong expected404/403 and an unapproved Seller review fixture; both fixture expectations were corrected before the final54-case run. Courier assignment on external shipments was a real unhandled constraint error and now returns the explicit409. A further first-publication NULL-deadline fault-injection test reproduced a schema gap: PostgreSQL CHECK allowed UNKNOWN. The unmerged new revision now explicitly requires a nonnull deadline (matching the model); failure rolls back result, window and certificate, and the same key can retry. The54 API,3 migration and default suites were rerun after this fix. Legacy45, foundation/review71 and composed4 results were carried forward from implementation832b1f9 because this additional guard affects only the new positive-window tuple and legacy-only fixture behavior is unchanged. Existing Starlette/httpx/anyio deprecation and synthetic JWT-key warnings remain, with no test failures. Local logs stay under `/tmp`; failed assertion payloads/tokens are not published.
 
 ## Remaining work and downstream handoff
 

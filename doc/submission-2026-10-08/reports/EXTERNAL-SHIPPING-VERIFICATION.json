@@ -4,7 +4,7 @@
   "scope": "R1-R4 backend local verification; independent final acceptance pending",
   "pr_url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/130",
   "branch": "codex/ab-external-shipping-2026-10-02",
-  "tested_source_commit": "832b1f94d1ed89dafeef69005422e00bba4daeb4",
+  "tested_source_commit": "4e4db6a297bdfbe7c914388f938fc98e65d2234d",
   "base_sha": "b531bd1372c0d26b8492fa28ff29ab20a85d7578",
   "migration_predecessor": "c08f20261002",
   "migration_head": "r01e20261002",
@@ -19,29 +19,31 @@
   "checks": [
     {
       "id": "external_postgres",
-      "passed": 53,
+      "passed": 54,
       "skipped": 0,
-      "duration": "40.39s",
+      "duration": "41.58s",
       "cwd": "backend",
       "command": "DATABASE_URL=sqlite:///:memory: FINISH_TEST_DATABASE_URL=<owned localhost DB> python -m pytest -q --tb=short tests/test_external_shipping_postgres.py",
       "database": "external_flow_test",
-      "result_summary": "53 passed, 2 warnings in 40.39s",
-      "local_log": "/tmp/ab-amendment-delivery-api.log",
-      "local_log_sha256": "e1ea7e5ddcc1b8455e0f0a346a760a5b13298e3884fd73d6a5dca7d33bc60a0a",
-      "published_log_payload": false
+      "result_summary": "54 passed, 2 warnings in 41.58s",
+      "local_log": "/tmp/ab-amendment-null-fixed-api.log",
+      "local_log_sha256": "4cc5287cabc383585ca21ad0409fb1d6d5065a90eb5c40d34ed6afc0776aa55d",
+      "published_log_payload": false,
+      "tested_source_commit": "4e4db6a297bdfbe7c914388f938fc98e65d2234d"
     },
     {
       "id": "migration_postgres",
       "passed": 3,
       "skipped": 0,
-      "duration": "9.13s",
+      "duration": "9.17s",
       "cwd": "backend",
       "command": "DATABASE_URL=sqlite:///:memory: EXTERNAL_MIGRATION_TEST_DATABASE_URL=<owned localhost DB> EXTERNAL_LEGACY_SOURCE=<exact env-free PR129 backend extract> python -m pytest -q --tb=short tests/test_external_shipping_migration.py",
       "database": "amendment_migration_test",
-      "result_summary": "3 passed, 2 warnings in 9.13s",
-      "local_log": "/tmp/ab-amendment-delivery-migration.log",
-      "local_log_sha256": "d82a0aa4f1829f4b111ea8316626d5dab9458849be422ff7c85e48a0acccf413",
-      "published_log_payload": false
+      "result_summary": "3 passed, 2 warnings in 9.17s",
+      "local_log": "/tmp/ab-amendment-null-fixed-migration.log",
+      "local_log_sha256": "1e13fd6f2120a3880ff41a8bea139175afe52fec220af74bf247e6064a8351c2",
+      "published_log_payload": false,
+      "tested_source_commit": "4e4db6a297bdfbe7c914388f938fc98e65d2234d"
     },
     {
       "id": "legacy_finish_postgres",
@@ -54,7 +56,9 @@
       "result_summary": "45 passed, 2 warnings in 46.46s",
       "local_log": "/tmp/ab-amendment-legacy-final.log",
       "local_log_sha256": "9fdf941ab7ccef02d1347e9f080f588b56ab34de0b1757c528654ad2962b44bc",
-      "published_log_payload": false
+      "published_log_payload": false,
+      "tested_source_commit": "832b1f94d1ed89dafeef69005422e00bba4daeb4",
+      "source_scope": "Carried forward: final additional change only tightens incomplete EXTERNAL_V2 positive-window tuple; these legacy-only journeys/schema fixture paths are unchanged."
     },
     {
       "id": "foundation_review_postgres",
@@ -67,7 +71,9 @@
       "result_summary": "71 passed, 2 warnings in 35.81s",
       "local_log": "/tmp/ab-amendment-schema-reviews.log",
       "local_log_sha256": "96e3de98f66d7cd408aefd6878e59693e28e1be3794bf73f10a6badad039141a",
-      "published_log_payload": false
+      "published_log_payload": false,
+      "tested_source_commit": "832b1f94d1ed89dafeef69005422e00bba4daeb4",
+      "source_scope": "Carried forward: final additional change only tightens incomplete EXTERNAL_V2 positive-window tuple; these legacy-only journeys/schema fixture paths are unchanged."
     },
     {
       "id": "composed_bcd_postgres",
@@ -80,20 +86,23 @@
       "result_summary": "4 passed, 2 warnings in 4.58s",
       "local_log": "/tmp/ab-amendment-final-bcd.log",
       "local_log_sha256": "6a947de5887a50f77da087abc8ae7bc39243f7f0c08fa0ef28203ef3b238fb2e",
-      "published_log_payload": false
+      "published_log_payload": false,
+      "tested_source_commit": "832b1f94d1ed89dafeef69005422e00bba4daeb4",
+      "source_scope": "Carried forward: final additional change only tightens incomplete EXTERNAL_V2 positive-window tuple; these legacy-only journeys/schema fixture paths are unchanged."
     },
     {
       "id": "default_backend",
       "passed": 627,
-      "skipped": 405,
-      "duration": "13.96s",
+      "skipped": 406,
+      "duration": "16.15s",
       "cwd": "backend",
       "command": "DATABASE_URL=sqlite:///:memory: python -m pytest -q --tb=short",
       "database": null,
-      "result_summary": "627 passed, 405 skipped, 3 warnings in 13.96s",
-      "local_log": "/tmp/ab-amendment-final-default.log",
-      "local_log_sha256": "278853f3cbe5f43843b92eddec15ce4d28dbe125a7469ad3689d48f94da5c4c3",
-      "published_log_payload": false
+      "result_summary": "627 passed, 406 skipped, 3 warnings in 16.15s",
+      "local_log": "/tmp/ab-amendment-null-fixed-default.log",
+      "local_log_sha256": "6ac6a7c95976fa4c9d9a6b7920e6832feb3825c9d4a4a95aa146bd16395aa6a8",
+      "published_log_payload": false,
+      "tested_source_commit": "4e4db6a297bdfbe7c914388f938fc98e65d2234d"
     }
   ],
   "syntax_and_artifacts": {
@@ -120,10 +129,10 @@
     "backend/app/services/lifecycle_worker.py": "62adb227e4499b5e8cfdc877307988a8eb112db181365b602c19260734ab331e",
     "backend/app/services/order_settlement.py": "4d6ad41876340a3860e8d98236810802ddb8bdfeb5b3fbb8a855e0e196fbca5a",
     "backend/app/services/result_timeout.py": "d6399240e79907474a52387a851e26cb841c4b2647269c2adb9f1aebf8913aaf",
-    "backend/migrations/versions/r01e20261002_external_shipping.py": "78f93d85683090b922810b263def1c98c5d1a2aaf181cd56724f466d0d1d4799",
+    "backend/migrations/versions/r01e20261002_external_shipping.py": "e75129f4dbbcbeba3e5b25633e96351476c939dd59b5c349930e7cca90499ff2",
     "backend/scripts/run_lifecycle_jobs.py": "5445c38a583be718eb1791fd5d3aaed9d568a8d5e30e690e4782f50f69e04676",
     "backend/tests/test_external_shipping_migration.py": "0aaf494a443a3cac059a942bfa4e470038811539e812c3aed6114a008f19dcc0",
-    "backend/tests/test_external_shipping_postgres.py": "f78f1d99b20714a108e06238ce0db8efc57b1845fe26290940131f55f2b55e88",
+    "backend/tests/test_external_shipping_postgres.py": "c6e56aa89b3c42e182291d2c33c43f9fd7e649c736f923e6e113168f0024ad26",
     "backend/tests/test_finish_flow_postgres.py": "c12d39deae3f9334711b53c90913d81731262cf739553585797aa4d20ec385e2",
     "backend/tests/test_finish_foundation_postgres.py": "825132980f8c9bc96895d678b67062f5496ca6a51b17b439b587a7a2892c1f01",
     "backend/tests/test_inspection_flow_postgres.py": "ce4257a79b3681c252d87662e5abe756ae1b251a8b3c53ff675faed51154bc8d",
@@ -146,5 +155,11 @@
     "EXTERNAL-SHIPPING-R4.md",
     "EXTERNAL-SHIPPING-API-MAPPING.md"
   ],
-  "independent_review_status": "PENDING"
+  "independent_review_status": "PENDING",
+  "additional_schema_fix": {
+    "reproduced": "First positive result with fault-injected NULL decision deadline committed before guard, despite complete model constraint",
+    "fix": "Explicit NOT NULL in new migration window CHECK",
+    "regression": "Actual normal result transaction with fault injection now returns503 and rolls back window/result/certificate; restores issuer and same-key retry succeeds",
+    "shared_migration_touched": false
+  }
 }
