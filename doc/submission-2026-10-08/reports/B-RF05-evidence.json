@@ -51,7 +51,7 @@
     "backend/app/services/lifecycle_progress.py": "f886f65c6352ebf6c47fe9957144221fde2226c2d537d8c2fd787f7cdef91c0b",
     "backend/app/services/lifecycle_worker.py": "65913086af0ef2187158ce3010c45b60dcfe86ff5801b5869fc86fc07d61d307",
     "backend/app/services/unpaid_expiry_worker.py": "ad015e0898cd01ceb81896653fb00ed0f5f5fc9a67d69b9870d41c43bd7ada42",
-    "backend/tests/test_unpaid_lifecycle_progress_postgres.py": "34b9352113a0bbfc20ca1a1e61a9c659b0ccacd169434420593f2a949d5c167c"
+    "backend/tests/test_unpaid_lifecycle_progress_postgres.py": "29a273b4cc53e7e30b853c395d246bb5659d815a500e0d2bba1c42fd40c5ef77"
   },
   "passedFocused": 33,
   "baselineFailedRequirements": 2,
@@ -63,5 +63,10 @@
   },
   "migrationChanged": false,
   "sharedDbTouched": false,
-  "releaseAccepted": false
+  "releaseAccepted": false,
+  "defaultEnvironmentGuard": {
+    "result": "5 specialized checks skipped only when owned FINISH test URL unset;not counted as passes",
+    "productionSourceUnchanged": true,
+    "originalPGResults": "5+9+19 passes at de56a25;guard does not change provided-target behavior"
+  }
 }
