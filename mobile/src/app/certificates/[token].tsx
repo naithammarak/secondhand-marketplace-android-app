@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { createInspectionService, type InspectionResult } from '@/services/inspection-service';
-import { inspectionError } from '@/inspections/use-inspection-api';
+import { createInspectionService } from '@/services/inspection-service';
+import { useCertificateResource } from '@/certificates/use-certificate-resource';
 import { MarketplaceHeader } from '@/components/marketplace-header';
 import { Button, Card, Loading, Screen, styles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
@@ -17,18 +17,9 @@ export default function PublicCertificateScreen() {
 
 function CertificateContent({ token }: { token?: string }) {
   const service = useMemo(() => createInspectionService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL }), []);
-  const [data, setData] = useState<{ certificate_no: string; result: InspectionResult; issued_at: string; status: 'ISSUED' | 'REVOKED' }>();
-  const [error, setError] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    if (!token || !/^[\w-]{20,100}$/.test(token)) return;
-    void service.publicCertificate(token).then(value => { if (active) setData(value); })
-      .catch(failure => { if (active) setError(inspectionError(failure)); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [token, service, attempt]);
+  const validToken = !!token && /^[\w-]{20,100}$/.test(token);
+  const { data, error, loading, reload } = useCertificateResource(useCallback(
+    () => validToken ? service.publicCertificate(token!) : Promise.resolve(undefined), [service, token, validToken]));
   return (
     <Screen>
       <SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
@@ -83,7 +74,7 @@ function CertificateContent({ token }: { token?: string }) {
           {error && (
             <Card>
               <ThemedText accessibilityRole="alert">{error}</ThemedText>
-              <Button label="ลองใหม่" onPress={() => { setError(undefined); setData(undefined); setLoading(true); setAttempt(value => value + 1); }} />
+              <Button label="ลองใหม่" onPress={() => { void reload(); }} />
             </Card>
           )}
 
@@ -184,7 +175,7 @@ function CertificateContent({ token }: { token?: string }) {
             หน้านี้ไม่แสดงข้อมูลส่วนบุคคลของผู้ซื้อหรือผู้ขาย ตามนโยบายคุ้มครองข้อมูลส่วนบุคคล (PDPA)
           </ThemedText>
 
-          <Button label="ดาวน์โหลดแอป 2NDHAND" variant="primary" onPress={() => {}} />
+          {validToken && <Button label="ตรวจสอบสถานะล่าสุด" disabled={loading} onPress={() => { void reload(); }} />}
         </ScrollView>
       </SafeAreaView>
     </Screen>

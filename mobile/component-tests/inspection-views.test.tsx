@@ -2,6 +2,21 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { BuyerResultView, CertificateSheet, InspectorWorkView, SellerShipView, type InspectionOutcome } from '@/components/inspection/views';
 const cert = { number: 'fixture-C1', issuedAt: '2026-09-27T06:00:00Z', publicUrl: 'https://example.invalid/c/abc' };
 const props = { summary: 'รายงานจากผู้ตรวจ', inspectedAt: cert.issuedAt, certificate: cert, nextAction: 'WAIT_BUYER_DECISION' as const, certificateDecision: true, canDecide: true };
+
+test('revoked certificate sheet retains public lookup but never shows a valid seal', () => {
+  render(<CertificateSheet visible enabled outcome="PASS" certificate={{ ...cert, status: 'REVOKED' }} onClose={() => {}} />);
+  expect(screen.getByText('ใบรับรองนี้ถูกเพิกถอน')).toBeTruthy();
+  expect(screen.getByText(cert.number)).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'เปิดใบรับรองสาธารณะ' })).toBeTruthy();
+  expect(screen.queryByText('● ใช้งานได้')).toBeNull();
+  expect(screen.queryByText('ผ่านการตรวจตามรายงาน')).toBeNull();
+});
+
+test('revoked certificate does not offer a new decision even with stale capability flags', () => {
+  render(<BuyerResultView {...props} outcome="PASS" certificate={{ ...cert, status: 'REVOKED' }} onDecision={jest.fn()} />);
+  expect(screen.getByText('ใบรับรองนี้ถูกเพิกถอน')).toBeTruthy();
+  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+});
 test.each(['NOT_AS_DESCRIBED','FAKE'] as InspectionOutcome[])('%s never offers certificate or decisions, even with malformed positive flags', outcome => {
   const decide = jest.fn(); render(<BuyerResultView {...props} outcome={outcome} onDecision={decide} />);
   expect(screen.queryByText('ดูใบรับรองผลการตรวจ')).toBeNull();

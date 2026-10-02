@@ -18,7 +18,7 @@ export const outcomes: Record<InspectionOutcome, { label: string; variant: Masco
   FAKE: { label: 'ผลตรวจระบุว่าไม่ผ่านการตรวจความแท้', variant: 'fake', tone: 'danger' },
 };
 export type InspectionPhoto = { id: number; source: ImageSource; label: string };
-export type CertificateData = { number: string; publicUrl: string; qrSource?: ImageSource; issuedAt: string };
+export type CertificateData = { number: string; publicUrl: string; qrSource?: ImageSource; issuedAt: string; status?: 'ISSUED' | 'REVOKED' };
 export type BuyerDecisionData = { decision: 'CONFIRM' | 'REJECT'; reason: string | null; decidedAt: string };
 export function UnavailableInspection({ title = 'บริการตรวจสินค้ายังไม่พร้อมใช้งาน' }: { title?: string }) {
   return <Card><EmptyState title={title} detail="คุณยังดูสถานะคำสั่งซื้อและใบเสร็จที่มีอยู่ได้ กรุณากลับมาตรวจสอบบริการนี้อีกครั้ง" /></Card>;
@@ -198,7 +198,12 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
   };
 
   return <ConfirmationSheet visible={visible} title="ใบรับรองผลการตรวจ" onClose={onClose}>
-    {eligible && certificate ? (
+    {certificate?.status === 'REVOKED' ? <View style={{ gap: 12 }}>
+      <ThemedText type="subtitle" style={{ color: theme.danger }}>ใบรับรองนี้ถูกเพิกถอน</ThemedText>
+      <ThemedText>{certificate.number}</ThemedText>
+      <ThemedText>ไม่สามารถใช้ใบรับรองนี้เพื่อยืนยันผลการตรวจได้ ผลตรวจเดิมและการตัดสินใจของผู้ซื้อยังคงเดิม</ThemedText>
+      {publicReady && <Button label="เปิดใบรับรองสาธารณะ" onPress={() => { void Linking.openURL(certificate.publicUrl); }} />}
+    </View> : eligible && certificate ? (
       <View style={{ gap: 14 }}>
         {/* Receipt paper card style container */}
         <View style={{
@@ -339,7 +344,7 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   const [reason, setReason] = useState('');
   const validReason = [...reason.trim()].length <= 500;
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
-  const allowed = positive && !!certificate && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
+  const allowed = positive && !!certificate && certificate.status !== 'REVOKED' && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
   const nextActionLabel = nextAction === 'RETURN_TO_SELLER'
     ? 'ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย ติดตามความคืบหน้าจากคำสั่งซื้อ'
     : nextAction === 'SHIP_TO_BUYER'
@@ -403,6 +408,7 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
 
     {positive && certificate && (
       <Card>
+        {certificate.status === 'REVOKED' && <ThemedText accessibilityRole="alert" style={{ color: theme.danger }}>ใบรับรองนี้ถูกเพิกถอน</ThemedText>}
         <Button label="ดูใบรับรองผลการตรวจ" onPress={() => setCertificate(true)} />
       </Card>
     )}

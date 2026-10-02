@@ -7,6 +7,10 @@ export type EvidenceFile = { uri: string; name: string; type: string; size?: num
 export type Evidence = { id: number; mime_type: string; size_bytes: number; url: string; expires_at?: string | null };
 export type CertificateStatus = 'ISSUED' | 'REVOKED';
 export type Certificate = { certificate_no: string; public_url: string; issued_at: string; status: CertificateStatus };
+export type AdminCertificate = Certificate & {
+  id: number; result: 'PASS' | 'MINOR_ISSUE'; revoked_at: string | null; can_revoke: boolean;
+};
+export type AdminCertificatesPage = { items: AdminCertificate[]; next_before_id: number | null };
 export type BuyerDecision = 'CONFIRM' | 'REJECT';
 export type BuyerDecisionRecord = { decision: BuyerDecision; reason: string | null; decided_at: string };
 export type CourierShipmentScope = 'pending' | 'history' | 'all';
@@ -97,7 +101,12 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
   return {
     couriers: (token: string, offset = 0) => request<{ items: { id: number; name: string }[]; total: number }>(token, `/admin/couriers?limit=20&offset=${offset}`),
     publicCertificate: (publicToken: string) => request<{ certificate_no: string; result: InspectionResult; issued_at: string; status: CertificateStatus }>(null,
-      `/certificates/${encodeURIComponent(publicToken)}/json`, {}, options.timeoutMs ?? 20_000, true),
+      `/certificates/${encodeURIComponent(publicToken)}/json`, { cache: 'no-store' }, options.timeoutMs ?? 20_000, true),
+    adminCertificates: (token: string, beforeId?: number) => request<AdminCertificatesPage>(token,
+      `/admin/certificates?limit=20${beforeId === undefined ? '' : `&before_id=${beforeId}`}`, { cache: 'no-store' }),
+    adminCertificate: (token: string, id: number) => request<AdminCertificate>(token, `/admin/certificates/${id}`, { cache: 'no-store' }),
+    revokeCertificate: (token: string, id: number, reason: string, key: string) => request<AdminCertificate>(token,
+      `/admin/certificates/${id}/revoke`, json({ reason }, key)),
     adminOrders: (token: string, offset = 0) => request<{ items: AdminInboundOrder[]; total: number }>(token, `/admin/orders?status=SHIPPING_TO_CENTER&limit=20&offset=${offset}`),
     assignCourier: (token: string, orderId: number, courierId: number, key: string) => request<{ shipment_id: number; courier_id: number }>(token, `/admin/orders/${orderId}/assign-courier`, json({ courier_id: courierId }, key)),
     courierShipments: async (token: string, scope: CourierShipmentScope = 'pending'): Promise<CourierShipmentsPage> => {

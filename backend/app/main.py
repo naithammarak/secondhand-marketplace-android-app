@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.admin_orders import router as admin_orders_router
+from app.api.admin_certificates import router as admin_certificates_router
 from app.api.admin_verifications import router as admin_verifications_router
 from app.api.auth import router as auth_router
 from app.api.profile import router as profile_router
@@ -69,6 +70,7 @@ async def sensitive_result_headers(request: Request, call_next):
     private = (len(parts) in {3, 4} and parts[0] == "orders" and parts[2] == "inspection"
                and (len(parts) == 3 or parts[3] == "decision"))
     certificate = len(parts) in {2, 3} and parts[0] == "certificates"
+    admin_certificate = len(parts) >= 2 and parts[:2] == ["admin", "certificates"]
     response = await call_next(request)
     private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "return-address")
     private = private or (parts[0] in {"courier", "shipment-delivery-proofs"} or
@@ -79,7 +81,7 @@ async def sensitive_result_headers(request: Request, call_next):
             "delivery-review", "resolve-delivery", "delivery-proofs"}))
     private = private or parts[0] == "profile"
     private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "review")
-    if private or certificate:
+    if private or certificate or admin_certificate:
         response.headers["Cache-Control"] = "no-store"
     if certificate:
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -112,6 +114,7 @@ app.include_router(fulfillment_router)
 app.include_router(finish_router)
 # ORDER-09: มุมมอง Order ของผู้ดูแล (ปิดบังข้อมูลส่วนบุคคลเป็นค่าตั้งต้น)
 app.include_router(admin_orders_router)
+app.include_router(admin_certificates_router)
 
 
 @app.get("/health")
