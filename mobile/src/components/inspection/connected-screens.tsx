@@ -154,7 +154,7 @@ function ResultData({ result, busy = false, error, onDecision }: {
   const buyerCanDecide = 'can_decide' in result;
   return <BuyerResultView outcome={result.result} summary={result.summary ?? ''} inspectedAt={result.inspected_at}
     photos={result.evidence.map(photo => ({ id: photo.id, label: `หลักฐาน ${photo.id}`, source: api.service.privateImageSource(api.token, photo) }))}
-    certificate={result.certificate?.status === 'ISSUED' ? { number: result.certificate.certificate_no, publicUrl: result.certificate.public_url, issuedAt: result.certificate.issued_at } : null}
+    certificate={result.certificate ? { number: result.certificate.certificate_no, publicUrl: result.certificate.public_url, issuedAt: result.certificate.issued_at, status: result.certificate.status } : null}
     recordedDecision={buyerCanDecide && result.decision ? {
       decision: result.decision.decision, reason: result.decision.reason, decidedAt: result.decision.decided_at,
     } : null}
