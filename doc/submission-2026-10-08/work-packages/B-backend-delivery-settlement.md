@@ -1,31 +1,17 @@
-# B — Backend ส่งสินค้า, Escrow settlement และ jobs
+# B / R2–R4 — current amendment handoff
 
-**ผู้รับ:** เพื่อน 1 / backend Codex · **Tasks:** 03 → 04 → 05 · **Priority:** P0 · **เริ่ม implementation หลัง:** A/02
+**Scope:** task03–05 · [Current amendment](../changes/EXTERNAL-SHIPPING-03.md) · [Confirmed refund](../changes/REFUND-DECISION-02.md) · [Concrete scope](../coordination/AB-AMENDMENT-SCOPE.md)
 
-## ผลลัพธ์
-
-- ส่งถึง Buyer หรือคืน Seller ตามผลตรวจและ Buyer decision พร้อม private Courier proof
-- Buyer ยืนยันรับ/แจ้งไม่ได้รับ, Admin ตัดสินกรณีพิพาท, ปล่อยเงินหรือคืนเต็มจำนวนแบบ exactly once
-- runner สำหรับ unpaid expiry, 72h receipt release, seller no-ship refund, return-refund retry และ inspection overdue escalation
+PR130 extends reviewed PR129 without changing the historical accepted A/B/CD/BCD branches. New Orders snapshot EXTERNAL_V2; legacy Orders preserve their policy and financial history. Backend R1–R4 local checks do not establish E/shared/Android acceptance.
 
 ## Prompt สำหรับ Codex
 
 ```text
-You own work package B, backend only, for the Android marketplace prototype due 8 October 2026, Asia/Bangkok. Use the exact release base plus accepted task02 supplied by package A. Locate doc/submission-2026-10-08 (or the supplied packet path), read work-packages/README.md, DOC-01-scope.md, FINISH-00-release-gates.md, QA-MATRIX.md and reports/API-MAPPING.md. Apply repository AGENTS.md. Inspect the actual code and upstream SHA before editing.
+Locate doc/submission-2026-10-08 in the supplied repository. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md, DOC-01-scope.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before older references. Execute current task03–05 prompts and their amendment acceptance, on the exact delivered upstream SHA. Historical Courier proof/full-refund wording applies only to LEGACY_V1 or specified unchanged causes.
 
-Execute the full prompts and acceptance checks in tasks/03-FINISH-02-delivery.md, then tasks/04-FINISH-03-04-settlement.md, then tasks/05-TIMER-01-jobs.md. Own final delivery/order services, receipt/report/scoped Admin resolution, exactly-once settlement and jobs. Reuse existing Courier/proof/inspection/payment infrastructure and task02's models. Share one RELEASE/REFUND service between HTTP commands and workers. Payment gateway, payout and refund simulate transfers; persist actual database records of simulated amounts. Do not add a real bank integration, a wallet or a second escrow ledger.
+Preserve one settlement ledger, immutable original Payment/Receipt and addresses, private data, shared databases, live servers and unrelated UI work. New shipping uses carrier/tracking, actual recipients and scoped explicitly enabled Admin demo events. Positive result rejection or SYSTEM timeout authorizes return; actual Seller/Admin receipt precedes item-only refund1200 retaining100/50 once. Other specified and legacy refunds remain full1350; RELEASE keeps commission5%. Two independent72h windows and fresh locked DB clock govern eligibility. Six bounded jobs preserve prior cursor IDs and never invent Buyer decisions or physical dispatch.
 
-Preserve the distinction between inspection acceptance and physical receipt. Server-valid private proof starts the Buyer 72h deadline only after delivery confirmation. A timely non-receipt report keeps HELD. Preserve original successful Payment/Receipt and pricing snapshots; RELEASE and full-held-amount REFUND are mutually exclusive. Return delivery commits durably even if refund fails, allowing retry. All five jobs must work without user HTTP traffic and use server guards, shared locks and deadline rules. Follow exact eligibility/amounts in the original task prompts.
-
-Send task03/04 commits and concrete routes, fixtures, action flags and service interfaces early to A/E and package C; C's reviews require task04 COMPLETED+RELEASED. Then complete task05. Coordinate any missing model requirement with A instead of introducing a parallel migration head. Keep mobile visual work outside this package.
-
-Verify roles, proof access, successful sale/return, replay, concurrent release-vs-refund, deadline boundaries, rollback and worker recovery in isolated PostgreSQL using meaningful tests from the tasks. Write reports/03-FINISH-02.md, reports/04-FINISH-03-04.md and reports/05-TIMER-01.md using templates/TASK-REPORT.md. Deliver upstream/head SHAs, code, APIs, commands/results and runbook. Do not equate isolated tests with Android/shared Storage/runtime activation. If task02 is missing, prepare independent contract/fixtures/tests, report its missing input, and resume integration once supplied; do not invent replacement upstream infrastructure. Continue through implementation and verification, not only planning.
+Record exact base/head, migration, actual checks and evidence in the current reports. Keep E visual/UI work separate, complete owned PostgreSQL evidence and request independent review on the exact final remote head of the same PR130.
 ```
 
-## งานและส่งต่อ
-
-1. [03 Delivery](../tasks/03-FINISH-02-delivery.md) → proof/delivery APIs ให้ E; return hook ให้ 04
-2. [04 Settlement](../tasks/04-FINISH-03-04-settlement.md) → terminal states ให้ C/08, APIs ให้ E, service ให้ 05
-3. [05 Jobs](../tasks/05-TIMER-01-jobs.md) → runner/runbook ให้ F/10
-
-**ตรวจสำคัญ:** held 1,350 → seller payout 1,140 เมื่อ RELEASE หรือ refund 1,350 เมื่อ REFUND เป็นยอดจำลองตาม snapshots ทั้งหมด
+Use [tasks](../README.md) and [R1–R4 reports](../reports/EXTERNAL-SHIPPING-R1.md). Full release/native/scheduler activation remains tasks10–13. No local-only PASS is relabeled as final readiness.

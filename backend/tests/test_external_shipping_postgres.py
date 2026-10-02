@@ -282,3 +282,423 @@ def test_two_no_http_runners_timeout_dry_run_restart_and_cursor_fairness(context
         assert db.scalar(select(func.count()).select_from(FulfillmentCommand).where(FulfillmentCommand.action=='RESULT_DECISION_TIMEOUT'))==3
         assert db.scalar(select(func.count()).select_from(BuyerInspectionDecision))==0
         assert db.scalar(select(func.count()).select_from(OrderSettlement))==0
+
+
+@pytest.mark.parametrize('decision', ['CONFIRM', 'REJECT'])
+@pytest.mark.parametrize('delta', [-1, 0, 1])
+def test_fresh_result_decision_before_at_after_cutoff(context, decision, delta):
+    c = context
+    ident, _ = work(c)
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        deadline = order.result_decision_deadline_at
+        assert deadline == order.result_available_at + timedelta(hours=72)
+    advance(c, deadline + timedelta(microseconds=delta))
+    response = post(c, f'/orders/{ident}/inspection/decision', 'buyer', {'decision': decision})
+    assert response.status_code == (200 if delta < 0 else 409), response.text
+    timed = run_once(c['factory'], apply=True, clock=lambda: deadline)
+    assert timed.jobs['result_timeout'].applied == (0 if delta < 0 else 1)
+    with c['factory']() as db:
+        actual = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == ident))
+        assert (actual.decision if actual else None) == (decision if delta < 0 else None)
+        assert (db.get(Order, ident).result_timed_out_at is not None) == (delta >= 0)
+        assert db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == ident)) is None
+
+
+@pytest.mark.parametrize('action', ['confirm-receipt', 'report-not-received'])
+@pytest.mark.parametrize('delta', [-1, 0, 1])
+def test_actual_buyer_receipt_and_report_before_at_after_cutoff(context, action, delta):
+    c = context
+    ident, _ = work(c)
+    ship = dispatch(c, ident)
+    assert event(c, ship).status_code == 200
+    with c['factory']() as db:
+        deadline = db.get(Order, ident).receipt_deadline_at
+    advance(c, deadline + timedelta(microseconds=delta))
+    payload = {} if action == 'confirm-receipt' else {'reason': 'Actual missing parcel reported at the receipt boundary'}
+    response = post(c, f'/orders/{ident}/{action}', 'buyer', payload)
+    assert response.status_code == (200 if delta < 0 else 409), response.text
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        assert (order.receipt_confirmed_at is not None) == (delta < 0 and action == 'confirm-receipt')
+        assert (order.missing_reported_at is not None) == (delta < 0 and action == 'report-not-received')
+
+
+def wait_for_order_lock(c):
+    from sqlalchemy import text
+    limit = time.monotonic() + 5
+    while time.monotonic() < limit:
+        with c['engine'].connect() as db:
+            count = db.scalar(text("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND pid<>pg_backend_pid()"))
+        if count:
+            return
+        time.sleep(0.01)
+    pytest.fail('Independent request did not reach the held PostgreSQL row lock')
+
+
+@pytest.mark.parametrize('action', ['decision', 'confirm-receipt', 'report-not-received'])
+def test_clock_timestamp_resampled_after_real_order_lock_wait(context, action):
+    import app.api.inspections as inspections
+    import app.api.finish as finish
+    import app.services.order_settlement as settlement
+    c = context
+    ident, _ = work(c)
+    if action != 'decision':
+        ship = dispatch(c, ident)
+        assert event(c, ship).status_code == 200
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        deadline = order.result_decision_deadline_at if action == 'decision' else order.receipt_deadline_at
+        # Compress the test's observation clock, never the persisted 72h window.
+        offset = deadline - database_now(db) - timedelta(seconds=2)
+    sampled = []
+    def fresh_clock(db):
+        value = database_now(db) + offset
+        sampled.append(value)
+        return value
+    module = inspections if action == 'decision' else settlement if action == 'confirm-receipt' else finish
+    c['monkeypatch'].setattr(module, 'database_now', fresh_clock)
+    path = f'/orders/{ident}/inspection/decision' if action == 'decision' else f'/orders/{ident}/{action}'
+    payload = {'decision': 'CONFIRM'} if action == 'decision' else {} if action == 'confirm-receipt' else {'reason': 'Request arrives before cutoff but waits for a real row lock'}
+    with c['factory']() as blocker, ThreadPoolExecutor(1) as pool:
+        blocker.scalar(select(Order).where(Order.id == ident).with_for_update())
+        assert database_now(blocker) + offset < deadline
+        pending = pool.submit(post, c, path, 'buyer', payload)
+        try:
+            wait_for_order_lock(c)
+            assert not sampled  # The mutation clock has not been sampled before its locks.
+            while database_now(blocker) + offset < deadline:
+                time.sleep(0.01)
+            blocker.commit()
+            late = pending.result(timeout=10)
+        finally:
+            blocker.rollback()  # A failing assertion must unblock the independent request too.
+    assert late.status_code == 409, late.text
+    assert late.json()['detail']['code'] == ('result_decision_deadline_passed' if action == 'decision' else 'receipt_deadline_passed')
+    assert sampled and all(value >= deadline for value in sampled)
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        assert order.receipt_confirmed_at is None and order.missing_reported_at is None
+        if action == 'decision':
+            assert db.scalar(select(BuyerInspectionDecision.id).where(BuyerInspectionDecision.order_id == ident)) is None
+
+
+@pytest.mark.parametrize('winner', ['CONFIRM', 'TIMEOUT'])
+def test_opposing_confirm_and_system_timeout_wait_on_independent_connections(context, winner):
+    from fastapi import HTTPException
+    from app.services.result_timeout import record_result_timeout
+    import app.api.inspections as inspections
+    c = context
+    ident, _ = work(c)
+    with c['factory']() as db:
+        deadline = db.get(Order, ident).result_decision_deadline_at
+    locked, release = Event(), Event()
+    def held_clock(db=None):
+        locked.set()
+        assert release.wait(5)
+        return deadline - timedelta(microseconds=1) if winner == 'CONFIRM' else deadline
+    c['monkeypatch'].setattr(inspections, 'database_now', held_clock if winner == 'CONFIRM' else lambda db: deadline - timedelta(microseconds=1))
+    def timeout():
+        with c['factory']() as db:
+            try:
+                result, replayed = record_result_timeout(db, ident, clock=(held_clock if winner == 'TIMEOUT' else lambda: deadline))
+                db.commit()
+                return result, replayed
+            except HTTPException as exc:
+                db.rollback()
+                return exc.status_code, exc.detail
+    with ThreadPoolExecutor(2) as pool:
+        first = pool.submit(post, c, f'/orders/{ident}/inspection/decision', 'buyer', {'decision': 'CONFIRM'}) if winner == 'CONFIRM' else pool.submit(timeout)
+        assert locked.wait(5)
+        second = pool.submit(timeout) if winner == 'CONFIRM' else pool.submit(post, c, f'/orders/{ident}/inspection/decision', 'buyer', {'decision': 'CONFIRM'})
+        wait_for_order_lock(c)
+        release.set()
+        left, right = first.result(timeout=10), second.result(timeout=10)
+    if winner == 'CONFIRM':
+        assert (left.status_code, right[0]) == (200, 409)
+    else:
+        assert right.status_code == 409 and left[1] is False
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        decisions = db.scalars(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == ident)).all()
+        assert len(decisions) == (1 if winner == 'CONFIRM' else 0)
+        assert (order.result_timed_out_at is not None) == (winner == 'TIMEOUT')
+        assert db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == ident)) is None
+    advance(c, deadline + timedelta(seconds=1))
+    ship = dispatch(c, ident, None)
+    with c['factory']() as db:
+        assert db.get(Shipment, ship).leg == ('TO_BUYER' if winner == 'CONFIRM' else 'TO_SELLER')
+    assert post(c, f'/orders/{ident}/fulfillment', 'inspector', {'carrier': 'Demo', 'tracking_number': 'OPPOSING'}).status_code == 409
+
+
+@pytest.mark.parametrize('competitors', ['receipt-report', 'receipt-auto', 'report-auto'])
+def test_buyer_report_receipt_auto_races_have_one_durable_outcome(context, competitors):
+    c = context
+    ident, _ = work(c)
+    ship = dispatch(c, ident)
+    assert event(c, ship).status_code == 200
+    with c['factory']() as db:
+        deadline = db.get(Order, ident).receipt_deadline_at
+    advance(c, deadline - timedelta(microseconds=1))
+    start = Event()
+    def http(action):
+        assert start.wait(5)
+        body = {} if action == 'confirm-receipt' else {'reason': 'Actual missing delivery reported during an opposing command'}
+        return post(c, f'/orders/{ident}/{action}', 'buyer', body)
+    def auto():
+        assert start.wait(5)
+        return run_once(c['factory'], apply=True, clock=lambda: deadline)
+    with ThreadPoolExecutor(3) as pool:
+        if competitors == 'receipt-report':
+            futures = [pool.submit(http, 'confirm-receipt'), pool.submit(http, 'report-not-received')]
+        else:
+            futures = [pool.submit(http, 'confirm-receipt' if competitors == 'receipt-auto' else 'report-not-received'), pool.submit(auto), pool.submit(auto)]
+        start.set()
+        outcomes = [future.result(timeout=15) for future in futures]
+    if competitors == 'receipt-report':
+        assert sorted(response.status_code for response in outcomes) == [200, 409]
+    else:
+        assert outcomes[0].status_code in {200, 409}
+        assert sum(run.jobs['receipt_release'].applied for run in outcomes[1:]) <= 1
+        run_once(c['factory'], apply=True, clock=lambda: deadline)  # Catch-up after SKIP LOCKED.
+    with c['factory']() as db:
+        order = db.get(Order, ident)
+        rows = db.scalars(select(OrderSettlement).where(OrderSettlement.order_id == ident)).all()
+        if order.missing_reported_at is not None:
+            assert order.status == 'DELIVERY_DISPUTED' and not rows
+            assert db.scalar(select(Escrow.status).where(Escrow.order_id == ident)) == 'HELD'
+        else:
+            assert order.status == 'COMPLETED' and len(rows) == 1 and rows[0].kind == 'RELEASE'
+
+
+@pytest.mark.parametrize('refund,inspection,shipping', [(1050, 200, 100), (1350, 0, 0), (1200, 99, 51)])
+def test_database_rejects_wrong_item_refund_and_retry_keeps_original_charge(context, refund, inspection, shipping):
+    from dataclasses import replace
+    import app.services.order_settlement as settlement
+    c = context
+    ident, _ = work(c)
+    dispatch(c, ident, 'REJECT')
+    original_receipt = c['client'].get(f'/orders/{ident}/receipt', headers=c['buyer']).json()
+    allocator = settlement.allocation
+    def bad_allocation(*args, **kwargs):
+        valid = allocator(*args, **kwargs)
+        return replace(valid, buyer_refund=Decimal(refund), inspection=Decimal(inspection), shipping=Decimal(shipping))
+    c['monkeypatch'].setattr(settlement, 'allocation', bad_allocation)
+    # Actual receipt commits, but the deliberately invalid financial transaction must roll back.
+    response = post(c, f'/orders/{ident}/confirm-return', 'seller')
+    assert response.status_code == 200, response.text
+    with c['factory']() as db:
+        assert db.get(Order, ident).status == 'RETURNED_TO_SELLER'
+        assert db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == ident)) is None
+        assert db.scalar(select(FulfillmentCommand.id).where(FulfillmentCommand.resource_id == ident, FulfillmentCommand.action == 'SETTLE_RETURN_DELIVERY')) is None
+        assert db.scalar(select(Escrow.status).where(Escrow.order_id == ident)) == 'HELD'
+    c['monkeypatch'].setattr(settlement, 'allocation', allocator)
+    assert run_once(c['factory'], apply=True).jobs['return_refund'].applied == 1
+    terminal(c, ident, 'REFUND', 1200)
+    assert c['client'].get(f'/orders/{ident}/receipt', headers=c['buyer']).json() == original_receipt
+
+
+def test_direct_policy_event_recipient_and_destination_guards(context):
+    from sqlalchemy import text
+    from app.services import finish_core as core
+    c = context
+    ident, _ = work(c)
+    ship = dispatch(c, ident)
+    with c['factory']() as db:
+        attempts = [
+            ("UPDATE orders SET fulfillment_policy='LEGACY_V1' WHERE id=:id", {'id': ident}),
+            ("UPDATE orders SET result_decision_deadline_at=result_decision_deadline_at+interval '1 second' WHERE id=:id", {'id': ident}),
+            ("UPDATE shipments SET fulfillment_policy='LEGACY_V1' WHERE id=:id", {'id': ship}),
+            ("UPDATE shipments SET destination_address='{}' WHERE id=:id", {'id': ship}),
+            ("UPDATE shipments SET status='DELIVERED' WHERE id=:id", {'id': ship}),
+        ]
+        for sql, params in attempts:
+            with pytest.raises(IntegrityError), db.begin_nested():
+                db.execute(text(sql), params)
+                db.execute(text('SET CONSTRAINTS ALL IMMEDIATE'))
+        with pytest.raises(IntegrityError, match='trusted shipment event'), db.begin_nested():
+            at = database_now(db)
+            cmd = core.command(db, ident, f"USER:{c['buyer_id']}", c['buyer_id'], 'SHIPPING_EVENT', new_key(), {}, {}, at)
+            db.add(ShippingEvent(order_id=ident, shipment_id=ship, leg='TO_BUYER', source='ADMIN_DEMO', event='DELIVERED', event_id='forged-db-event', admin_id=c['buyer_id'], command_id=cmd.id, confirmed_at=at))
+            db.flush()
+        with pytest.raises(IntegrityError, match='recipient receipt'), db.begin_nested():
+            at = database_now(db)
+            cmd = core.command(db, ident, f"USER:{c['seller_id']}", c['seller_id'], 'SETTLE_BUYER_RECEIPT', new_key(), {}, {}, at)
+            db.execute(text("UPDATE shipments SET status='DELIVERED',received_at=:at,received_by=:actor,recipient_source='BUYER',recipient_command_id=:cmd WHERE id=:ship"), {'at': at, 'actor': c['seller_id'], 'cmd': cmd.id, 'ship': ship})
+    assert event(c, ship).status_code == 200
+    with c['factory']() as db:
+        with pytest.raises(IntegrityError, match='immutable'), db.begin_nested():
+            db.execute(text("UPDATE shipping_events SET confirmed_at=confirmed_at+interval '1 second' WHERE shipment_id=:ship"), {'ship': ship})
+    assert post(c, f'/orders/{ident}/confirm-receipt', 'buyer').status_code == 200
+    with c['factory']() as db:
+        with pytest.raises(IntegrityError, match='recipient confirmation immutable'), db.begin_nested():
+            db.execute(text("UPDATE shipments SET received_note='rewritten' WHERE id=:ship"), {'ship': ship})
+    terminal(c, ident, 'RELEASE')
+
+
+def test_event_identity_cannot_move_to_another_order_or_leg(context):
+    c = context
+    first, _ = work(c)
+    first_ship = dispatch(c, first)
+    assert event(c, first_ship).status_code == 200
+    with c['factory']() as db:
+        c['product'] = create_product(db, c['seller_id'])
+    second, _ = work(c)
+    second_ship = dispatch(c, second, 'REJECT')
+    reused = event(c, second_ship, 'TO_SELLER')
+    assert reused.status_code == 409 and reused.json()['detail']['code'] == 'shipping_event_reused'
+    with c['factory']() as db:
+        assert db.scalar(select(func.count()).select_from(ShippingEvent)) == 1
+        assert db.get(Order, second).receipt_deadline_at is None
+
+
+def test_new_policy_no_ship_still_refunds_full_and_forbids_injected_fields(context):
+    c = context
+    body = order_body(c['product'])
+    for field, value in [('fulfillment_policy', 'LEGACY_V1'), ('result_decision_deadline_at', '2000-01-01'), ('total_amount', 1), ('buyer_id', c['seller_id'])]:
+        assert post(c, '/orders', 'buyer', {**body, field: value}).status_code == 422
+    created = post(c, '/orders', 'buyer', body)
+    assert created.status_code == 201
+    ident = created.json()['id']
+    assert post(c, f'/orders/{ident}/payments/simulate', 'buyer', {'outcome': 'SUCCESS'}).status_code == 200
+    receipt = c['client'].get(f'/orders/{ident}/receipt', headers=c['buyer']).json()
+    with c['factory']() as db:
+        due = db.get(Order, ident).paid_at + timedelta(hours=72)
+    assert run_once(c['factory'], apply=True, clock=lambda: due - timedelta(microseconds=1)).jobs['seller_no_ship'].applied == 0
+    assert run_once(c['factory'], apply=True, clock=lambda: due).jobs['seller_no_ship'].applied == 1
+    terminal(c, ident, 'REFUND', 1350)
+    assert c['client'].get(f'/orders/{ident}/receipt', headers=c['buyer']).json() == receipt
+
+
+def test_assigned_inspector_and_legacy_courier_routes_are_scoped(context):
+    c = context
+    ident, inspection = work(c)
+    assert post(c, f'/orders/{ident}/fulfillment', 'other_inspector', {'carrier': 'Demo', 'tracking_number': 'WRONG'}).status_code == 409  # Decision is required first.
+    assert post(c, f'/orders/{ident}/inspection/decision', 'buyer', {'decision': 'CONFIRM'}).status_code == 200
+    assert post(c, f'/orders/{ident}/fulfillment', 'other_inspector', {'carrier': 'Demo', 'tracking_number': 'WRONG'}).status_code == 404
+    assert post(c, f'/inspections/{inspection}/receive', 'other_inspector', {'note': 'Wrong center recipient'}).status_code == 404
+    with c['factory']() as db:
+        inbound = db.scalar(select(Shipment.id).where(Shipment.order_id == ident, Shipment.leg == 'TO_CENTER'))
+    assigned = post(c, f'/admin/shipments/{inbound}/assign-courier', 'admin', {'courier_id': c['buyer_id']})
+    assert assigned.status_code == 409 and assigned.json()['detail']['code'] == 'legacy_courier_only'
+    ship = dispatch(c, ident, None)
+    assert post(c, f'/orders/{ident}/confirm-return', 'seller').status_code == 409
+    assert post(c, f'/orders/{ident}/confirm-receipt', 'buyer', {'refund_amount': 1}).status_code == 422
+    with c['factory']() as db:
+        assert db.get(Shipment, ship).leg == 'TO_BUYER'
+
+
+def test_seller_as_buyer_new_sale_keeps_profile_policy_and_public_revocation_redaction(context):
+    c = context
+    c['buyer'], c['buyer_id'] = c['other_seller'], c['other_seller_id']
+    with c['factory']() as db:
+        approve(db, c['buyer_id'])
+    profile = c['client'].patch('/profile', json={'full_name': 'ชื่อผู้ซื้อที่เป็นผู้ขาย'}, headers=c['buyer'])
+    assert profile.status_code == 200
+    policy = post(c, '/profile/policy-acknowledgement', 'buyer', {'policy_version': 'submission-2026-10-01'})
+    assert policy.status_code == 200
+    assert c['client'].get('/profile', headers=c['buyer']).json()['full_name'] == 'ชื่อผู้ซื้อที่เป็นผู้ขาย'
+    ident, _ = work(c)
+    dispatch(c, ident)
+    assert post(c, f'/orders/{ident}/confirm-receipt', 'buyer').status_code == 200
+    assert post(c, f'/orders/{ident}/review', 'buyer', {'rating': 5, 'comment': 'Verified new-policy sale'}).status_code == 201
+    with c['factory']() as db:
+        cert = db.scalar(select(Certificate).where(Certificate.order_id == ident))
+        cert_id, token = cert.id, cert.public_token
+    reason = 'Private revocation after an actual new-policy Seller-as-Buyer sale'
+    assert post(c, f'/admin/certificates/{cert_id}/revoke', 'admin', {'reason': reason}).status_code == 200
+    public = c['client'].get(f'/certificates/{token}/json')
+    assert public.json()['status'] == 'REVOKED' and reason not in public.text
+    reviews = c['client'].get(f"/sellers/{c['seller_id']}/reviews").json()
+    assert reviews['summary']['count'] == 1
+    assert not {'buyer_id', 'order_id', 'email', 'full_name'}.intersection(reviews['items'][0])
+    terminal(c, ident, 'RELEASE')
+
+
+def test_center_transport_event_is_not_actual_center_receipt(context):
+    from app.models.inspection import Inspection
+    c = context
+    created = post(c, '/orders', 'buyer', order_body(c['product']))
+    ident = created.json()['id']
+    assert post(c, f'/orders/{ident}/payments/simulate', 'buyer', {'outcome': 'SUCCESS'}).status_code == 200
+    assert c['client'].put(f'/orders/{ident}/return-address', json=VALID_ADDRESS, headers={**c['seller'], 'Idempotency-Key': new_key()}).status_code == 200
+    assert post(c, f'/orders/{ident}/ship-to-center', 'seller', {'carrier': 'External demo', 'tracking_number': 'CENTER-ONLY'}).status_code == 200
+    with c['factory']() as db:
+        ship = db.scalar(select(Shipment.id).where(Shipment.order_id == ident))
+        inspection = db.scalar(select(Inspection.id).where(Inspection.order_id == ident))
+    assert event(c, ship, 'TO_CENTER').status_code == 200
+    with c['factory']() as db:
+        assert db.get(Order, ident).status == 'SHIPPING_TO_CENTER'
+        assert db.get(Shipment, ship).received_at is None
+    assert post(c, f'/inspections/{inspection}/start', 'inspector').status_code == 409
+    assert post(c, f'/inspections/{inspection}/receive', 'inspector', {'note': 'Actual center recipient now receives'}).status_code == 200
+    with c['factory']() as db:
+        assert db.get(Shipment, ship).recipient_source == 'INSPECTOR'
+        assert db.get(Order, ident).receipt_deadline_at is None
+
+
+def test_actual_item_refund_downgrade_refuses_without_losing_settlement(context):
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import text
+    c = context
+    ident, _ = work(c)
+    ship = dispatch(c, ident, 'REJECT')
+    assert event(c, ship, 'TO_SELLER').status_code == 200
+    assert post(c, f'/orders/{ident}/confirm-return', 'seller').status_code == 200
+    terminal(c, ident, 'REFUND', 1200)
+    tables = ['orders', 'shipments', 'shipping_events', 'order_settlements', 'payments', 'receipts', 'fulfillment_commands']
+    def saved():
+        with c['engine'].connect() as db:
+            return {table: db.execute(text(f'SELECT to_jsonb(t) FROM {table} t ORDER BY id')).scalars().all() for table in tables}
+    before = saved()
+    config = Config()
+    config.set_main_option('script_location', str(Path(__file__).resolve().parents[1] / 'migrations'))
+    c['monkeypatch'].setenv('DATABASE_URL', os.environ['FINISH_TEST_DATABASE_URL'])
+    with pytest.raises(RuntimeError, match='downgrade refused'):
+        command.downgrade(config, 'c08f20261002')
+    assert saved() == before
+    with c['engine'].connect() as db:
+        assert db.scalar(text('SELECT version_num FROM alembic_version')) == 'r01e20261002'
+
+
+def test_admin_return_evidence_is_scoped_to_order_and_admin(context):
+    c = context
+    first, _ = work(c)
+    dispatch(c, first, 'REJECT')
+    reviewed = post(c, f'/admin/orders/{first}/return-review', 'admin', {'reason': 'Review actual physical return of the first Order'})
+    assert reviewed.status_code == 200
+    body = {'reason': 'Verify actual Seller receipt from same-case audited evidence', 'evidence_refs': reviewed.json()['evidence_refs']}
+    with c['factory']() as db:
+        c['product'] = create_product(db, c['seller_id'])
+        _, c['other_admin'] = create_user(db, UserRole.ADMIN)
+    second, _ = work(c)
+    dispatch(c, second, 'REJECT')
+    assert post(c, f'/admin/orders/{second}/confirm-return', 'admin', body).status_code == 422
+    assert post(c, f'/admin/orders/{first}/confirm-return', 'other_admin', body).status_code == 422
+    assert post(c, f'/admin/orders/{first}/confirm-return', 'admin', {**body, 'buyer_refund': 1}).status_code == 422
+    with c['factory']() as db:
+        assert db.scalar(select(func.count()).select_from(OrderSettlement)) == 0
+    assert post(c, f'/admin/orders/{first}/confirm-return', 'admin', body).status_code == 200
+    terminal(c, first, 'REFUND', 1200)
+
+
+def test_actual_shipping_event_is_hidden_by_default_deny_rls_even_after_select_grant(context):
+    from sqlalchemy import text
+    c = context
+    ident, _ = work(c)
+    ship = dispatch(c, ident)
+    assert event(c, ship).status_code == 200
+    with c['engine'].begin() as db:
+        assert db.scalar(text('SELECT count(*) FROM shipping_events')) == 1
+        assert db.scalar(text("SELECT relrowsecurity FROM pg_class WHERE oid='shipping_events'::regclass")) is True
+        for role in ('anon', 'authenticated'):
+            db.execute(text(f"DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='{role}') THEN CREATE ROLE {role} NOLOGIN; END IF; END $$"))
+            db.execute(text(f'GRANT USAGE ON SCHEMA public TO {role}'))
+            db.execute(text(f'GRANT SELECT ON shipping_events TO {role}'))
+            db.execute(text(f'SET ROLE {role}'))
+            try:
+                assert db.scalar(text('SELECT count(*) FROM shipping_events')) == 0
+            finally:
+                db.execute(text('RESET ROLE'))

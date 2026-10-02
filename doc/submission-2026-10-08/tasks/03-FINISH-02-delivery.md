@@ -1,30 +1,25 @@
-# 03 / FINISH-02 + COURIER-02 — Buyer delivery and Seller return
+# 03 / FINISH-02 — External transport and actual recipient receipt
 
-**Priority:** P0 · **Owner:** Backend Codex · **Depends:** 02 · **Target:** 3–4 Oct
+**Priority:** P0 · **Owner:** Backend · **Depends:** 02 · **Amendment:** R2
 
-## Outcome / ownership
-
-Inspector creates one final leg; assigned Courier uploads/reads/confirms private proof; Buyer delivery starts receipt window; Seller return is durable and invokes the shared refund service when available. Own delivery modules/routes, not a second settlement service.
+Current backend candidate is PR130; historical accepted A/B/C/D work and legacy references remain separate evidence. See [amendment scope](../coordination/AB-AMENDMENT-SCOPE.md). E/native/shared rollout acceptance is separate.
 
 ## Prompt สำหรับ Codex
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 03 on the release base plus accepted task 02. Read the submission packet README.md, DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md sections 3–6 and references/FINISH-02-handoff.md. Read reports/API-MAPPING.md from task 02 and existing courier/inspection code; reuse concrete routes, role and storage services. Preserve concurrent frontend work.
+Continue R2 on the same PR130 branch after R1. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md. New-policy flow does not require Courier accounts/photos; preserve old Courier routes and records only for legacy Orders.
 
-Implement assigned Inspector fulfillment creation derived from final inspection and immutable Buyer decision: PASS/MINOR_ISSUE plus CONFIRM creates TO_BUYER using the buyer Order snapshot; positive REJECT or FAKE/NOT_AS_DESCRIBED creates TO_SELLER using the frozen seller return snapshot. Never accept leg/destination from client, create both final directions, fabricate a positive decision for a negative result or route a return to a profile address changed later.
+Seller sends TO_CENTER with carrier/tracking and frozen return address. Authorized center Inspector confirms actual receipt through canonical POST /inspections/{id}/receive; assigned Inspector dispatches only server-derived TO_BUYER after CONFIRM or TO_SELLER after REJECT/SYSTEM timeout/negative result. Never accept leg/destination from client. Positive result and certificate are atomic; timeout never fabricates a Buyer decision or physical dispatch.
 
-Extend existing Courier assigned queue/detail, Admin assignment and private upload/read/confirm commands for final legs. Require an active assigned Courier, 1–3 distinct server-bound JPEG/PNG proofs, real byte/type/size/hash checks, current-leg binding and private Storage readability at confirmation. Upload alone does not prove delivery. Freeze selected proof IDs and server UTC confirmation once, with Idempotency-Key/replay behavior from FINISH. Enforce role-specific projections; Courier sees only necessary current destination, Seller cannot inspect Buyer private delivery address/proofs, unrelated users cannot access object bytes/keys. Reuse center receive POST /inspections/{id}/receive.
+Implement minimum authenticated active-Admin explicitly configured demo shipping events with immutable source/identity/leg/server time, dedup/replay/audit. Transport DELIVERED differs from recipient receipt: center events do not receive inspection, return events do not refund, Buyer events start only the independent AUTO receipt+72h clock. Actual owning Buyer receipt/report work after authorized dispatch even with no carrier event, subject to an existing deadline; report blocks later AUTO. Actual Seller or scoped audited Admin confirms return with required same-case reason/evidence. Commit return durably before the same settlement service attempts refund separately; failure stays pending for the retry job.
 
-Confirmed TO_BUYER sets DELIVERED_PENDING_BUYER and immutable deadline confirmation+72h. Confirmed TO_SELLER first commits RETURNED_TO_SELLER+HELD and history/replay records; then invokes the settlement interface from task 04 in a separate transaction. If settlement is unavailable/fails, preserve delivery and expose pending processing for the worker retry. Define the integration interface with task 04; do not make a second refund implementation or return a false REFUNDED response. Add the seller ship-to-center 72h no-ship guard under the shared Order lock, before creating a late shipment.
-
-Test positive CONFIRM/REJECT and both negative results, alternate-leg races, assignments/IDOR, wrong/unreadable/foreign/excess proofs, changed-address attempts, same-key replay, duplicate confirmation and delivery-commit/refund-failure recovery in isolated PostgreSQL and a deterministic storage adapter. Actual shared Storage remains a runtime QA gate. Deliver code/API examples and reports/03-FINISH-02.md with base/head, proof authorization matrix and exact tests. Do not mutate shared data or claim Android acceptance. Finish implementation and verification, not just a design.
+Enforce role redaction, private legacy proof/inspection access, wrong actor/leg/event rejection, source/deadline immutability, normal API journeys, lock-wait boundaries and opposing action races on owned PostgreSQL. Deliver reports/EXTERNAL-SHIPPING-R2.md and concrete E requests/action flags. Preserve unrelated UI/live servers/shared DB; do not claim real carrier or Android acceptance.
 ```
 
 ## Acceptance
 
-- Exactly one final direction and correct immutable destination; every final delivery has selected valid proof.
-- Buyer deadline starts once at TO_BUYER confirmation; result notification does not start it.
-- Return remains durable if refund fails; retry can complete without re-upload.
-- Minimal Courier/Seller/Buyer/Inspector projections and private access are enforced by server.
+- Follow the concrete amendment acceptance in EXTERNAL-SHIPPING-03 and AB-AMENDMENT-SCOPE.
+- Record actual head/base, migration, commands and evidence; no legacy or mock PASS is relabeled as new-policy acceptance.
+- Preserve historical/shared/private/UI state and deliver through the same reviewed branch.

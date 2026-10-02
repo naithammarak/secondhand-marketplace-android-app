@@ -16,7 +16,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, KeepTogether,
+    BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, LongTable,
+    TableStyle, KeepTogether, CondPageBreak,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +49,7 @@ styles.add(ParagraphStyle('SrsBody', fontName='SrsSans', fontSize=10,
 styles.add(ParagraphStyle('SrsTitle', fontName='SrsSansBold', fontSize=25,
     leading=31, spaceAfter=18, textColor=INK))
 styles.add(ParagraphStyle('SrsHeading', fontName='SrsSansBold', fontSize=14,
-    leading=20, spaceBefore=16, spaceAfter=9, textColor=GREEN, keepWithNext=True))
+    leading=20, spaceBefore=16, spaceAfter=9, textColor=GREEN))
 styles.add(ParagraphStyle('SrsCell', parent=styles['SrsBody'], fontSize=9,
     leading=13, spaceAfter=0))
 styles.add(ParagraphStyle('SrsHeader', parent=styles['SrsCell'],
@@ -102,6 +103,7 @@ while i < len(lines):
     if line.startswith('# '):
         story.append(Paragraph(inline(line[2:]), styles['SrsTitle']))
     elif line.startswith('## '):
+        story.append(CondPageBreak(35*mm))
         story.append(Paragraph(inline(line[3:]), styles['SrsHeading']))
     elif line.startswith('- '):
         story.append(KeepTogether([Paragraph('- ' + inline(line[2:]), styles['SrsBullet'])]))
@@ -120,15 +122,19 @@ def page(canvas, doc):
     canvas.line(18*mm, height-14*mm, width-18*mm, height-14*mm)
     canvas.setFont('SrsSans', 8)
     canvas.setFillColor(INK)
-    canvas.drawString(18*mm, height-11*mm, '2NDHAND  |  Submission requirements  |  1 October 2026')
+    canvas.drawString(18*mm, height-11*mm, '2NDHAND  |  Submission requirements  |  2 October 2026')
     canvas.setFillColor(colors.HexColor('#54657a'))
-    canvas.drawString(18*mm, 12*mm, 'Selected scope - implementation / final acceptance pending')
+    canvas.drawString(18*mm, 12*mm, 'Versioned backend candidate - independent / full release acceptance pending')
     canvas.drawRightString(width-18*mm, 12*mm, str(doc.page))
     canvas.restoreState()
 
-doc = SimpleDocTemplate(str(OUTPUT), pagesize=A4, rightMargin=18*mm,
+doc = BaseDocTemplate(str(OUTPUT), pagesize=A4, rightMargin=18*mm,
     leftMargin=18*mm, topMargin=22*mm, bottomMargin=23*mm,
     title='2NDHAND - Submission SRS - 8 October 2026',
     author='2NDHAND project / Lead', pageCompression=1)
-doc.build(story, onFirstPage=page, onLaterPages=page)
+doc.addPageTemplates(PageTemplate(id='Srs', onPage=page, frames=[
+    Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height,
+          id='SrsBodyFrame'),
+]))
+doc.build(story)
 print(OUTPUT)

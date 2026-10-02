@@ -1,8 +1,8 @@
 # งานส่ง Android prototype — 8 ตุลาคม 2026
 
-> Backend amendment มีโค้ด checkpoint ใน branch นี้แล้ว อ่าน [สิ่งที่เพิ่ม ผลตรวจ และ acceptance ที่ยังค้าง](../handoff/AB-AMENDMENT-CHECKPOINT-2026-10-02.md) ก่อนใช้งาน เอกสารด้านล่างยังมีข้อความของแผนเดิมและยังไม่ใช่ final acceptance ของกติกาใหม่
+> Backend amendment อยู่ใน PR130; ใช้ [R1–R4 evidence](reports/EXTERNAL-SHIPPING-R1.md) และ [API mapping สำหรับ E](reports/EXTERNAL-SHIPPING-API-MAPPING.md) เป็นสัญญาปัจจุบัน [checkpoint เดิม](../handoff/AB-AMENDMENT-CHECKPOINT-2026-10-02.md) เป็นประวัติ ณ ตอนเปิด Draft; independent/E/shared/native acceptance ยังไม่ผ่าน
 
-> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+> **Backend candidate 2 ต.ค.:** R1–R4 ใช้ `EXTERNAL_V2` สำหรับ Order ใหม่และคง `LEGACY_V1` สำหรับข้อมูลเดิม ดู [API mapping](reports/EXTERNAL-SHIPPING-API-MAPPING.md) และ [รายงาน R1](reports/EXTERNAL-SHIPPING-R1.md) ผล local PostgreSQL ไม่ใช่ independent PASS, E UI, shared rollout หรือ Android acceptance
 
 **เป้าหมาย:** APK ติดตั้งบน Android จริงได้ และสาธิตการขายสำเร็จ/คืนเงินได้ครบ พร้อม profile และ reviews แบบพื้นฐาน
 
@@ -30,7 +30,7 @@
 | [SRS submission](SRS-SUBMISSION.md) | SRS ฉบับส่ง แยกจาก PDF เดิมที่มีข้อกำหนดเก่า |
 | [Lead report](LEAD-WORK-REPORT.md) | งานที่ Lead ทำแล้วและงานที่ยังต้องรอ implementation |
 
-ลำดับเมื่อข้อความขัดกัน: `DOC-01` → `PROFILE-REVIEWS-contract` / `RELEASE-DESIGN` → `references/FINISH-spec.md` → สัญญา INSPECT/CERT ที่เกี่ยวข้อง แพ็ก references เก็บ snapshot ประวัติไว้ด้วย ส่วน baseline/gate ที่เก่าใน references ให้ใช้ `FINISH-00-release-gates.md` แทน ห้ามอ่าน UI checklist ที่ติ๊กแล้วว่า API ถูก implement แล้ว
+ลำดับเมื่อข้อความขัดกัน: `changes/EXTERNAL-SHIPPING-03` / `changes/REFUND-DECISION-02` / `coordination/AB-AMENDMENT-SCOPE` → `DOC-01` → `PROFILE-REVIEWS-contract` / `RELEASE-DESIGN` → `references/FINISH-spec.md` → สัญญา INSPECT/CERT ที่เกี่ยวข้อง แพ็ก references เก็บ snapshot ประวัติไว้ด้วย ส่วน baseline/gate ที่เก่าใน references ให้ใช้ `FINISH-00-release-gates.md` แทน ห้ามอ่าน UI checklist ที่ติ๊กแล้วว่า API ถูก implement แล้ว
 
 [รวม prompt ทุกงานในไฟล์เดียว](PROMPTS.md) · [ตาราง traceability FR/NFR](requirements.csv) · [ดู diagrams](diagrams/README.md)
 
@@ -40,18 +40,18 @@
 
 ## Tasks พร้อม prompt
 
-| ID / ไฟล์ | งาน | ผู้รับงานแนะนำ | ต้องรอ | สถานะ ณ 1 ต.ค. |
+| ID / ไฟล์ | งาน | ผู้รับงานแนะนำ | ต้องรอ | สถานะ backend candidate 2 ต.ค. |
 |---|---|---|---|---|
 | [00 DOC-01](tasks/00-DOC-01-lead.md) | Scope, สัญญา, diagrams, task pack | Lead / ทำใน session นี้ | — | เอกสารพร้อม; รับรองจากอาจารย์ยังไม่มี |
-| [01 INT-01](tasks/01-INT-01-release-base.md) | รวมฐาน release และ UI ล่าสุด | Codex integration | 00 | ยังต้องทำ |
-| [02 FINISH-01](tasks/02-FINISH-01-schema.md) | Schema, return address, migration | Codex backend/DB | 01 | ยังต้องทำ |
-| [03 FINISH-02](tasks/03-FINISH-02-delivery.md) | ส่งถึง Buyer / ส่งคืน Seller + Courier proof | Codex backend | 02 | ยังต้องทำ |
-| [04 FINISH-03/04](tasks/04-FINISH-03-04-settlement.md) | RELEASE/REFUND service + receipt/report/Admin | Codex backend | 02; ต่อ 03 เพื่อพิสูจน์ return | ยังต้องทำ |
-| [05 TIMER-01](tasks/05-TIMER-01-jobs.md) | งานอัตโนมัติและ recovery | Codex backend | 03, 04 | unpaid code มีบางส่วน; runner/paid jobs ยังไม่ครบ |
-| [06 FINISH-05](tasks/06-FINISH-05-ui.md) | UI Buyer/Seller/Inspector/Courier/Admin | Codex frontend | เตรียม fixtures ได้; ต่อ API หลัง 03, 04 | ยังต้องทำ |
-| [07 PROFILE-01](tasks/07-PROFILE-01.md) | Profile + policy acknowledgement | Codex full stack | 01; ต่อ migration หลัง 02 | UI เดิมมีบางส่วน; persistence ยังต้องทำ |
-| [08 REVIEW-01](tasks/08-REVIEW-01.md) | รีวิวผู้ขายจาก completed order | Codex full stack | 02, 04; ต่อ migration หลัง 07 | UI mock มี; persistence ยังต้องทำ |
-| [09 CERT-REVOKE-01](tasks/09-CERT-REVOKE-01-revocation.md) | Admin revoke + public revoked view | Codex full stack | 01 | Read/schema มี; write/UI ยังต้องทำ |
+| [01 INT-01](tasks/01-INT-01-release-base.md) | รวมฐาน release และ UI ล่าสุด | Codex integration | 00 | backend candidate/local evidence; final independent/E/runtime gate ยังรอ |
+| [02 FINISH-01](tasks/02-FINISH-01-schema.md) | Schema, return address, migration | Codex backend/DB | 01 | backend candidate/local evidence; final independent/E/runtime gate ยังรอ |
+| [03 FINISH-02](tasks/03-FINISH-02-delivery.md) | ขนส่งภายนอก + ผู้รับยืนยัน; legacy proof คงเดิม | Codex backend | 02 | backend candidate/local evidence; final independent/E/runtime gate ยังรอ |
+| [04 FINISH-03/04](tasks/04-FINISH-03-04-settlement.md) | RELEASE/REFUND service + receipt/report/Admin | Codex backend | 02; ต่อ 03 เพื่อพิสูจน์ return | backend candidate/local evidence; final independent/E/runtime gate ยังรอ |
+| [05 TIMER-01](tasks/05-TIMER-01-jobs.md) | งานอัตโนมัติและ recovery | Codex backend | 03, 04 | six-job code/local tests มี; schedule activation ยังไม่ตรวจ |
+| [06 FINISH-05](tasks/06-FINISH-05-ui.md) | UI Buyer/Seller/Inspector/Admin; legacy คงอ่านได้ | Codex frontend | เตรียม fixtures ได้; ต่อ API หลัง 03, 04 | ยังต้องทำ |
+| [07 PROFILE-01](tasks/07-PROFILE-01.md) | Profile + policy acknowledgement | Codex full stack | 01; ต่อ migration หลัง 02 | C API มีใน upstream; E/native acceptance ยังรอ |
+| [08 REVIEW-01](tasks/08-REVIEW-01.md) | รีวิวผู้ขายจาก completed order | Codex full stack | 02, 04; ต่อ migration หลัง 07 | C persisted API/local journey มี; E/native acceptance ยังรอ |
+| [09 CERT-REVOKE-01](tasks/09-CERT-REVOKE-01-revocation.md) | Admin revoke + public revoked view | Codex full stack | 01 | D audited API/local journey มี; E/native acceptance ยังรอ |
 | [10 ENV-01](tasks/10-ENV-01-runtime.md) | HTTPS API/Auth/Storage/worker | Codex runtime | เตรียมได้; deploy หลังรวม candidate | ยังต้องตรวจ environment จริง |
 | [11 QA-01](tasks/11-QA-01-release.md) | สอง business journeys + acceptance จริง | Codex QA + เจ้าของเครื่อง | 01–10; Android final ใช้ 12 | ยังไม่ผ่าน final |
 | [12 APK-01](tasks/12-APK-01-android.md) | Build APK, ติดตั้งจริง, reproducibility | Codex build + เจ้าของเครื่อง | 01–10 feature candidate | ยังไม่มี APK ที่ยืนยันในแพ็กนี้ |

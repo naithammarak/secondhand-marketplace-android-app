@@ -1,25 +1,17 @@
-# E — ต่อ frontend ล่าสุดกับ business APIs
+# E / R5 — current amendment handoff
 
-**ผู้รับ:** frontend session เดิม · **Task:** 06 · **Priority:** P0
+**Scope:** task06 · [Current amendment](../changes/EXTERNAL-SHIPPING-03.md) · [Confirmed refund](../changes/REFUND-DECISION-02.md) · [Concrete scope](../coordination/AB-AMENDMENT-SCOPE.md)
 
-**เริ่ม:** เตรียมจาก fixtures หลัง A/01; ต่อ concrete API หลัง A/02 และ B/03+04 ส่งมอบ
-
-## ผลลัพธ์
-
-Buyer/Seller/Inspector/Courier/Admin ทำสองเส้นทางจบได้ด้วย API จริงใน UI ล่าสุด พร้อม loading/error/retry และข้อความยอดเงินจำลอง
+PR130 extends reviewed PR129 without changing the historical accepted A/B/CD/BCD branches. New Orders snapshot EXTERNAL_V2; legacy Orders preserve their policy and financial history. Backend R1–R4 local checks do not establish E/shared/Android acceptance.
 
 ## Prompt สำหรับ Codex
 
 ```text
-You own work package E in the existing frontend session for the Android marketplace prototype due 8 October 2026, Asia/Bangkok. Preserve the newest frontend changes and theme. Locate doc/submission-2026-10-08 (or the supplied packet path). Read work-packages/README.md, DOC-01-scope.md, RELEASE-DESIGN.md and FINISH-00-release-gates.md, and follow mobile/AGENTS.md before edits.
+Locate doc/submission-2026-10-08 in the supplied repository. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md, DOC-01-scope.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before older references. Execute current task06 prompts and their amendment acceptance, on the exact delivered upstream SHA. Historical Courier proof/full-refund wording applies only to LEGACY_V1 or specified unchanged causes.
 
-Execute the full prompt and acceptance checks in tasks/06-FINISH-05-ui.md. Prepare fixtures/components while upstream APIs are being delivered, then integrate A's reports/API-MAPPING.md and B's task03/04 routes and action flags. Implement retained Buyer receipt/non-receipt/history/refund views, Seller return address/shipping/payout views, Inspector final dispatch, Courier selected private proof flow and scoped Admin assignment/dispute resolution. Reuse the current API client, auth provider, role entry/navigation and latest screens.
+Preserve one settlement ledger, immutable original Payment/Receipt and addresses, private data, shared databases, live servers and unrelated UI work. New shipping uses carrier/tracking, actual recipients and scoped explicitly enabled Admin demo events. Positive result rejection or SYSTEM timeout authorizes return; actual Seller/Admin receipt precedes item-only refund1200 retaining100/50 once. Other specified and legacy refunds remain full1350; RELEASE keeps commission5%. Two independent72h windows and fresh locked DB clock govern eligibility. Six bounded jobs preserve prior cursor IDs and never invent Buyer decisions or physical dispatch.
 
-Result acceptance is distinct from physical receipt; use server deadlines, statuses and money. Show pending refund if a durable return is not yet settled. Gate mutation success on committed API response, use stable retry keys and refetch ambiguous outcomes; handle account change and role redaction. Label payment/payout/refund as simulated. Do not implement external payments or client-side settlement.
-
-Package C owns profile/review persistence and dedicated UI; package D owns certificate revoke. Integrate their services/components and entries after delivery, coordinating shared files with A. Do not independently reimplement their APIs or overwrite their UI. Keep preparation fixtures distinct from completed real API wiring.
-
-Run focused mobile component/logic checks and typecheck, then API-backed smoke against the combined candidate when available. Send reports/06-FINISH-05.md using templates/TASK-REPORT.md, exact upstream/head, wired routes, code and actual checks. Camera/Google/private Storage/native proof requires F's real Android QA; do not claim it from a browser preview. Continue through API integration and verification.
+Record exact base/head, migration, actual checks and evidence in the current reports. E must wire the current server flags/amounts and preserve existing visual UI; no new Courier workspace. Backend implementation/review must not wait for E.
 ```
 
-[Task 06 พร้อมรายละเอียด](../tasks/06-FINISH-05-ui.md)
+Use [tasks](../README.md) and [R1–R4 reports](../reports/EXTERNAL-SHIPPING-R1.md). Full release/native/scheduler activation remains tasks10–13. No local-only PASS is relabeled as final readiness.

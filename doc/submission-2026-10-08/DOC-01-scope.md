@@ -1,6 +1,6 @@
 # DOC-01 — ขอบเขตส่ง 8 ตุลาคม 2026
 
-> **กติกาล่าสุด 2 ต.ค. 2026:** ใช้ขนส่งภายนอก ไม่เปิด Courier workspace ใหม่; ผู้รับแต่ละช่วงยืนยันรับจริง; Buyer ปฏิเสธหรือหมดเวลาผลตรวจ 72h → ส่งคืนและคืนเฉพาะค่าสินค้าหลังรับคืนจริง คงค่าตรวจ/ค่าส่งครั้งเดียว ดู [EXTERNAL-SHIPPING-03](changes/EXTERNAL-SHIPPING-03.md) และ [REFUND-DECISION-02](changes/REFUND-DECISION-02.md) แผนนี้ยังรอ implementation/review ใหม่ ไม่ใช่ผลผ่านจาก PR129
+> **Backend candidate 2 ต.ค.:** R1–R4 ใช้ `EXTERNAL_V2` สำหรับ Order ใหม่และคง `LEGACY_V1` สำหรับข้อมูลเดิม ดู [API mapping](reports/EXTERNAL-SHIPPING-API-MAPPING.md) และ [รายงาน R1](reports/EXTERNAL-SHIPPING-R1.md) ผล local PostgreSQL ไม่ใช่ independent PASS, E UI, shared rollout หรือ Android acceptance
 
 วันที่ตัดสินใจ: 1 ตุลาคม 2026 · ผู้อนุญาต: เจ้าของโครงการใน session นี้ · สถานะ: **Lead scope selected**; ยังไม่มีหลักฐานอาจารย์อนุมัติฉบับใหม่
 

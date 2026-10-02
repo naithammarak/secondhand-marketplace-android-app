@@ -10,7 +10,7 @@ component "Standalone Expo Android APK" as App
 component "Google / Auth provider" as Auth
 component "FastAPI complete app" as API
 database "PostgreSQL\nOrders / inspections / settlements / reviews" as DB
-component "Private Storage\nIdentity / inspection / delivery evidence" as Storage
+component "Private Storage\nIdentity / inspection / legacy delivery evidence" as Storage
 component "Scheduled server worker\nSame guarded services" as Worker
 actor "Public QR visitor" as Visitor
 component "Public certificate HTML / JSON\nHTTPS opaque token / no PII" as Public
@@ -29,7 +29,8 @@ Visitor --> Public : no login
 Public --> API : minimal public projection
 note bottom of Worker
   No HTTP traffic required.
-  Unpaid, receipt, no-ship, return retry and inspection escalation.
+  Six jobs: unpaid, receipt, no-ship, return retry, inspection escalation, result timeout.
+  EXTERNAL_V2 transport events differ from actual recipient receipt.
 end note
 note bottom of App
   Latest UI preserved; no catalog-only or buyer-only release.

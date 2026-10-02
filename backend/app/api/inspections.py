@@ -409,6 +409,8 @@ def _assign_courier(db: Session, order: Order, shipment: Shipment, body: Courier
     replay = _replay(db, order.id, actor.id, operation, key, fingerprint, response)
     if replay is not None:
         return replay
+    if order.fulfillment_policy == "EXTERNAL_V2":
+        raise api_error(409, "legacy_courier_only", "External shipments use recipient confirmations and trusted shipping events")
     if not _delivery_pending(order, shipment) or _proofs(db, shipment.id):
         raise api_error(409, "assignment_locked", "Courier assignment can no longer change")
     courier = db.scalar(select(User).where(User.id == body.courier_id).with_for_update().execution_options(populate_existing=True))

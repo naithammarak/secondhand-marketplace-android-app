@@ -10,7 +10,7 @@ actor "Signed-in user" as User
 actor "Buyer capability" as Buyer
 actor "Approved Seller" as Seller
 actor Inspector
-actor Courier
+actor "Courier (LEGACY_V1 only)" as Courier
 actor Admin
 actor Scheduler
 
@@ -24,9 +24,9 @@ rectangle "2NDHAND prototype" {
   usecase "Missing delivery report / seller review" as Review
   usecase "Manage listing / center ship / return / payout" as Sell
   usecase "Receive / inspect / final leg" as Inspect
-  usecase "Assigned delivery / private proof" as Deliver
-  usecase "Approve Seller / assign / resolve / revoke" as Manage
-  usecase "Expire / settle / refund retry / escalate" as Jobs
+  usecase "Legacy assigned delivery / private proof" as Deliver
+  usecase "Approve / demo transport event / scoped return or dispute / revoke" as Manage
+  usecase "Expire / settle / refund retry / escalate / result timeout" as Jobs
 }
 Guest --> Browse
 Guest --> Public

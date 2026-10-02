@@ -1,30 +1,23 @@
-# 02 / FINISH-01 + COURIER-01 — Schema and immutable return address
+# 02 / FINISH-01 — Versioned external-shipping schema
 
-**Priority:** P0 · **Owner:** Backend/DB Codex (migration owner) · **Depends:** 01 · **Target:** 2 Oct
+**Priority:** P0 · **Owner:** Backend/DB · **Depends:** 01 · **Amendment:** R1
 
-## Outcome / ownership
-
-One reviewed migration chain for final states, return snapshot, proof binding, receipt/report/command records and exactly one settlement. Own `models`, migrations, schema fixtures and API mapping. Work 07 then 08 extends this same chain; 03/04 reuse its models.
+Current backend candidate is PR130; historical accepted A/B/C/D work and legacy references remain separate evidence. See [amendment scope](../coordination/AB-AMENDMENT-SCOPE.md). E/native/shared rollout acceptance is separate.
 
 ## Prompt สำหรับ Codex
 
 ```text
-Implement task 02 on the exact release base delivered by INT-01. Locate doc/submission-2026-10-08 or the supplied packet. Read README.md, DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md sections 3–6, references/FINISH-contract-decisions.md, references/FINISH-01-handoff.md and PROFILE-REVIEWS-contract.md for later migration coordination. Inspect the actual integrated models/migrations first; reuse the already-present COURIER role, Shipment and private proof storage. Do not duplicate existing tables or routes just because an older spec names them differently.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Add missing final Order/Escrow states and the durable data needed for RELEASE/REFUND, receipt/non-receipt, replay, selected proof binding and audit. Enforce unique Order/Escrow terminal settlement, matching Order/Payment/Escrow parties, Decimal allocations and one-time proof confirmation. A proof is private metadata for one shipment and assigned courier. Selected 1–3 readable proof objects become immutable when confirmation succeeds.
+Continue R1 on PR130, codex/ab-external-shipping-2026-10-02, based on reviewed PR129 b531bd1372c0d26b8492fa28ff29ab20a85d7578. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before older references. Preserve historical accepted A/B/C/D migrations and branch history.
 
-Reserve the durable inspection-overdue escalation marker required by task 05, reusing an existing equivalent or adding a nullable timestamp/unique audited marker in this coordinated migration. The job owner must not create a parallel migration head for the marker later.
+Use the one existing model/settlement/command architecture. All existing Orders retain LEGACY_V1; new server-created Orders snapshot EXTERNAL_V2. Clients cannot select policy, money, parties or deadlines. Persist atomic positive result availability+72h, separate SYSTEM timeout outcome, actual recipient source/command and trusted transport event source/identity/leg/server time. Preserve immutable Payment/Receipt, old Courier/proof evidence and one settlement; do not create a second ledger. Migration r01e20261002 descends from c08f20261002. Test owned PostgreSQL actual legacy journeys, fresh install, constraints/default-deny access, safe legacy-only downgrade/re-upgrade and explicit unsafe-new-data refusal without rewriting history.
 
-Implement the smallest seller-owned validated return-address save/read needed before ship-to-center, snapshot it on the Order and prohibit changes after shipment starts. Choose the concrete route by reusing an existing equivalent if present; otherwise use PUT /orders/{id}/return-address for the owning active seller with the existing address shape, strict JSON and Idempotency-Key. Before shipment, the same canonical address may replay; changing address is allowed only before a committed inbound shipment. Do not accept arbitrary courier/buyer return destinations. Use existing validated recipient/phone/address fields; no secrets in fixtures. Preserve legacy paid Orders with missing return addresses explicitly and block shipping until a valid seller address exists; do not invent/backfill addresses.
-
-Publish reports/API-MAPPING.md with final concrete routes, schema fields, return-address request/response/error examples and the common lock order. Reuse canonical POST /inspections/{id}/receive and existing courier route prefixes. Do not implement a parallel center-receipt mutation. Confirm with code that create/cancel/expire/ship paths can use Order→Shipment→Escrow→Product for existing Orders without deadlocks. Boundary writes use fresh DB wall-clock after lock and any I/O revalidation, as selected by DOC-01.
-
-Verify one Alembic head, fresh install and upgrade from supported predecessors with paid/unpaid/proof/certificate rows in an isolated PostgreSQL DB. Use nested savepoints for expected IntegrityError tests. Prove unique/FK/check failures, data preservation and explicit unsafe downgrade refusal or safe downgrade where supported. Do not reset/stamp a shared DB. Deliver migration/model code, fixtures, API mapping and reports/02-FINISH-01.md with exact base/head and migration evidence. Coordinate migration order 02→07→08. Continue to working code and meaningful verification; report only actual blockers.
+Return address remains owning Seller validated/frozen before TO_CENTER. Keep Order→Shipment→Escrow→Product locks as applicable. Keep active scope/SRS/requirements/QA/diagrams consistent with new policy and historical references clearly qualified. Deliver reports/EXTERNAL-SHIPPING-R1.md and concrete API mapping for E; report exact source/head and commands, not shared/device acceptance.
 ```
 
 ## Acceptance
 
-- One head; no loss of legacy orders/proofs/certs; unsafe state/FK/allocation writes fail.
-- Return address is owning Seller data, validated and immutable once center shipment exists.
-- Replays and unique terminal settlement can support the downstream transactional services.
-- Route/field mapping is concrete and available before frontend implementation.
+- Follow the concrete amendment acceptance in EXTERNAL-SHIPPING-03 and AB-AMENDMENT-SCOPE.
+- Record actual head/base, migration, commands and evidence; no legacy or mock PASS is relabeled as new-policy acceptance.
+- Preserve historical/shared/private/UI state and deliver through the same reviewed branch.

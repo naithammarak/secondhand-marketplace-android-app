@@ -1,25 +1,25 @@
-# 05 / TIMER-01 — Scheduled lifecycle and recovery
+# 05 / TIMER-01 — Six durable no-HTTP lifecycle jobs
 
-**Priority:** P0 · **Owner:** Backend runtime Codex · **Depends:** 03, 04 · **Target:** 5 Oct
+**Priority:** P0 · **Owner:** Backend runtime · **Depends:** 03;04 · **Amendment:** R4
+
+Current backend candidate is PR130; historical accepted A/B/C/D work and legacy references remain separate evidence. See [amendment scope](../coordination/AB-AMENDMENT-SCOPE.md). E/native/shared rollout acceptance is separate.
 
 ## Prompt สำหรับ Codex
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 05 in the combined release containing tasks 03 and 04. Read the submission packet DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md section 7 and QA-MATRIX.md, and inspect existing unpaid_expiry_worker/order_expiry runner and runbook. Reuse existing scheduled infrastructure and the task 04 settlement service; do not introduce a second financial implementation, a public force-release API, or client-side jobs.
+Continue R4 on the same PR130 branch. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-R4.md. Reuse the one existing guarded settlement service, CLI, bounded scan ownership and progress infrastructure.
 
-Deliver a bounded recurring runner targeting scans every 5 minutes: unpaid 30-minute expiry, eligible receipt release after confirmed readable TO_BUYER proof+72h with no timely missing report, seller no-ship full refund at paid_at+72h absent a committed timely center shipment, retry for durable RETURNED_TO_SELLER+HELD without settlement, and overdue inspection escalation after 3 working days from center receive. For this prototype working days are Monday–Friday Asia/Bangkok, excluding weekends without a public-holiday calendar. Escalation persists an observable Admin/workqueue marker once; it must not invent result/certificate/Buyer decision or release funds. Reuse an existing overdue marker if available.
+Keep unpaid30min, receipt release, Seller no-ship72h full refund, durable return-refund retry and inspection3workingdays escalation unchanged by policy where appropriate. Add result-timeout as sixth bounded job with cursorID6; preserve paid progress IDs1–4 and unpaidID5. Positive atomic availability+72h with no decision/outbound authorizes only SYSTEM timeout return; no invented Buyer REJECT/CONFIRM, shipment or money. New AUTO requires trusted TO_BUYER delivery event+72h and no report; tracking alone never starts AUTO. Legacy proof checks remain.
 
-Lock/re-read eligibility and fresh DB wall-clock at each guarded write; two runners must not duplicate outcomes. Storage failure/outage leaves HELD and a retry candidate; return delivery survives prior refund failure. The seller ship command enforces its deadline even while worker is down. Preserve successful same-key command replay after deadlines. Avoid holding broad DB locks while doing unbounded Storage calls; use bounded I/O and revalidation according to FINISH.
+Re-read eligibility under shared locks and sample fresh DB wall clock after locks/I/O. Test no HTTP, before/at/after both deadlines, opposing CONFIRM/timeout and receipt/report/AUTO, independent workers, failed-first fairness, stop/restart, dry-run purity and durable retry using persisted policy. Locked rows may be skipped by bounded scans and picked up by catch-up; do not count a scan as guaranteed instant completion.
 
-Provide safe CLI one-shot/dry-run options using the same services, deployment configuration (systemd/container scheduler matching actual environment), structured counts and failure signals, restart instructions and an isolated synthetic demo procedure. Do not automatically enable a runner against a shared/production DB merely because a sample env exists. Task 10 performs the configured runtime activation after environment authorization.
-
-Verify all cases with no HTTP traffic, just-before/at/after deadlines, simultaneous runners, restart after partial progress, Storage unreadability, outage/recovery and repeated overdue scans in isolated PostgreSQL. Do not sleep 72 hours or weaken production guards: use injectable server clocks/test fixtures in the isolated environment. Deliver implementation, runbook and reports/05-TIMER-01.md with exact base/head and recovery evidence. Finish working scheduled code and relevant tests rather than only cron instructions.
+Provide existing safe CLI/dry-run/retry/restart commands and structured result/failure counts. Do not activate scheduler or migrate shared DB. Runtime activation remains task10 and native/UI task06 is separate. Deliver reports/EXTERNAL-SHIPPING-R4.md with actual command paths and exact source/evidence.
 ```
 
 ## Acceptance
 
-- All five categories run without a user opening the app; no automatic inspection decision.
-- Duplicate scans/processes yield one terminal settlement and one overdue marker.
-- Failure remains visible/retryable; real schedule configuration and monitoring instructions are present.
+- Follow the concrete amendment acceptance in EXTERNAL-SHIPPING-03 and AB-AMENDMENT-SCOPE.
+- Record actual head/base, migration, commands and evidence; no legacy or mock PASS is relabeled as new-policy acceptance.
+- Preserve historical/shared/private/UI state and deliver through the same reviewed branch.

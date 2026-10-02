@@ -115,7 +115,7 @@ BEGIN
  SELECT * INTO s FROM shipments WHERE id=NEW.shipment_id FOR UPDATE;
  SELECT * INTO c FROM fulfillment_commands WHERE id=NEW.command_id;
  IF o.fulfillment_policy <> 'EXTERNAL_V2' OR s.fulfillment_policy <> o.fulfillment_policy OR s.leg <> NEW.leg OR s.order_id <> o.id OR o.status IN ('COMPLETED','REFUNDED') OR s.received_at IS NOT NULL
- OR c.id IS NULL OR c.resource_type <> 'ORDER' OR c.resource_id <> o.id OR c.action <> 'SHIPPING_EVENT' OR c.actor_id IS DISTINCT FROM NEW.admin_id OR c.committed_at <> NEW.confirmed_at
+ OR c.id IS NULL OR c.resource_type <> 'ORDER' OR c.resource_id <> o.id OR c.action <> 'SHIPPING_EVENT' OR c.actor_id IS DISTINCT FROM NEW.admin_id OR c.actor_scope IS DISTINCT FROM 'USER:' || NEW.admin_id OR c.committed_at <> NEW.confirmed_at
  OR NOT EXISTS(SELECT 1 FROM users WHERE id=NEW.admin_id AND role='ADMIN' AND status='ACTIVE') OR NEW.confirmed_at < s.shipped_at THEN
  RAISE EXCEPTION 'trusted shipment event requires active Admin and matching command/leg' USING ERRCODE='23514'; END IF;
  RETURN NEW;
@@ -156,7 +156,7 @@ BEGIN
  IF o.fulfillment_policy <> 'EXTERNAL_V2' THEN RETURN NULL; END IF;
  SELECT * INTO w FROM inspections WHERE order_id=o.id;
  SELECT * INTO d FROM buyer_inspection_decisions WHERE order_id=o.id;
- IF o.result_available_at IS NOT NULL AND (w.result NOT IN ('PASS','MINOR_ISSUE') OR w.inspected_at IS DISTINCT FROM o.result_available_at OR NOT EXISTS(SELECT 1 FROM certificates WHERE order_id=o.id AND inspection_id=w.id AND result=w.result)) THEN
+ IF (w.result IN ('PASS','MINOR_ISSUE') AND o.result_available_at IS NULL) OR (o.result_available_at IS NOT NULL AND (w.result NOT IN ('PASS','MINOR_ISSUE') OR w.inspected_at IS DISTINCT FROM o.result_available_at OR NOT EXISTS(SELECT 1 FROM certificates WHERE order_id=o.id AND inspection_id=w.id AND result=w.result))) THEN
  RAISE EXCEPTION 'result window requires matching atomic positive result/certificate' USING ERRCODE='23514'; END IF;
  IF o.result_timed_out_at IS NOT NULL AND (d.id IS NOT NULL OR NOT EXISTS(SELECT 1 FROM fulfillment_commands WHERE resource_type='ORDER' AND resource_id=o.id AND action='RESULT_DECISION_TIMEOUT' AND actor_scope='SYSTEM:lifecycle' AND actor_id IS NULL AND committed_at=o.result_timed_out_at)) THEN
  RAISE EXCEPTION 'timeout requires SYSTEM outcome and no Buyer decision' USING ERRCODE='23514'; END IF;

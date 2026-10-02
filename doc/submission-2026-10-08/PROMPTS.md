@@ -1,10 +1,11 @@
-# Copyable prompts for every task
+# Current task prompts — versioned external-shipping amendment
 
-Read README.md for dependencies; do not run all tasks against separate stale bases.
+Read [shipping amendment](changes/EXTERNAL-SHIPPING-03.md), [refund decision](changes/REFUND-DECISION-02.md) and [scope](coordination/AB-AMENDMENT-SCOPE.md) first. Task02–06 use the amended policy. Backend R1–R4 is PR130; E/shared/native acceptance is separate.
 
-## 00-DOC-01-lead
 
-[Task details](tasks/00-DOC-01-lead.md)
+## 00 / DOC-01 — Lead scope and planning
+
+Source and acceptance: [00-DOC-01-lead.md](tasks/00-DOC-01-lead.md).
 
 ```text
 You are the project lead for a secondhand marketplace Android prototype due Thursday 8 October 2026, Asia/Bangkok. Work in the existing secondhand-marketplace-android-app repository. Find the packet at doc/submission-2026-10-08, or the supplied submission-2026-10-08 folder. Read README.md, DOC-01-scope.md, PROFILE-REVIEWS-contract.md, FINISH-00-release-gates.md, QA-MATRIX.md and LEAD-WORK-REPORT.md.
@@ -14,9 +15,10 @@ DOC-01 was prepared on 1 October. Review this concrete scope rather than restart
 Check the supplied SRS source/PDF and diagrams against the chosen rules. Fix concrete documentation inconsistencies in the current folder while preserving unrelated code and original historical documents. Keep task links, route mapping and requirement/test traceability complete. Verify generated artifacts and links. Do not claim implementation or device acceptance merely because the documents exist. Report completed lead work and the remaining release/teacher gates in LEAD-WORK-REPORT.md using templates/TASK-REPORT.md. Do not publish comments, merge PRs, alter shared data or invent test results.
 ```
 
-## 01-INT-01-release-base
 
-[Task details](tasks/01-INT-01-release-base.md)
+## 01 / INT-01 — One complete release base
+
+Source and acceptance: [01-INT-01-release-base.md](tasks/01-INT-01-release-base.md).
 
 ```text
 Implement INT-01 in the existing secondhand-marketplace-android-app repository. Deadline is 8 October 2026, Asia/Bangkok. Locate doc/submission-2026-10-08 (or the supplied packet folder). Read README.md, DOC-01-scope.md, FINISH-00-release-gates.md, RELEASE-DESIGN.md and manifests/baseline-2026-10-01.json. Apply repository AGENTS.md instructions; inspect branch, HEAD, status and local/remote state before edits. In mobile, read the exact Expo version documentation required by its AGENTS.md before writing code.
@@ -32,99 +34,93 @@ Deliver a local release commit or precisely reproducible integration patch, upst
 When task commits 02–10 are delivered, return as integration owner to combine them into the same candidate, reconcile hotspots/migrations, rerun affected integration checks, update provenance and freeze the source used by task 12. This is a follow-up phase of INT-01, not a new unrelated release branch.
 ```
 
-## 02-FINISH-01-schema
 
-[Task details](tasks/02-FINISH-01-schema.md)
+## 02 / FINISH-01 — Versioned external-shipping schema
 
-```text
-Implement task 02 on the exact release base delivered by INT-01. Locate doc/submission-2026-10-08 or the supplied packet. Read README.md, DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md sections 3–6, references/FINISH-contract-decisions.md, references/FINISH-01-handoff.md and PROFILE-REVIEWS-contract.md for later migration coordination. Inspect the actual integrated models/migrations first; reuse the already-present COURIER role, Shipment and private proof storage. Do not duplicate existing tables or routes just because an older spec names them differently.
-
-Add missing final Order/Escrow states and the durable data needed for RELEASE/REFUND, receipt/non-receipt, replay, selected proof binding and audit. Enforce unique Order/Escrow terminal settlement, matching Order/Payment/Escrow parties, Decimal allocations and one-time proof confirmation. A proof is private metadata for one shipment and assigned courier. Selected 1–3 readable proof objects become immutable when confirmation succeeds.
-
-Reserve the durable inspection-overdue escalation marker required by task 05, reusing an existing equivalent or adding a nullable timestamp/unique audited marker in this coordinated migration. The job owner must not create a parallel migration head for the marker later.
-
-Implement the smallest seller-owned validated return-address save/read needed before ship-to-center, snapshot it on the Order and prohibit changes after shipment starts. Choose the concrete route by reusing an existing equivalent if present; otherwise use PUT /orders/{id}/return-address for the owning active seller with the existing address shape, strict JSON and Idempotency-Key. Before shipment, the same canonical address may replay; changing address is allowed only before a committed inbound shipment. Do not accept arbitrary courier/buyer return destinations. Use existing validated recipient/phone/address fields; no secrets in fixtures. Preserve legacy paid Orders with missing return addresses explicitly and block shipping until a valid seller address exists; do not invent/backfill addresses.
-
-Publish reports/API-MAPPING.md with final concrete routes, schema fields, return-address request/response/error examples and the common lock order. Reuse canonical POST /inspections/{id}/receive and existing courier route prefixes. Do not implement a parallel center-receipt mutation. Confirm with code that create/cancel/expire/ship paths can use Order→Shipment→Escrow→Product for existing Orders without deadlocks. Boundary writes use fresh DB wall-clock after lock and any I/O revalidation, as selected by DOC-01.
-
-Verify one Alembic head, fresh install and upgrade from supported predecessors with paid/unpaid/proof/certificate rows in an isolated PostgreSQL DB. Use nested savepoints for expected IntegrityError tests. Prove unique/FK/check failures, data preservation and explicit unsafe downgrade refusal or safe downgrade where supported. Do not reset/stamp a shared DB. Deliver migration/model code, fixtures, API mapping and reports/02-FINISH-01.md with exact base/head and migration evidence. Coordinate migration order 02→07→08. Continue to working code and meaningful verification; report only actual blockers.
-```
-
-## 03-FINISH-02-delivery
-
-[Task details](tasks/03-FINISH-02-delivery.md)
+Source and acceptance: [02-FINISH-01-schema.md](tasks/02-FINISH-01-schema.md).
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 03 on the release base plus accepted task 02. Read the submission packet README.md, DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md sections 3–6 and references/FINISH-02-handoff.md. Read reports/API-MAPPING.md from task 02 and existing courier/inspection code; reuse concrete routes, role and storage services. Preserve concurrent frontend work.
+Continue R1 on PR130, codex/ab-external-shipping-2026-10-02, based on reviewed PR129 b531bd1372c0d26b8492fa28ff29ab20a85d7578. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before older references. Preserve historical accepted A/B/C/D migrations and branch history.
 
-Implement assigned Inspector fulfillment creation derived from final inspection and immutable Buyer decision: PASS/MINOR_ISSUE plus CONFIRM creates TO_BUYER using the buyer Order snapshot; positive REJECT or FAKE/NOT_AS_DESCRIBED creates TO_SELLER using the frozen seller return snapshot. Never accept leg/destination from client, create both final directions, fabricate a positive decision for a negative result or route a return to a profile address changed later.
+Use the one existing model/settlement/command architecture. All existing Orders retain LEGACY_V1; new server-created Orders snapshot EXTERNAL_V2. Clients cannot select policy, money, parties or deadlines. Persist atomic positive result availability+72h, separate SYSTEM timeout outcome, actual recipient source/command and trusted transport event source/identity/leg/server time. Preserve immutable Payment/Receipt, old Courier/proof evidence and one settlement; do not create a second ledger. Migration r01e20261002 descends from c08f20261002. Test owned PostgreSQL actual legacy journeys, fresh install, constraints/default-deny access, safe legacy-only downgrade/re-upgrade and explicit unsafe-new-data refusal without rewriting history.
 
-Extend existing Courier assigned queue/detail, Admin assignment and private upload/read/confirm commands for final legs. Require an active assigned Courier, 1–3 distinct server-bound JPEG/PNG proofs, real byte/type/size/hash checks, current-leg binding and private Storage readability at confirmation. Upload alone does not prove delivery. Freeze selected proof IDs and server UTC confirmation once, with Idempotency-Key/replay behavior from FINISH. Enforce role-specific projections; Courier sees only necessary current destination, Seller cannot inspect Buyer private delivery address/proofs, unrelated users cannot access object bytes/keys. Reuse center receive POST /inspections/{id}/receive.
-
-Confirmed TO_BUYER sets DELIVERED_PENDING_BUYER and immutable deadline confirmation+72h. Confirmed TO_SELLER first commits RETURNED_TO_SELLER+HELD and history/replay records; then invokes the settlement interface from task 04 in a separate transaction. If settlement is unavailable/fails, preserve delivery and expose pending processing for the worker retry. Define the integration interface with task 04; do not make a second refund implementation or return a false REFUNDED response. Add the seller ship-to-center 72h no-ship guard under the shared Order lock, before creating a late shipment.
-
-Test positive CONFIRM/REJECT and both negative results, alternate-leg races, assignments/IDOR, wrong/unreadable/foreign/excess proofs, changed-address attempts, same-key replay, duplicate confirmation and delivery-commit/refund-failure recovery in isolated PostgreSQL and a deterministic storage adapter. Actual shared Storage remains a runtime QA gate. Deliver code/API examples and reports/03-FINISH-02.md with base/head, proof authorization matrix and exact tests. Do not mutate shared data or claim Android acceptance. Finish implementation and verification, not just a design.
+Return address remains owning Seller validated/frozen before TO_CENTER. Keep Order→Shipment→Escrow→Product locks as applicable. Keep active scope/SRS/requirements/QA/diagrams consistent with new policy and historical references clearly qualified. Deliver reports/EXTERNAL-SHIPPING-R1.md and concrete API mapping for E; report exact source/head and commands, not shared/device acceptance.
 ```
 
-## 04-FINISH-03-04-settlement
 
-[Task details](tasks/04-FINISH-03-04-settlement.md)
+## 03 / FINISH-02 — External transport and actual recipient receipt
+
+Source and acceptance: [03-FINISH-02-delivery.md](tasks/03-FINISH-02-delivery.md).
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 04 on INT-01 plus task 02, coordinating with task 03 for delivery hooks. Read the submission packet DOC-01-scope.md, FINISH-00-release-gates.md, QA-MATRIX.md, references/FINISH-spec.md sections 3–7, references/FINISH-03-handoff.md and FINISH-04-handoff.md, plus task 02 API-MAPPING.md. G0 deadline behavior is selected: use a fresh DB wall-clock after obtaining the Order lock and revalidating I/O; writes at/after deadline fail even if the HTTP request arrived earlier. Same-key committed replay remains readable. Do not reopen this as a product question.
+Continue R2 on the same PR130 branch after R1. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md. New-policy flow does not require Courier accounts/photos; preserve old Courier routes and records only for legacy Orders.
 
-Build one transactional settlement service with RELEASE and REFUND branches, existing schema/command replay and Order→Shipment→Escrow→Product lock order. Verify persisted paid Payment/Receipt, Escrow HELD, party/FK relationships, immutable pricing snapshots, delivery/inspection/decision guards, current proof readability and absence of conflicting final settlement. One Order/Escrow can receive RELEASE or REFUND exactly once, never both. No client amounts/recipients/states. Use Decimal; RELEASE held=seller payout+commission+inspection+shipping and matches original snapshots; REFUND returns the full held total with all other allocations zero. Preserve the successful original charge/receipt; refund has a separate immutable settlement. Product becomes SOLD on release, CANCELLED on refund; do not auto relist or add a wallet.
+Seller sends TO_CENTER with carrier/tracking and frozen return address. Authorized center Inspector confirms actual receipt through canonical POST /inspections/{id}/receive; assigned Inspector dispatches only server-derived TO_BUYER after CONFIRM or TO_SELLER after REJECT/SYSTEM timeout/negative result. Never accept leg/destination from client. Positive result and certificate are atomic; timeout never fabricates a Buyer decision or physical dispatch.
 
-Implement owning active Buyer confirm-receipt and report-not-received, including approved Seller users buying an Order. Result acceptance is not receipt. Receipt atomically produces COMPLETED/RELEASED. A report before deadline produces DELIVERY_DISPUTED/HELD and blocks AUTO. Implement scoped audited Admin review/resolve with required reason and authorized same-case evidence references, producing RELEASE or REFUND once; do not add general unrestricted customer Order reads. Implement return-delivery, seller-no-ship and Admin full refund eligibility in the same service, and a return hook that can retry after durable delivery.
+Implement minimum authenticated active-Admin explicitly configured demo shipping events with immutable source/identity/leg/server time, dedup/replay/audit. Transport DELIVERED differs from recipient receipt: center events do not receive inspection, return events do not refund, Buyer events start only the independent AUTO receipt+72h clock. Actual owning Buyer receipt/report work after authorized dispatch even with no carrier event, subject to an existing deadline; report blocks later AUTO. Actual Seller or scoped audited Admin confirms return with required same-case reason/evidence. Commit return durably before the same settlement service attempts refund separately; failure stays pending for the retry job.
 
-Extend Order delivery/history/terminal read models and action flags with correct role redaction and settlement summary. payment_status=REFUNDED derives from settlement; never rewrite the original successful Payment. Return readable replay references only to authorized actors. Reconcile old is_paid status comparisons that become wrong after terminal states.
-
-Prove allocation examples held1350→payout1140 or refund1350, all eligibility/role errors, repeat/replay/key mismatch, rollback/failure injection, independent concurrent release-vs-refund and duplicate operations, report-vs-auto and exact deadline races, upstream cancel/expiry lock compatibility in isolated PostgreSQL. Do not assert shared/device acceptance from these tests. Deliver code and reports/04-FINISH-03-04.md including service interfaces for tasks 03/05, exact SHA and commands. Continue until both settlement branches and read APIs are implemented and verified.
+Enforce role redaction, private legacy proof/inspection access, wrong actor/leg/event rejection, source/deadline immutability, normal API journeys, lock-wait boundaries and opposing action races on owned PostgreSQL. Deliver reports/EXTERNAL-SHIPPING-R2.md and concrete E requests/action flags. Preserve unrelated UI/live servers/shared DB; do not claim real carrier or Android acceptance.
 ```
 
-## 05-TIMER-01-jobs
 
-[Task details](tasks/05-TIMER-01-jobs.md)
+## 04 / FINISH-03/04 — Cause-aware exactly-once settlement
+
+Source and acceptance: [04-FINISH-03-04-settlement.md](tasks/04-FINISH-03-04-settlement.md).
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 05 in the combined release containing tasks 03 and 04. Read the submission packet DOC-01-scope.md, FINISH-00-release-gates.md, references/FINISH-spec.md section 7 and QA-MATRIX.md, and inspect existing unpaid_expiry_worker/order_expiry runner and runbook. Reuse existing scheduled infrastructure and the task 04 settlement service; do not introduce a second financial implementation, a public force-release API, or client-side jobs.
+Continue R3 on the same PR130 branch. Read changes/REFUND-DECISION-02.md, changes/EXTERNAL-SHIPPING-03.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before historical full-refund text.
 
-Deliver a bounded recurring runner targeting scans every 5 minutes: unpaid 30-minute expiry, eligible receipt release after confirmed readable TO_BUYER proof+72h with no timely missing report, seller no-ship full refund at paid_at+72h absent a committed timely center shipment, retry for durable RETURNED_TO_SELLER+HELD without settlement, and overdue inspection escalation after 3 working days from center receive. For this prototype working days are Monday–Friday Asia/Bangkok, excluding weekends without a public-holiday calendar. Escalation persists an observable Admin/workqueue marker once; it must not invent result/certificate/Buyer decision or release funds. Reuse an existing overdue marker if available.
+Use one existing locked settlement service and original immutable financial snapshots. New-policy positive-result Buyer REJECT or SYSTEM result timeout requires actual Seller/scoped audited Admin return receipt before item-only refund: held1350=Buyer1200+retained inspection100+shipping50, Seller payout/commission0. Never deduct fees again to refund1050 or add return fees. Negative-result/no-ship/audited non-receipt and all legacy refunds retain full policy1350. RELEASE keeps payout1140+commission60+inspection100+shipping50 and the 5% item commission.
 
-Lock/re-read eligibility and fresh DB wall-clock at each guarded write; two runners must not duplicate outcomes. Storage failure/outage leaves HELD and a retry candidate; return delivery survives prior refund failure. The seller ship command enforces its deadline even while worker is down. Preserve successful same-key command replay after deadlines. Avoid holding broad DB locks while doing unbounded Storage calls; use bounded I/O and revalidation according to FINISH.
+Keep Order→Shipment→Escrow→Product locks, unique terminal settlement, command replay/financial tuples/rollback guards. Preserve original successful Payment/Receipt byte-for-byte; returned Product becomes CANCELLED, never auto-relisted. Actual return commits first; failed independent financial attempt remains RETURNED_TO_SELLER/HELD and retries using the same persisted policy/cause once. Carrier return event or result timeout alone cannot refund. Timely missing report blocks AUTO and enables only audited same-case Admin resolution, with no client amounts/recipients.
 
-Provide safe CLI one-shot/dry-run options using the same services, deployment configuration (systemd/container scheduler matching actual environment), structured counts and failure signals, restart instructions and an isolated synthetic demo procedure. Do not automatically enable a runner against a shared/production DB merely because a sample env exists. Task 10 performs the configured runtime activation after environment authorization.
-
-Verify all cases with no HTTP traffic, just-before/at/after deadlines, simultaneous runners, restart after partial progress, Storage unreadability, outage/recovery and repeated overdue scans in isolated PostgreSQL. Do not sleep 72 hours or weaken production guards: use injectable server clocks/test fixtures in the isolated environment. Deliver implementation, runbook and reports/05-TIMER-01.md with exact base/head and recovery evidence. Finish working scheduled code and relevant tests rather than only cron instructions.
+Expose role-redacted original charge/refund quote/retained fees/settlement cause/reference and pending flags. Prove normal API sale and rejection/timeout/negative/no-ship/Admin journeys, invalid-conserving allocations, rollback/retry, receipt/report/AUTO races and C review/D revoke regression on owned PostgreSQL. Deliver reports/EXTERNAL-SHIPPING-R3.md and focused evidence; keep shared/device gates separate.
 ```
 
-## 06-FINISH-05-ui
 
-[Task details](tasks/06-FINISH-05-ui.md)
+## 05 / TIMER-01 — Six durable no-HTTP lifecycle jobs
+
+Source and acceptance: [05-TIMER-01-jobs.md](tasks/05-TIMER-01-jobs.md).
 
 ```text
-The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
+The context packet is doc/submission-2026-10-08 in the repository.
 
-Implement task 06 in mobile of the actual complete release base. Read applicable AGENTS.md and the exact versioned Expo docs it requires before code. Read the submission packet DOC-01-scope.md, RELEASE-DESIGN.md, references/FINISH-spec.md, references/FINISH-api-fixtures.md, reports/API-MAPPING.md and reports for tasks 03/04. Preserve the newest UI/theme/navigation work already in the working tree. Do not replace it with a historical mock prototype or redesign the app again.
+Continue R4 on the same PR130 branch. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md and reports/EXTERNAL-SHIPPING-R4.md. Reuse the one existing guarded settlement service, CLI, bounded scan ownership and progress infrastructure.
 
-Wire real services/routes for owning Buyer delivery summary, receipt, non-receipt report, deadlines, history, settlement/refund references; Seller return-address save before center shipment, shipping/return progress and payout projection; Inspector outbound dispatch; Courier assigned queue/detail, camera/gallery proof upload and explicit selected-proof confirmation; minimal Admin courier assignment and scoped missing-delivery review/resolution. Reuse existing role entry/navigation and API client/token provider. Use concrete mapped courier routes rather than duplicating conceptual routes from older specs.
+Keep unpaid30min, receipt release, Seller no-ship72h full refund, durable return-refund retry and inspection3workingdays escalation unchanged by policy where appropriate. Add result-timeout as sixth bounded job with cursorID6; preserve paid progress IDs1–4 and unpaidID5. Positive atomic availability+72h with no decision/outbound authorizes only SYSTEM timeout return; no invented Buyer REJECT/CONFIRM, shipment or money. New AUTO requires trusted TO_BUYER delivery event+72h and no report; tracking alone never starts AUTO. Legacy proof checks remain.
 
-Keep result CONFIRM/REJECT distinct from physical receipt. Negative inspection results only return. Deadline starts at persisted Buyer delivery confirmation; client countdown is informational and cannot settle money. For durable return with failed settlement show pending refund, not REFUNDED. Show server-settled amounts and simulation labels. Server action flags/auth decide permissions; approved Seller can use Buyer actions on purchased Orders. No general user-admin dashboard is required.
+Re-read eligibility under shared locks and sample fresh DB wall clock after locks/I/O. Test no HTTP, before/at/after both deadlines, opposing CONFIRM/timeout and receipt/report/AUTO, independent workers, failed-first fairness, stop/restart, dry-run purity and durable retry using persisted policy. Locked rows may be skipped by bounded scans and picked up by catch-up; do not count a scan as guaranteed instant completion.
 
-For each mutation keep a stable idempotency key while retrying the same canonical payload, prevent accidental duplicate presses, refetch persisted state on ambiguous network failure, and suppress stale responses after logout/account change. Display useful loading/empty/error/retry states and readonly terminal outcomes; authorized proof access must not store raw private object keys or signed URLs in permanent caches/logs. Camera/image permissions and Android back/keyboard behavior must be usable.
-
-Use existing tests and contract fixtures for both journeys, report-vs-auto boundary displays, role redaction, duplicate/retry/network failure, account switch and pending return retry. Run focused component/logic tests and typecheck from mobile; separate pre-existing baseline lint failures. Then perform API-backed browser smoke on the combined candidate if the environment is available. Browser/mocks do not establish actual Android/Auth/Storage acceptance. Deliver code plus reports/06-FINISH-05.md with routes wired, exact base/head, checks and remaining device steps. Continue through API wiring and verification, not preview-only UI.
+Provide existing safe CLI/dry-run/retry/restart commands and structured result/failure counts. Do not activate scheduler or migrate shared DB. Runtime activation remains task10 and native/UI task06 is separate. Deliver reports/EXTERNAL-SHIPPING-R4.md with actual command paths and exact source/evidence.
 ```
 
-## 07-PROFILE-01
 
-[Task details](tasks/07-PROFILE-01.md)
+## 06 / FINISH-05 — External-shipping API integration in existing UI
+
+Source and acceptance: [06-FINISH-05-ui.md](tasks/06-FINISH-05-ui.md).
+
+```text
+The context packet is doc/submission-2026-10-08 in the repository.
+
+Implement E/R5 separately after the exact R1–R4 candidate is independently accepted. Locate doc/submission-2026-10-08 in the repository. Read applicable AGENTS.md and exact Expo docs before editing mobile. Read DOC-01-scope.md, RELEASE-DESIGN.md, changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md. Preserve latest visual/navigation work; no new Courier workspace or redesign.
+
+Wire actual Buyer result can_decide/deadline/timeout separately from physical receipt/report flags. Inspector canonical center receipt and final carrier/tracking dispatch, Seller frozen return address and actual confirm-return, Buyer delivery/receipt/report, scoped Admin demo shipping event and return exception/non-receipt resolution use mapped existing/new routes. New shipping requires no Courier account/photo; old legacy records stay readable under their own policy. Tracking alone does not start AUTO. Result silence authorizes return, never auto accepts, dispatches or refunds.
+
+Render original charged1350, positive reject/timeout refund1200 with retained100/50, negative/no-ship/Admin full refunds1350, sale payout1140/commission60 using server values. Distinguish transport-delivered from recipient-received and durable return pending from settled refund. Refetch after ambiguous mutation/retry; stable idempotency keys, account-switch stale guards, disabled duplicate buttons and authorized no-store private images remain. C review requires completed RELEASE; refunded Orders cannot review. Public D revoked status never exposes private reason.
+
+Run relevant mobile component/logic/typecheck and API-backed smoke, then actual Android/Auth/Storage/QR checks separately. Browser/mocks and backend local PASS are not full release acceptance. Deliver reports/06-FINISH-05.md, routes/action fields wired, exact heads and pending native/runtime gates. R1–R4 backend implementation must not wait for this visual/UI work.
+```
+
+
+## 07 / PROFILE-01 — Persisted basic profile
+
+Source and acceptance: [07-PROFILE-01.md](tasks/07-PROFILE-01.md).
 
 ```text
 Implement PROFILE-01 in the current secondhand-marketplace-android-app release base. Locate the submission-2026-10-08 packet, read README.md, DOC-01-scope.md, PROFILE-REVIEWS-contract.md, RELEASE-DESIGN.md and FINISH-00-release-gates.md. Apply AGENTS.md; before mobile code read its required exact Expo version docs. Work through implementation and verification. The deadline is 8 October 2026; keep the minimal selected scope, not a new settings subsystem.
@@ -138,9 +134,10 @@ Wire profile data/edit/save and readonly email/role/status to APIs, replacing fa
 Test save→GET/reload/relogin, invalid/control/overlong names, cross-account access and field injection, inactive write rejection, acknowledgement replay/unsupported version, migration preservation, failed save and stale responses after account change. Run isolated PostgreSQL/API tests, focused mobile tests and typecheck. Deliver code, API examples and reports/07-PROFILE-01.md with base/head and migration chain. Use templates/TASK-REPORT.md; mark actual Android/login steps pending if not exercised. Do not mutate shared DB, force-push or claim unrun tests.
 ```
 
-## 08-REVIEW-01
 
-[Task details](tasks/08-REVIEW-01.md)
+## 08 / REVIEW-01 — Persisted seller reviews
+
+Source and acceptance: [08-REVIEW-01.md](tasks/08-REVIEW-01.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
@@ -156,9 +153,10 @@ Wire the existing /orders/[orderId]/review route and review-modal to persisted s
 Test eligibility/IDOR/inactive/field injection, bounds/Unicode safe text, duplicate concurrent requests and key reuse/replay, aggregates/pagination and public PII omission in isolated PostgreSQL. Test mobile successful submit, failed submit/retry, zero reviews, pagination and stale account response; run focused tests and typecheck. Deliver code, migration/API fixtures and reports/08-REVIEW-01.md using the template with exact upstream/head and evidence. Complete working APIs/UI rather than only a design or mock demo.
 ```
 
-## 09-CERT-REVOKE-01-revocation
 
-[Task details](tasks/09-CERT-REVOKE-01-revocation.md)
+## 09 / CERT-REVOKE-01 — Minimal Admin revocation
+
+Source and acceptance: [09-CERT-REVOKE-01-revocation.md](tasks/09-CERT-REVOKE-01-revocation.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
@@ -172,9 +170,10 @@ Provide a minimal authorized Admin entry from existing work/certificate context,
 Test authorization/IDOR, valid revoke and repeated/concurrent/key-mismatch attempts, invalid reason, immutable inspection/settlement fields, public HTML/JSON/native status and no private fields. Run focused backend/mobile tests and typecheck. Deliver code, API mapping and reports/09-CERT-REVOKE-01.md with exact head/evidence. Actual public HTTPS QR on another phone remains task 11. Do not add wider user administration or change certificate issue timing. Continue through a reachable working UI/API, not a seeded-row-only test.
 ```
 
-## 10-ENV-01-runtime
 
-[Task details](tasks/10-ENV-01-runtime.md)
+## 10 / ENV-01 — Reachable full API, Auth, private Storage and runner
+
+Source and acceptance: [10-ENV-01-runtime.md](tasks/10-ENV-01-runtime.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
@@ -190,18 +189,19 @@ The user authorized preparing local work, not automatically resetting/stamping/m
 Deliver env examples, start/stop/health/runbook instructions, redacted runtime evidence and reports/10-ENV-01.md with deployed API SHA, migration head, reachable origin, worker command/schedule and explicitly unexercised gates. Do not interrupt unrelated running sessions. Continue through setup and authorized validation, not just a list of environment variables.
 ```
 
-## 11-QA-01-release
 
-[Task details](tasks/11-QA-01-release.md)
+## 11 / QA-01 + FINISH-06 — Evidence on the combined release
+
+Source and acceptance: [11-QA-01-release.md](tasks/11-QA-01-release.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
 
-Audit and test the combined submission candidate, implementing small in-scope fixes for defects you find rather than only reporting them. Locate the packet and read DOC-01-scope.md, QA-MATRIX.md, FINISH-00-release-gates.md, references/FINISH-spec.md acceptance matrix, all delivered task reports and reports/release-manifest.json. Inspect actual source/app/API revision, environment, migration and tests first. This is final integration QA, not another isolated PR review.
+Audit and test the combined submission candidate, implementing small in-scope fixes for defects you find rather than only reporting them. Locate the packet and read DOC-01-scope.md, QA-MATRIX.md, FINISH-00-release-gates.md, changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, reports/EXTERNAL-SHIPPING-API-MAPPING.md and versioned-policy acceptance before historical FINISH references, all delivered task reports and reports/release-manifest.json. Inspect actual source/app/API revision, environment, migration and tests first. This is final integration QA, not another isolated PR review.
 
-Run retained automated backend/PostgreSQL and mobile logic/component/type checks needed for the combined changes, using a disposable test DB. Exercise real API business journeys with distinct authorized Buyer/Seller/Inspector/Courier/Admin accounts: successful sale through RELEASE/payout/review, rejected or negative inspection through durable return/full REFUND/original receipt. Also exercise no-ship, receipt AUTO, timely missing-delivery/Admin resolution, worker no-HTTP restart/two-runner/retry, profile persistence, certificate revoke and private data denial. Use actual Storage and Google integration where available; identify which checks used deterministic adapters.
+Run retained automated backend/PostgreSQL and mobile logic/component/type checks needed for the combined changes, using a disposable test DB. Exercise real API business journeys with distinct authorized Buyer/Seller/Inspector/Admin accounts without a new Courier account/photo; legacy Courier scenarios remain separate: successful sale through RELEASE/payout/review, positive rejection and result silence through actual Seller/Admin durable return/item-only1200 refund with retained100/50, and negative result full1350 refund/original receipt. Also exercise no-ship, both independent72h deadlines and receipt AUTO, timely missing-delivery/Admin resolution, worker no-HTTP restart/two-runner/retry, profile persistence, certificate revoke and private data denial. Use actual Storage and Google integration where available; identify which checks used deterministic adapters.
 
-Use task 12 APK on a real Android device for both main journeys, Google login/return, camera/gallery proof upload, keyboard/back/navigation and profile/review reload. Open public QR in another phone/browser without login, including revoked and invalid cases. Use provided purpose-built tools, browser and adb if authorized/connected. Ask the device owner only for steps tooling cannot reach; give exact checklist and collect evidence. Do not label browser/Expo Web/device simulator results as real Android acceptance. Do not log tokens/PII or mutate an unapproved shared database. Seed only an isolated authorized synthetic demo target.
+Use task 12 APK on a real Android device for both main journeys, Google login/return, camera/gallery inspection/product upload and retained legacy proof access, keyboard/back/navigation and profile/review reload. Open public QR in another phone/browser without login, including revoked and invalid cases. Use provided purpose-built tools, browser and adb if authorized/connected. Ask the device owner only for steps tooling cannot reach; give exact checklist and collect evidence. Do not label browser/Expo Web/device simulator results as real Android acceptance. Do not log tokens/PII or mutate an unapproved shared database. Seed only an isolated authorized synthetic demo target.
 
 Record each QA-MATRIX case PASS/FAIL/BLOCKED/NOT_RUN with app/API SHA, migration head, environment, account roles, test command/evidence path and limitations. Fix reproducible local code defects, rerun affected checks and update SHA/artifact mapping. Coordinate rebuild/retest if the APK source changes. Existing issues #49/#50/#63/#65/#105/#106 and FINISH-06 need their own acceptance evidence; inspect the actual issue before claiming it closed. Do not create duplicate issues or close issues based solely on unit tests.
 
@@ -210,9 +210,10 @@ Deliver reports/11-QA-01.md, completed templates/TEST-REPORT.md, evidence index 
 Q01–Q26 are your technical release gate. When they pass, hand off TECHNICAL_READY_HANDOVER_PENDING to task 13; Q27 final handover and Q28 teacher scope disposition are checked by task 13/Lead after it produces the artifacts. Do not create a cycle by waiting for final slides before handing over the technical QA report. Overall READY still requires all mandatory cases, and must not be claimed while Q27/Q28 are pending.
 ```
 
-## 12-APK-01-android
 
-[Task details](tasks/12-APK-01-android.md)
+## 12 / APK-01 — Installable Android release
+
+Source and acceptance: [12-APK-01-android.md](tasks/12-APK-01-android.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
@@ -228,16 +229,17 @@ Build, verify package/version, SHA256/size and JavaScript inclusion, then instal
 Deliver artifacts/android/ with actual APK, a hash/manifest and install/run instructions, reports/12-APK-01.md with source/API SHA, build environment and native evidence. Update reports/release-manifest.json only with proven fields. If code/environment changes after QA, rebuild and rerun affected native gates. Do not claim READY merely because the build job succeeded. Continue through an actual build and installation where access permits.
 ```
 
-## 13-HANDOVER-01-demo-presentation
 
-[Task details](tasks/13-HANDOVER-01-demo-presentation.md)
+## 13 / HANDOVER-01 — Final demo, documents and presentation
+
+Source and acceptance: [13-HANDOVER-01-demo-presentation.md](tasks/13-HANDOVER-01-demo-presentation.md).
 
 ```text
 The context packet is doc/submission-2026-10-08 in the repository, or the separately supplied submission-2026-10-08 folder.
 
-Complete the submission handover for the actual tested release, working in the current project folder. Read the packet README.md, DOC-01-scope.md, SRS-SUBMISSION.md, diagrams, PRESENTATION-OUTLINE.md, QA-MATRIX.md, reports/11-QA-01.md, reports/12-APK-01.md and release-manifest.json. Use the presentation/PDF/document skills when creating their artifact types. Work autonomously on concrete files; do not stop at suggesting slide topics.
+Complete the submission handover for the actual tested release, working in the current project folder. Read the packet README.md, DOC-01-scope.md, SRS-SUBMISSION.md, diagrams, PRESENTATION-OUTLINE.md, QA-MATRIX.md, reports/11-QA-01.md, reports/12-APK-01.md and release-manifest.json. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before historical references. Use the presentation/PDF/document skills when creating their artifact types. Work autonomously on concrete files; do not stop at suggesting slide topics.
 
-Prepare repeatable synthetic demo data/setup for a successful sale, rejected/negative return refund, unpaid expiry, no-ship refund, missing-delivery Admin resolution, certificate revocation, editable profile and reviews. Seed only an isolated explicitly chosen demo DB/storage namespace; require a guard against shared/production targets, avoid real identity/card/bank data, and use actual authenticated role mappings for real integration. Do not seed fake users or reviews into the shared catalog without authorization. Timer demos use isolated test clocks/aged fixtures through the same guarded services, never a public bypass endpoint.
+Prepare repeatable synthetic demo data/setup for a successful sale, positive rejection/result silence actual-return item-only refund1200 retaining100/50, and negative full1350 return refund, unpaid expiry, no-ship refund, missing-delivery Admin resolution, certificate revocation, editable profile and reviews. Seed only an isolated explicitly chosen demo DB/storage namespace; require a guard against shared/production targets, avoid real identity/card/bank data, and use actual authenticated role mappings for real integration. Do not seed fake users or reviews into the shared catalog without authorization. Timer demos use isolated test clocks/aged fixtures through the same guarded services, never a public bypass endpoint.
 
 Produce a clean submission directory containing final standalone APK/hash, setup/start/stop guide, Thai user guide for retained roles, aligned SRS source/PDF, rendered architecture/use-case/class/state/sequence diagrams, requirement-to-test report, release manifest, synthetic demo setup/runbook, PPTX or equivalent editable slides plus PDF export, a 7–10 minute Thai speaker/demo script and recording/rehearsal checklist. Reuse the prepared scope/docs/outline; update model/routes from actual release and proof, not from future promises. Clearly label payment/shipping/payout as persisted simulations and deferred requirements as future work. Preserve the original historical SRS.
 

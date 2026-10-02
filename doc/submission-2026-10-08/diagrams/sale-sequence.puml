@@ -1,46 +1,48 @@
 @startuml
-title Target sale journey - persisted simulations
+title EXTERNAL_V2 sale - actual receipt and trusted demo transport
 skinparam defaultFontName SansSerif
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 actor Buyer
 actor Seller
 actor Inspector
-actor Courier
-participant "Android app" as App
-participant "FastAPI" as API
+actor Admin
+participant FastAPI as API
 database PostgreSQL as DB
-participant "Private Storage" as Storage
-
-Buyer -> App : browse guest / login when buying
-App -> API : quote / create Order
-API -> DB : reserve stock and immutable quote/address
-Buyer -> App : simulated payment
-App -> API : stable idempotent payment command
-API -> DB : successful Payment + Receipt + HELD once
-Seller -> API : save validated return address / ship center
+participant "Private inspection Storage" as Storage
+participant "Lifecycle worker" as Worker
+Buyer -> API : quote / create / simulated payment
+API -> DB : EXTERNAL_V2 + immutable quote / Payment / Receipt / HELD
+Seller -> API : validated return address / carrier / tracking TO_CENTER
 API -> DB : freeze Seller snapshot / TO_CENTER
-Courier -> API : upload / confirm assigned center proof
-API -> Storage : private validated objects
-Inspector -> API : canonical center receive / final PASS
-API -> DB : transaction: result + certificate + RESULT_NOTIFIED
-API --> Buyer : authorized result + public QR
-Buyer -> API : CONFIRM inspection result
-API -> DB : one immutable Buyer decision
-Inspector -> API : create server-derived TO_BUYER
-Courier -> API : upload / confirm selected delivery proof
-API -> Storage : verify selected objects remain readable
-API -> DB : DELIVERED_PENDING_BUYER + deadline=proof time+72h
-Buyer -> API : confirm physical receipt (stable key)
-API -> DB : lock Order; fresh DB clock; verify eligibility
-API -> DB : atomic RELEASE + COMPLETED + SOLD
-API --> Buyer : committed settlement / original receipt
-API --> Seller : recorded simulated payout
-Buyer -> API : seller rating + optional comment
-API -> DB : unique completed-Order review
+Inspector -> API : canonical actual center receive / start / inspection evidence
+API -> Storage : authorized private inspection photos
+Inspector -> API : final PASS or MINOR_ISSUE
+API -> DB : atomic result + certificate + availability +72h
+Buyer -> API : CONFIRM strictly before result deadline
+API -> DB : locked fresh DB clock / one Buyer decision
+Inspector -> API : carrier / tracking final dispatch
+API -> DB : server-derived TO_BUYER / frozen Buyer destination
+opt Explicitly enabled demo transport event
+  Admin -> API : trusted DELIVERED identity / shipment / leg
+  API -> DB : immutable ADMIN_DEMO event at server time
+  API -> DB : independent receipt deadline = event time +72h
+end
+alt Actual Buyer receipt after dispatch
+  Buyer -> API : confirm-receipt (event may still be absent)
+  API -> DB : locked fresh clock / optional existing deadline
+  API -> DB : actual recipient + atomic one RELEASE / COMPLETED / SOLD
+else Eligible AUTO with trusted event and no report
+  Worker -> DB : bounded no-HTTP scan after receipt deadline
+  Worker -> DB : same service / one AUTO RELEASE
+end
+API --> Buyer : original charged receipt + committed settlement
+API --> Seller : payout1140 / commission60 on item1200
+Buyer -> API : one completed-Order seller review
+API -> DB : persisted C review
 note over API,DB
-  Worker may release after the same eligible receipt deadline,
-  only without a timely non-receipt report and with readable proof.
-  No provider bank transfer or automatic inspection decision.
+  Missing report after dispatch blocks later AUTO.
+  Tracking alone starts neither timer; no new Courier account/photo.
+  Shared providers, UI/device and deployed scheduler are separate gates.
 end note
 @enduml

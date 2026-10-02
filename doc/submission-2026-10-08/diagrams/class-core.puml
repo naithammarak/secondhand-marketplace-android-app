@@ -1,6 +1,6 @@
 @startuml
 !pragma layout smetana
-title 2NDHAND - submission target classes (1 Oct 2026)
+title 2NDHAND - submission target classes (2 Oct 2026 / versioned policy)
 skinparam backgroundColor #FFFFFF
 skinparam classAttributeIconSize 0
 skinparam defaultFontName SansSerif
@@ -39,6 +39,9 @@ package "Orders and money" {
     buyer_address_snapshot : immutable
     seller_return_snapshot : frozen before shipment
     item / shipping / inspection / commission : Decimal snapshots
+    fulfillment_policy : LEGACY_V1/EXTERNAL_V2 [immutable]
+    result_available_at / result_decision_deadline_at : UTC?
+    result_timed_out_at : UTC? [SYSTEM outcome]
     paid_at : UTC?
     receipt_deadline_at : UTC?
   }
@@ -57,6 +60,7 @@ package "Orders and money" {
   class OrderSettlement {
     order_id : unique
     escrow_id : unique
+    fulfillment_policy / source / reason : snapshots
     kind : RELEASE/REFUND
     recipient : server derived
     payout / refund / allocations : Decimal
@@ -74,9 +78,21 @@ package "Orders and money" {
 package "Delivery and inspection" {
   class Shipment {
     leg : TO_CENTER/TO_BUYER/TO_SELLER
-    assigned_courier_id : int
+    fulfillment_policy : matches Order
+    courier_id : int? [legacy only]
+    carrier / tracking : String
+    received_at / received_by : actual recipient
+    recipient_source / recipient_command_id : audited
     destination : immutable snapshot
-    confirmed_delivery_at : UTC?
+    courier_delivered_at : UTC? [legacy only]
+  }
+  class ShippingEvent {
+    shipment_id / order_id / leg : bound tuple
+    source : ADMIN_DEMO
+    event : DELIVERED
+    event_id : unique per source
+    admin_id / command_id : authorized provenance
+    confirmed_at : immutable server UTC
   }
   class DeliveryProof {
     object_key : private
@@ -126,8 +142,9 @@ Order "1" -- "0..1" ReceiptConfirmation
 Order "1" -- "0..1" NonReceiptReport
 User "1" -- "0..*" AuditLog
 Order "1" -- "0..2" Shipment
-Shipment "1" *-- "0..3" DeliveryProof
-User "1" -- "0..*" Shipment : assigned courier
+Shipment "1" *-- "0..3" DeliveryProof : legacy only
+Shipment "1" -- "0..1" ShippingEvent : trusted transport
+User "1" -- "0..*" Shipment : actual recipient / legacy courier
 Order "1" -- "0..1" Inspection
 Inspection "1" *-- "0..*" InspectionPhoto
 Inspection "1" -- "0..1" BuyerInspectionDecision
@@ -151,6 +168,8 @@ note bottom of Certificate
 end note
 legend bottom
   Target logical design, not proof that baseline implements every class.
-  Task 02 maps these concepts to existing physical models/routes.
+  R1 maps physical fields/routes in EXTERNAL-SHIPPING-API-MAPPING.
+  Recipient confirms actual receipt; transport event is a separate fact.
+  ReceiptConfirmation / NonReceiptReport are Order fields; no duplicate ledgers.
 endlegend
 @enduml

@@ -1,6 +1,6 @@
 # Final acceptance matrix
 
-> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+> **Backend candidate 2 ต.ค.:** R1–R4 ใช้ `EXTERNAL_V2` สำหรับ Order ใหม่และคง `LEGACY_V1` สำหรับข้อมูลเดิม ดู [API mapping](reports/EXTERNAL-SHIPPING-API-MAPPING.md) และ [รายงาน R1](reports/EXTERNAL-SHIPPING-R1.md) ผล local PostgreSQL ไม่ใช่ independent PASS, E UI, shared rollout หรือ Android acceptance
 
 **ทุกแถวเป็นเกณฑ์ตรวจรับ ยังไม่ใช่ผล PASS** · วันที่เตรียม 1 ต.ค. 2026
 
@@ -15,26 +15,26 @@
 | Q03 | FR-05/06/07, PRODUCT #49/#50 | Approved Seller ลง/แก้/ยกเลิกตามสถานะ, private upload/ข้อจำกัดไฟล์จริง; Buyer ทำแทนไม่ได้; reserved stock ไม่เปิดซื้อผิดสถานะ |
 | Q04 | FR-10–12/26, 01 | Buyer quote/create/payment จำลอง persisted; original receipt และ HELD total ถูก; retry/timeout/account switch ไม่จ่ายหรือสร้างซ้ำ |
 | Q05 | NFR-10, ORDER #63/#65, 05 | Unpaid หมด 30 นาทีไม่มี HTTP; cancel/expiry/concurrent buyer กันซื้อสินค้าซ้ำและคืนสถานะถูก |
-| Q06 | FR-13–15, 02/03/06 | Valid seller return snapshot ก่อน ship; เมื่อส่งแล้วเปลี่ยนไม่ได้; assigned Courier private proof + Inspector center receive จริง |
+| Q06 | FR-13–15, 02/03/06 | Validated frozen Seller return snapshot; new TO_CENTER carrier/tracking and authorized actual Inspector receipt without Courier account/photo; legacy Courier contract preserved; client cannot select destination. |
 | Q07 | FR-16–18/20/21, INSPECT | PASS/MINOR_ISSUE result+certificate atomic; duplicate/retry ไม่ออกซ้ำ; negative ไม่มี certificate; Storage failure ไม่ทำผลสำเร็จปลอม |
-| Q08 | FR-19/20, CERT #105/#106 | Owning Buyer ตัดสินผลครั้งเดียว; CONFIRM positive → TO_BUYER; REJECT positive/negative result → TO_SELLER; ไม่มี auto decision |
+| Q08 | FR-19/20, CERT #105/#106 | Positive atomic availability+72h: owning Buyer CONFIRM/REJECT before cutoff; at/after reject; SYSTEM silence timeout permits only return with no fabricated decision/dispatch/money. Negative returns directly; committed replay stays readable. |
 | Q09 | FR-22, 09/10/12 | QR เปิดจากอีกเครื่องไม่ login ใช้ HTTPS จริง; valid/invalid/revoked แสดงถูก; public data ไม่มี PII/private photo |
-| Q10 | FINISH sale, 03/04/06 | Real Android journey: paid→center→inspection→CONFIRM→private TO_BUYER proof→physical receipt→COMPLETED/RELEASED/Product SOLD; Seller เห็น payout 1,140 จาก example held1,350 |
-| Q11 | FINISH return, 03/04/06 | Real Android journey: Buyer REJECT หรือ negative→TO_SELLER frozen address→return proof→REFUNDED full1,350/Product CANCELLED; receipt charge เดิมยังอยู่ |
-| Q12 | FINISH return retry, 03–05 | Inject failure หลัง return delivery commit: RETURNED_TO_SELLER+HELD durable; restart worker คืนเต็มครั้งเดียวโดยไม่ upload ใหม่ |
-| Q13 | Receipt AUTO, 04/05 | ก่อน/ที่/หลัง confirmed Buyer proof+72h; proof readable; no report → one AUTO RELEASE; no HTTP; outage/recovery ไม่แสดงสำเร็จก่อน scan |
-| Q14 | Non-receipt/Admin, 04/06 | Timely report → DISPUTED/HELD กัน AUTO; Admin scoped evidence+reason+audit resolve RELEASE/REFUND ครั้งเดียว; unrelated actor ถูกปฏิเสธ |
-| Q15 | Deadline/race, 04/05 | Real PostgreSQL concurrent report-vs-auto/receipt-vs-refund; DB clock after lock boundary; pre-deadline request ที่รอ lock ข้าม deadline ถูก409; committed replayยังอ่านได้ |
+| Q10 | FINISH sale, 03/04/06 | Real Android new-policy sale: paid→center receipt→inspection→timely CONFIRM→Inspector TO_BUYER→actual Buyer receipt without mandatory carrier event→COMPLETED/RELEASED/SOLD; 5% commission and payout1,140; persisted C review and D revoke. |
+| Q11 | FINISH return, 03/04/06 | Real Android new-policy rejection and silence each→frozen TO_SELLER→actual Seller or audited Admin return receipt→refund1,200 retained100/50. Negative returns refund full1,350; no return-carrier event alone refunds; original receipt unchanged; refund forbids review. |
+| Q12 | FINISH return retry, 03–05 | Failure after durable actual return: RETURNED_TO_SELLER+HELD pending; restart/retry uses persisted policy/cause once. Bad allocation rolls back financial facts while keeping receipt; no duplicate fees or new upload. |
+| Q13 | Receipt AUTO, 04/05 | Tracking alone never starts new AUTO; trusted Admin demo TO_BUYER event server time+72h; before/at/after cutoff; no report→one RELEASE without HTTP. Legacy readable-proof behavior preserved; worker outage remains pending. |
+| Q14 | Non-receipt/Admin, 04/06 | Report after dispatch even before transport event→DISPUTED/HELD blocks later AUTO. Admin requires scoped same-case evidence/reason/audit; return confirmation exception is distinct from non-receipt resolution; wrong actors denied. |
+| Q15 | Deadline/race, 04/05 | Real independent PostgreSQL locks: decision/receipt/report waiting across cutoff fails with fresh DB clock; CONFIRM-vs-timeout chooses one outcome/leg; receipt/report/AUTO/two-worker races and committed replay checked. |
 | Q16 | Seller no ship, 03–05 | Paid+72h without timely shipment→full REFUND; timely committed shipmentกัน refund; late shipถูกปฏิเสธแม้ runnerหยุด |
-| Q17 | Exactly once, 02/04/05 | Independent connections release-vs-refund/double release/refund; unique/FK/money constraints; original Payment/Receipt immutable; one terminal outcome |
-| Q18 | Private evidence, 03/10 | Real Storage upload/read and another-user denial/expired access/unreadable object; selected proof IDsผูก leg/courier; public/role responsesไม่มี keys/PIIเกินสิทธิ์ |
-| Q19 | TIMER-01, 05/10 | Scheduled runnerไม่มี HTTP, two workers/restart/retry bounded; inspection3workingdays escalation once ไม่สร้าง result/decision/refund |
+| Q17 | Exactly once, 02/04/05 | One settlement; FK/policy/event/recipient/destination/allocation constraints reject invalid writes; held=refund+retained fees or release allocations; immutable original Payment/Receipt; no synthetic terminal journey evidence. |
+| Q18 | Private evidence, 03/10 | Private inspection/identity and legacy proof Storage guards remain. New Admin demo event identity/source/leg/time cannot be forged/moved/backdated; default-deny event table; role/public reads redact addresses, fees and private audit notes. |
+| Q19 | TIMER-01, 05/10 | Six bounded no-HTTP jobs with durable ownership/cursor fairness/restart/dry-run. Result timeout ID6 preserves prior IDs1–5, adds no Buyer decision/dispatch/settlement; inspection3workingdays escalates only. Runtime schedule activation separately evidenced. |
 | Q20 | Profile FR-03, 07 | Name save→reload/reloginบน APK/API persists; injection/IDOR/invalid/inactive rejected; email/role/status readonly; account switchไม่ใช้cacheเก่า |
 | Q21 | Privacy NFR-05 revised, 07 | Policyอ่านได้; acknowledgementversion/time persisted/replaystable; legacyไม่มีfakeaccept; ไม่มีปุ่มหรือคำสัญญาdelete/export/photo reuseที่ไม่ได้ทำ |
 | Q22 | Reviews FR-37 revised, 08 | Owned completed RELEASE Order→one review→reload/public modal; duplicate/concurrent rejected; pending/refunded/foreign/inactiveไม่ผ่าน; SELLERที่ซื้อ reviewได้ |
 | Q23 | Public reviews, 08 | Count/average/distribution/paginationถูก; zero = no rating; no mocked4.8/count29; public reviewerไม่มีrealname/ids/address; inputเป็นsafe text |
 | Q24 | Revoke FR-23, 09 | Admin UI/API revokeจริงพร้อมreason/audit; nonAdmindenied; same-keyreplay; publicQR/native updated; no settlement/resultrewrite |
-| Q25 | Migration/runtime, 01/02/07/08/10 | One Alembic head; supported predecessor data preserved; isolated backup/restore/constraint tests; shared rolloutที่จำเป็นมีapprovalและactual revision evidence |
+| Q25 | Migration/runtime, 01/02/07/08/10 | One head r01e20261002; actual legacy sale/refund/review/revoke data preserved; safe downgrade/re-upgrade with legacy-only data, explicit refusal with new data; isolated constraint/access checks; shared rollout has separate approval/evidence. |
 | Q26 | APK NFR-06, 12 | Final APK package/version/hash/source/API matches manifest; cold launch/relogin/camera/gallery/back/keyboardบนจริง; screen5–7inch usable |
 | Q27 | Handover, 13 | Setup/user guide, SRS+diagrams, test report, actualAPK, demo fixtures, PPTX/PDF/script/backup recording/rehearsalมีและชี้releaseเดียวกัน |
 | Q28 | Scope acknowledgement, 00/13 | แจ้ง scope revision ที่ต่างจาก SRS เดิมให้อาจารย์; บันทึก accepted/pendingตามจริง; slideข้อจำกัดตรงกับสิ่งส่ง |

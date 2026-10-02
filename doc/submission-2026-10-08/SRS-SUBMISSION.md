@@ -1,16 +1,16 @@
 # 2NDHAND — Submission Software Requirements Specification
 
-> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+> Backend candidate, 2 October 2026: EXTERNAL_V2 for new Orders; LEGACY_V1 for existing records. See [current API mapping](reports/EXTERNAL-SHIPPING-API-MAPPING.md) and [R1 evidence](reports/EXTERNAL-SHIPPING-R1.md). Local PostgreSQL evidence is separate from independent, E, shared and Android acceptance.
 
-Version: submission-2026-10-01 · Target: Thursday, 8 October 2026 · Timezone: Asia/Bangkok
+Version: submission-2026-10-02-external-shipping · Target: Thursday, 8 October 2026 · Timezone: Asia/Bangkok
 
-Status: Scope selected by the project owner on 1 October 2026. Implementation and final acceptance are pending. Teacher acknowledgement of revised scope is not established by this document.
+Status: Scope selected by the project owner on 1 October 2026. The backend candidate has local implementation evidence; independent and full release acceptance remain pending. Teacher acknowledgement of revised scope is not established by this document.
 
 ## 1. Purpose and authority
 
-2NDHAND is an Android prototype for fixed-price secondhand clothing/accessory sales with central inspection, public digital certificates, held funds and evidence-based delivery. The submission demonstrates both a successful sale and a returned-item full refund.
+2NDHAND is an Android prototype for fixed-price secondhand clothing/accessory sales with central inspection, public digital certificates, held funds and evidence-based delivery. The submission demonstrates both a successful sale and an actual-return refund following the persisted policy/cause.
 
-This specification replaces conflicting submission rules in the historical SRS revision 1.5 dated 25 August 2026. The original PDF remains a historical reference. DOC-01-scope.md records the owner's selected changes; PROFILE-REVIEWS-contract.md defines the new APIs; references/FINISH-spec.md defines detailed transactions and errors, subject to the current release gate and route mapping.
+This specification replaces conflicting submission rules in the historical SRS revision 1.5 dated 25 August 2026. The original PDF remains a historical reference. DOC-01-scope.md records the owner's selected changes; PROFILE-REVIEWS-contract.md defines the new APIs; Current amendment scope and EXTERNAL-SHIPPING-API-MAPPING.md define changed policy/routes; references/FINISH-spec.md retains historical transaction/error context for legacy behavior.
 
 Requirement IDs FR-01–FR-49 and NFR-01–NFR-10 are preserved for traceability. A revised or deferred requirement is a scope change, not evidence that the original requirement was fulfilled. Every retained behavior needs evidence on the combined release and a real Android APK.
 
@@ -18,7 +18,7 @@ Requirement IDs FR-01–FR-49 and NFR-01–NFR-10 are preserved for traceability
 
 The retained system includes public catalog discovery, Google authentication, default Buyer registration, seller approval, fixed-price listings, persisted simulated payment/receipt/escrow, center inspection, certificates, Buyer result decisions, final delivery/return, exactly-once release/refund, lifecycle jobs, basic profile, seller reviews and minimal operational Admin actions.
 
-Guest users browse/search/detail/reviews and public certificates without login. New Google users are BUYER. Approved SELLER users keep Buyer capabilities and can publish/manage eligible products. INSPECTOR, COURIER and ADMIN are assigned staff roles; clients cannot select them. Active account and resource-ownership authorization is enforced on the server, not only by navigation.
+Guest users browse/search/detail/reviews and public certificates without login. New Google users are BUYER. Approved SELLER users keep Buyer capabilities and can publish/manage eligible products. INSPECTOR and ADMIN are assigned staff roles; COURIER is retained only for legacy Orders; clients cannot select them. Active account and resource-ownership authorization is enforced on the server, not only by navigation.
 
 Architecture: Expo Android client; FastAPI service; PostgreSQL business records; Google identity via the configured Auth provider; private Storage for sensitive evidence; public HTTPS certificate views; scheduled server worker. Payment, carrier and payout providers are simulated. Internal state, money allocation, receipt and settlement are persisted and guarded as real business operations. No real bank transfer, carrier integration or tax invoice is claimed.
 
@@ -39,30 +39,32 @@ Architecture: Expo Android client; FastAPI service; PostgreSQL business records;
 | FR-11 | Explicitly simulated payment persists successful Payment/Receipt/Escrow once. Timeout/retry is resolved from backend state; no real PromptPay/card/banking is claimed. |
 | FR-12 | Successful payment holds the complete Order amount until one eligible RELEASE or REFUND. |
 | FR-13 | Owning Seller supplies a validated immutable return-address snapshot before sending the paid item to the inspection center. Shipping is rejected at/after the no-ship deadline. |
-| FR-14 | Assigned Courier operates authorized shipment legs and records private delivery proof; transport is simulated, evidence and states are persisted. |
-| FR-15 | Assigned Inspector records center receipt through the canonical inspection receive operation, with the required proof and server time. |
+| FR-14 | New-policy Seller dispatches TO_CENTER and assigned Inspector dispatches the server-selected final leg with carrier/tracking and immutable destination. Actual recipients confirm receipt; no Courier account or shipping photo is required. Historical Courier/proof policy remains for legacy Orders. |
+| FR-15 | Authorized active center Inspector records actual center receipt through POST /inspections/{id}/receive using a matching audited command and fresh server time. New policy requires no Courier proof; private inspection evidence remains required for final results. |
 | FR-16 | Assigned Inspector evaluates authenticity, condition and description match. Final result is PASS, MINOR_ISSUE, NOT_AS_DESCRIBED or FAKE. |
 | FR-17 | Final result and required private evidence are persisted with valid ownership and immutable final history. |
 | FR-18 | Buyer reads the committed result/evidence through the authorized result screen and refresh. Push/email/inbox delivery is not claimed. |
-| FR-19 | Owning Buyer selects CONFIRM or REJECT once for PASS/MINOR_ISSUE. Negative results return without CONFIRM; no automatic result decision. |
+| FR-19 | Owning Buyer records one CONFIRM or REJECT for PASS/MINOR_ISSUE strictly before persisted atomic result availability+72h. At/after cutoff SYSTEM timeout authorizes TO_SELLER without creating a Buyer decision, dispatch or settlement. Negative results return directly; committed replay remains readable. |
 | FR-20 | PASS/MINOR_ISSUE certificate is issued atomically with final inspection, before Buyer decision. Negative results never issue a qualifying certificate. |
 | FR-21 | Certificate uses an opaque public token/QR pointing to the reachable HTTPS certificate origin. |
 | FR-22 | Any person verifies public certificate status without login. Public views exclude identity/address/private evidence. Invalid tokens are not valid certificates. |
 | FR-23 | Active Admin revokes an incorrect certificate through a reasoned audited command. Public/native views show REVOKED. Revocation does not rewrite inspection, receipt or settlement. |
-| FR-24 | Proven Buyer delivery followed by eligible physical receipt or eligible 72-hour worker release atomically completes Order and records simulated Seller payout from original snapshots. |
-| FR-25 | Proven return, Seller no-ship or audited non-receipt resolution refunds the full held total once. Original successful payment/receipt stays immutable; refunded Product is CANCELLED, not automatically relisted. |
+| FR-24 | New-policy owning Buyer confirms actual receipt after authorized TO_BUYER dispatch even without a carrier event, subject to an existing deadline. AUTO requires trusted Admin demo TO_BUYER delivered time+72h and no missing report. One RELEASE preserves the original 5% item commission; legacy proof policy remains. |
+| FR-25 | New-policy positive-result rejection or SYSTEM result timeout refunds the item snapshot only after actual Seller or scoped audited Admin return receipt, retaining original inspection/shipping fees once with payout/commission zero. Negative-result, no-ship, Admin non-receipt and legacy refunds remain full. Original Payment/Receipt stays immutable; Product becomes CANCELLED. |
 | FR-26 | Successful persisted simulated charge creates a retrievable receipt. A refund has a separate settlement reference. No legally issued tax invoice is represented. |
 | FR-37 | Revised: actual active Order Buyer submits one seller rating 1–5 and optional purchase/item-experience comment after COMPLETED plus RELEASED. No separate product/inspection scores, photos, tags or replies. |
-| FR-41 | Revised: retain seller-application approval and minimal assignment/non-receipt/revocation operations. Wider account administration/suspension UI and its automatic refund policy are deferred. Existing status/auth guards remain enforced. |
+| FR-41 | Retain Seller approval, necessary assignment, scoped audited delivery/return exceptions, Admin demo shipping events and certificate revocation. General user administration and automatic suspension refunds are deferred; existing account guards remain. |
 
 ## 4. Additional retained lifecycle requirements
 
-- Final shipment direction is server-derived: positive result plus CONFIRM sends TO_BUYER; positive REJECT or negative result sends TO_SELLER. At most one final direction exists. Buyer and Seller destinations come from validated immutable Order snapshots.
-- Assigned active Courier confirmation selects 1–3 distinct private, readable, server-bound JPEG/PNG proof objects. Upload alone does not confirm delivery. Confirmation time and selected IDs are immutable.
-- Buyer physical receipt is separate from inspection acceptance. A timely non-receipt report keeps Escrow HELD and blocks automatic release. Scoped audited Admin evidence review resolves one RELEASE or REFUND.
-- Return delivery is committed durably before attempting refund. If settlement fails, RETURNED_TO_SELLER plus HELD remains visible and the worker retries; delivery evidence is not lost.
-- One Order/Escrow receives exactly one immutable RELEASE or REFUND. Server derives recipients/amounts; Decimal allocations conserve the original held amount. Commands use stable idempotency keys and safely replay committed outcomes.
-- Server jobs work without HTTP traffic: unpaid expiry, receipt release, Seller no-ship refund, return-refund retry and inspection overdue escalation. Outage/readability failure remains pending and observable, then retries.
+- Each new Order snapshots EXTERNAL_V2; all pre-migration Orders retain LEGACY_V1, including unpaid/paid/terminal rows. Clients cannot submit policy, parties, amounts or timestamps. Shipment and settlement policy must match the immutable Order.
+- Positive final result and certificate become available atomically. Persist availability and exactly +72h decision deadline. Timely CONFIRM permits TO_BUYER; REJECT or SYSTEM timeout permits TO_SELLER. Timeout is audited and creates no Buyer decision, shipment or financial outcome. Negative results permit only TO_SELLER.
+- Seller sends TO_CENTER; authorized Inspector confirms actual center receipt and assigned Inspector records carrier/tracking for the final leg. Destinations remain frozen Order snapshots. New shipping requires no Courier account or image; legacy selected private-proof rules remain intact.
+- Explicitly configured active Admin demo DELIVERED events persist source, event identity, shipment/leg and server time. Event identity cannot move to another Order/leg. Transport delivery is distinct from actual recipient receipt. TO_CENTER events do not receive at center; TO_SELLER events do not refund.
+- Actual owning Buyer receipt is allowed after correct dispatch without waiting for a transport event, subject to an existing deadline. A missing report after dispatch keeps HELD and blocks any later AUTO. AUTO requires the trusted TO_BUYER event and its exact +72h deadline. Scoped audited Admin resolves non-receipt with same-case evidence/reason.
+- Actual owning Seller or scoped audited Admin confirms returned receipt. RETURNED_TO_SELLER plus HELD commits first; a separate financial transaction invokes the same settlement service. Failure remains pending and retries without losing receipt or charging fees twice.
+- One immutable RELEASE or REFUND conserves held money. Positive rejection/timeout item-only refunds retain original inspection/shipping once; other specified causes and legacy policy remain full. Original successful Payment/Receipt never changes.
+- Six bounded no-HTTP jobs preserve old cursor ownership/fairness and add result timeout as ID6. Dry-run writes no commands, decisions, shipments, money or progress. Storage failure remains relevant to legacy proof flows; a report prevents AUTO under either policy.
 
 ## 5. Profile, reviews and privacy detail
 
@@ -89,7 +91,7 @@ Readable Thai prototype policy states data purposes, private evidence access, co
 | FR-38 | Inspection-service reviews. |
 | FR-39 | General post-delivery item disputes; only the narrow non-receipt delivery report is retained. |
 | FR-40 | General seller reporting. |
-| FR-42 | General Order/refund/dispute administration. Narrow audited non-receipt resolution remains a retained lifecycle operation. |
+| FR-42 | General unrestricted Order/refund/dispute administration is deferred. Retain only scoped audited non-receipt resolution, return-confirmation exceptions with same-case evidence/reason and explicitly configured Admin demo shipping events; clients cannot choose amounts or recipients. |
 | FR-43 | Advanced fee-setting administration. Existing Order fee snapshots remain authoritative. |
 | FR-44 | System analytics/dashboard. |
 | FR-45 | Seller analytics/dashboard beyond retained progress/payout views. |
@@ -106,24 +108,24 @@ Deferred does not mean implemented or accepted by the teacher. requirements.csv 
 |---|---|
 | NFR-01 | Demo performance: measure cold catalog/API timings on the actual phone/network and report them. The historical 500 concurrent sessions/10,000 products/3-second guarantee is deferred, not asserted without load evidence. |
 | NFR-02 | Auction performance deferred with auctions. |
-| NFR-03 | Product images: up to 10, server limit 5 MiB each, validated types/bytes according to product contract. No universal auto-compression promise without evidence. Delivery proof has its separate 1–3 object limit. |
+| NFR-03 | Product images retain the existing up-to-10, 5 MiB each validated contract. New-policy shipping photos are optional and no Courier photos are required; legacy delivery confirmation retains 1–3 selected private proofs. Private inspection/identity images still require authorization. |
 | NFR-04 | Reachable HTTPS API/QR, verified Google identity, server role/ownership enforcement, private sensitive Storage, bounded reads, protected secrets, audited critical commands and redacted public views. App stores no separate password. |
 | NFR-05 | Revised prototype privacy: readable policy and accurate persisted acknowledgement, private access and manual administrator request contact. Full commercial compliance/export/delete tooling is deferred. |
 | NFR-06 | Installable standalone APK with bundled JavaScript; real 5–7 inch Android check for guest/login, both journeys, camera/gallery, back/keyboard and profile/reviews. No Metro dependency for final use. |
 | NFR-07 | Thai primary UI; observe discovery and Seller-listing usability in a rehearsal and report actual timings/limitations, rather than asserting targets from mock screens. |
 | NFR-08 | Production 99.5% availability and 30-day backup policy deferred. Submission requires isolated backup/restore rehearsal, runtime health, restart/recovery and a concrete safe migration procedure. |
 | NFR-09 | Production 50,000-product/20,000-account scale deferred. Retained reads are bounded/paginated with appropriate keys/indexes; no untested scalability guarantee. |
-| NFR-10 | Retained revised lifecycle timing and scheduled recovery as defined below. |
+| NFR-10 | Six bounded restart-safe no-HTTP jobs: unpaid expiry, receipt release, Seller no-ship refund, return-refund retry, inspection overdue escalation and positive-result decision timeout. Preserve old progress IDs 1–5 and add result-timeout ID6; dry-run writes nothing; fresh DB clock after locks governs cutoffs. |
 
 ## 8. Timing, money and failure rules
 
-Unpaid expiry uses the persisted Order deadline derived from created_at + 30 minutes; it does not add another 30 minutes to that stored deadline. Seller no-ship cutoff is paid_at + 72 hours. Buyer receipt cutoff is confirmed readable TO_BUYER delivery proof time + 72 hours. Inspection target is three working days after center receipt: advance three Monday–Friday dates in Asia/Bangkok, preserving local time; weekends are excluded and no holiday calendar is claimed. Overdue inspection creates escalation only.
+Unpaid expiry is persisted created_at+30 minutes. Seller no-ship is paid_at+72h. New-policy result decision is atomic result_available_at+72h; result_timed_out_at records a separate SYSTEM outcome. New-policy AUTO receipt is trusted TO_BUYER transport event confirmed_at+72h; tracking entry and first app opening start neither timer. Legacy Buyer receipt uses confirmed private Courier proof time+72h. Inspection target advances three Monday–Friday dates in Asia/Bangkok after actual center receipt, preserving local time, with no holiday calendar; escalation creates no result or money.
 
-Eligibility is checked using fresh database wall-clock after obtaining the Order lock and after I/O/state revalidation. Before cutoff a Buyer receipt/report may write; at/after cutoff it fails even if HTTP arrived earlier and waited. Successful same-key replay remains readable. Workers target five-minute scans; actual completion is the first successful eligible scan, not a promise of exact completion at the cutoff. Missing/unreadable proof, outage or timely non-receipt keeps HELD and observable pending status.
+Fresh PostgreSQL clock_timestamp() is sampled after Order→Shipment→Escrow→Product locks as applicable and after I/O/state revalidation. Decision and receipt/report writes are strictly before their cutoff; at/after fails even if HTTP arrived earlier and waited. Committed authorized replay remains readable. Workers target five-minute scans; successful eligible processing can occur later after outage or locked-row skip. A missing report blocks AUTO; no trusted new-policy delivery event means no AUTO release.
 
-Fees are original Order snapshots. Example THB: item1,200 + shipping50 + inspection100 = held1,350; Seller commission5% of item=60 and payout1,140. RELEASE allocations total1,350. REFUND returns1,350 with Seller/commission/inspection/shipping retained allocations zero. Real transfers, partial refund, new return fees and auto relisting are excluded.
+Fees are immutable Decimal snapshots. Example THB held1,350 = item1,200+shipping50+inspection100. RELEASE = payout1,140+commission60+inspection100+shipping50. New positive-rejection/result-timeout REFUND = Buyer1,200+retained inspection100+retained shipping50, with Seller/commission0; never refund1,050 by deducting fees again. Negative/no-ship/Admin non-receipt and legacy REFUND = Buyer1,350 with all other allocations0. No extra return fee, actual provider transfer or automatic relisting is inferred.
 
-Existing-Order lock order is Order then applicable Shipment then Escrow then Product. Migrations preserve existing data and have one expected Alembic head; shared databases are not reset or stamped. Parties, foreign keys, unique outcomes, allocations, replay and crash recovery need isolated PostgreSQL concurrency and failure evidence.
+Migration r01e20261002 follows c08f20261002 with one head. It preserves legacy rows/financial evidence and safely downgrades/re-upgrades when no new-policy data exists; it explicitly refuses downgrade when new-policy Orders/events cannot be represented without loss. Shared databases are not reset, stamped or migrated by these checks.
 
 ## 9. Acceptance and deliverables
 

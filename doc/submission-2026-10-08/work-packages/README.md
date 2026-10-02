@@ -1,5 +1,7 @@
 # แบ่งงานให้เพื่อนใช้ Codex — 6 ชุด
 
+Current R1–R4 candidate: [PR130](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/130), parent reviewed PR129. Read [amendment scope](../coordination/AB-AMENDMENT-SCOPE.md) and [current API mapping](../reports/EXTERNAL-SHIPPING-API-MAPPING.md) before historical sequencing. Accepted C/D is already composed in that source; do not re-create old migration branches. New-policy independent/E/shared/native acceptance remains separate.
+
 เป้าหมายเดิม: Android prototype ส่ง 8 ตุลาคม 2026 สองเส้นทางขายสำเร็จ/คืนเงิน พร้อม profile และ reviews แบบพื้นฐาน เอกสารนี้จัดผู้รับงานจาก tasks เดิม ไม่ใช่หลักฐานว่า implementation เสร็จแล้ว
 
 ## มอบหมายงาน

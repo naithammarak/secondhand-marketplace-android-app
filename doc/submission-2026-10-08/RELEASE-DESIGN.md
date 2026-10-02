@@ -1,6 +1,6 @@
 # UX/UI contract สำหรับฉบับส่ง
 
-> **กติกาล่าสุด 2 ต.ค. 2026:** ใช้ขนส่งภายนอก ไม่เปิด Courier workspace ใหม่; ผู้รับแต่ละช่วงยืนยันรับจริง; Buyer ปฏิเสธหรือหมดเวลาผลตรวจ 72h → ส่งคืนและคืนเฉพาะค่าสินค้าหลังรับคืนจริง คงค่าตรวจ/ค่าส่งครั้งเดียว ดู [EXTERNAL-SHIPPING-03](changes/EXTERNAL-SHIPPING-03.md) และ [REFUND-DECISION-02](changes/REFUND-DECISION-02.md) แผนนี้ยังรอ implementation/review ใหม่ ไม่ใช่ผลผ่านจาก PR129
+> **Backend candidate 2 ต.ค.:** R1–R4 ใช้ `EXTERNAL_V2` สำหรับ Order ใหม่และคง `LEGACY_V1` สำหรับข้อมูลเดิม ดู [API mapping](reports/EXTERNAL-SHIPPING-API-MAPPING.md) และ [รายงาน R1](reports/EXTERNAL-SHIPPING-R1.md) ผล local PostgreSQL ไม่ใช่ independent PASS, E UI, shared rollout หรือ Android acceptance
 
 ใช้ visual system และงาน UI ล่าสุดของทีม ชื่อแสดงใน release เลือก **2NDHAND**; identifiers `com.kmutnb.secondhandmarketplace` และ scheme เดิมคงไว้เพื่อลด OAuth migration; UI/สี/iconปรับตาม themeเดิม ไม่มี visual rewrite เพิ่ม
 
@@ -34,7 +34,7 @@ Paid/center/inspection → PASS/MINOR_ISSUEที่BuyerREJECTหรือไ�
 - Inspectionresult: certificateเมื่อpositivefinalresultทันที; CONFIRM/REJECTเฉพาะeligiblepositiveก่อนserverdeadline; แสดง72hผลตรวจ→หมดเวลาส่งคืน ไม่มีautoaccept; negativeแสดงreturnflow ไม่มีconfirm
 - Delivery: carrier/trackingและสถานะtrusted event/ผู้รับยืนยันแยกกัน; ไม่มีCourierworkspaceใหม่หรือรูปบังคับ; countdownจากserverdeadline; receiptbuttonกับnotreceivedreportแยกaction; ที่/หลังdeadlinewritesถูกปฏิเสธตามDBclock; trackingของSellerไม่เริ่มAUTO; ใช้refreshแสดงจริง อย่าทำsettlementในclienttimer
 - Pendingretry: ถ้าactualreturnreceiptcommittedแต่refundล้มเหลว แสดง "รับคืนแล้ว กำลังดำเนินการคืนเงิน" ไม่เรียกREFUNDED; workeroutageยังHELD ไม่ปล่อยเงินเอง
-- Adminresolution: scopedcase/evidence refs/reasonrequired; ต้องเห็นreport/proofจริงและaudit; ไม่เลือกยอด/ผู้รับเอง
+- Adminresolution: scopedcase/evidence refs/reasonrequired; ต้องเห็นsame-case report/return evidenceและaudit; ไม่เลือกยอด/ผู้รับเอง
 - Reviews/profile: [API contract](PROFILE-REVIEWS-contract.md); เอาฟิลด์/mockstatsที่อยู่นอกscopeออก; persistedชื่อและคะแนนเท่านั้น
 - Certificate: publicHTTPSopaqueQR, ไม่ต้องlogin, noPII; REVOKEDแสดงชัดและinvalidtokennotfound; ไม่เผยprivatereasonnotes
 - Permissions: save/error/loading/disabledactionsตามserverflags, staleaccountguard, retryไม่duplicate, imagepermissionsมีคำอธิบายตรงproduct/verification/proofuse
@@ -52,9 +52,9 @@ Paid/center/inspection → PASS/MINOR_ISSUEที่BuyerREJECTหรือไ�
 | Receipt | "ยืนยันว่าได้รับสินค้าแล้ว" |
 | Nonreceipt | "แจ้งว่ายังไม่ได้รับสินค้า" |
 | Receiptwindow | "เมื่อระบบได้รับสถานะขนส่งว่าส่งถึงแล้ว โปรดยืนยันรับหรือแจ้งไม่ได้รับภายในเวลาที่แสดง; ระบบประมวลผลเมื่อถึงเกณฑ์" สถานะขนส่งเดโมต้องมีป้ายจำลอง |
-| Resultwindow | "โปรดยอมรับหรือปฏิเสธผลตรวจภายในเวลาที่แสดง หากไม่ตอบ ระบบจะส่งสินค้าคืนผู้ขาย" |
+| Resultwindow | "โปรดยอมรับหรือปฏิเสธผลตรวจภายในเวลาที่แสดง หากไม่ตอบ ระบบจะเปลี่ยนเป็นขั้นตอนส่งคืนผู้ขาย" |
 | Zeroreviews | "ยังไม่มีรีวิวจากผู้ซื้อที่ซื้อสำเร็จ" |
 
 ## Diagrams
 
-[Class](diagrams/class-core.puml), [Order state](diagrams/order-state.puml), [Successful sale sequence](diagrams/sale-sequence.puml), [Return/refund sequence](diagrams/return-sequence.puml), [Use cases](diagrams/use-cases.puml), [Architecture](diagrams/architecture.puml) อธิบาย targetrelease ไม่ใช่หลักฐานว่า codeครบ งาน13ต้องปรับรายละเอียดจากfinalimplementationและexportสำหรับส่งอีกครั้ง
+[Class](diagrams/class-core.puml), [Order state](diagrams/order-state.puml), [Successful sale sequence](diagrams/sale-sequence.puml), [Return/refund sequence](diagrams/return-sequence.puml), [Use cases](diagrams/use-cases.puml), [Architecture](diagrams/architecture.puml) อธิบาย targetrelease ไม่ใช่หลักฐานว่า codeครบ R1 ปรับ sources/rendered ให้ตรงกับ backend candidate แล้ว; E และงาน13ยังต้องตรวจ UI/final release ก่อนส่งจริง

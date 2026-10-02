@@ -1,4 +1,4 @@
-"""Five lifecycle jobs; dry-run by default and explicit PostgreSQL target required."""
+"""Six lifecycle jobs; dry-run by default and explicit PostgreSQL target required."""
 import argparse
 from dataclasses import asdict
 import json

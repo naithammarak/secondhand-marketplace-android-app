@@ -1,27 +1,17 @@
-# A — รวมฐานโค้ดและเตรียม schema
+# A / R1 — current amendment handoff
 
-**ผู้รับ:** Lead / Codex ฝั่งเจ้าของโครงการ · **Tasks:** 01 → 02 · **Priority:** P0
+**Scope:** task02 · [Current amendment](../changes/EXTERNAL-SHIPPING-03.md) · [Confirmed refund](../changes/REFUND-DECISION-02.md) · [Concrete scope](../coordination/AB-AMENDMENT-SCOPE.md)
 
-## ผลลัพธ์
-
-- release base ที่เก็บ UI ล่าสุดและ INSPECT/CERT พร้อมตรวจ payment จำลองที่บันทึก Payment/Receipt/Escrow และ replay ได้
-- migration เดียวสำหรับ final delivery/receipt/settlement, immutable return address และ proof binding
-- concrete API mapping และ base SHA ให้ B/C/D/E เริ่มจากโค้ดชุดเดียวกัน
+PR130 extends reviewed PR129 without changing the historical accepted A/B/CD/BCD branches. New Orders snapshot EXTERNAL_V2; legacy Orders preserve their policy and financial history. Backend R1–R4 local checks do not establish E/shared/Android acceptance.
 
 ## Prompt สำหรับ Codex
 
 ```text
-You own work package A for the Android marketplace prototype due 8 October 2026, Asia/Bangkok. Work in the supplied secondhand-marketplace-android-app repository. Locate doc/submission-2026-10-08 (or the supplied packet path). Read work-packages/README.md, README.md, DOC-01-scope.md and FINISH-00-release-gates.md; apply actual repository AGENTS.md.
+Locate doc/submission-2026-10-08 in the supplied repository. Read changes/EXTERNAL-SHIPPING-03.md, changes/REFUND-DECISION-02.md, coordination/AB-AMENDMENT-SCOPE.md, DOC-01-scope.md and reports/EXTERNAL-SHIPPING-API-MAPPING.md before older references. Execute current task02 prompts and their amendment acceptance, on the exact delivered upstream SHA. Historical Courier proof/full-refund wording applies only to LEGACY_V1 or specified unchanged causes.
 
-Execute the full prompts and acceptance checks in tasks/01-INT-01-release-base.md, then tasks/02-FINISH-01-schema.md. Inspect the current checkout and latest provided dirty UI before edits; the historical baseline is a reference, not proof of current state. Preserve unrelated work. Deliver a repeatable base before other feature work and keep integration ownership through the final release. Reuse the existing simulated payment implementation; verify and repair its persistence/idempotency as task01 requires rather than add an external gateway or real money custody. Escrow amounts are simulated database records.
+Preserve one settlement ledger, immutable original Payment/Receipt and addresses, private data, shared databases, live servers and unrelated UI work. New shipping uses carrier/tracking, actual recipients and scoped explicitly enabled Admin demo events. Positive result rejection or SYSTEM timeout authorizes return; actual Seller/Admin receipt precedes item-only refund1200 retaining100/50 once. Other specified and legacy refunds remain full1350; RELEASE keeps commission5%. Two independent72h windows and fresh locked DB clock govern eligibility. Six bounded jobs preserve prior cursor IDs and never invent Buyer decisions or physical dispatch.
 
-Own the migration chain and API-MAPPING.md. Deliver task02's states, constraints, replay/proof/overdue records and immutable seller return-address snapshot. Coordinate schema extensions in order 02 -> 07 -> 08, with one Alembic head. Give downstream tasks exact upstream SHA and concrete APIs. Use isolated PostgreSQL for migration and race verification.
-
-Write reports/01-INT-01.md, reports/02-FINISH-01.md, reports/API-MAPPING.md and reports/release-manifest.json as the original tasks require. Send code commits or a reproducible patch, migration head and actual test output. Do not mark other work packages done from prepared contracts. When B/C/D/E and runtime code return, integrate their commits on the same candidate, reconcile hotspots, verify affected behavior and freeze the source for F's APK. Review reported blockers and make routine in-scope fixes; do not stop at a plan. Shared environment activation and native acceptance follow tasks10-13 rather than this package's isolated tests.
+Record exact base/head, migration, actual checks and evidence in the current reports. Keep E visual/UI work separate, complete owned PostgreSQL evidence and request independent review on the exact final remote head of the same PR130.
 ```
 
-## งานและส่งต่อ
-
-1. [01 INT-01](../tasks/01-INT-01-release-base.md) → ส่ง base ให้ D และ preparation ของ E/F
-2. [02 FINISH-01](../tasks/02-FINISH-01-schema.md) → ส่ง schema/base ให้ B และ C/07
-3. กลับมารวม downstream commits ก่อน [F](F-release-android-presentation.md) freeze/build
+Use [tasks](../README.md) and [R1–R4 reports](../reports/EXTERNAL-SHIPPING-R1.md). Full release/native/scheduler activation remains tasks10–13. No local-only PASS is relabeled as final readiness.

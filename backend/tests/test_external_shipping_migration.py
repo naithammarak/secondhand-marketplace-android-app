@@ -20,6 +20,7 @@ from tests.order_helpers import create_user, create_product, order_body, new_key
 URL=os.getenv('EXTERNAL_MIGRATION_TEST_DATABASE_URL')
 SOURCE=os.getenv('EXTERNAL_LEGACY_SOURCE')
 HEAD='r01e20261002';BASE='c08f20261002'
+LEGACY_REVISION='b531bd1372c0d26b8492fa28ff29ab20a85d7578'
 pytestmark=pytest.mark.skipif(not URL or not SOURCE,reason='owned migration DB and exact PR129 backend source required')
 
 @pytest.fixture
@@ -72,6 +73,14 @@ def test_actual_legacy_money_proofs_reviews_revoke_preserved_downgrade_reupgrade
     legacy=Path(SOURCE)
     assert legacy.is_dir()
     assert not list(legacy.rglob('.env*')),'legacy extracted source must exclude every env template/private copy'
+    repository = Path(__file__).resolve().parents[2]
+    tracked = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', LEGACY_REVISION, '--', 'backend'], cwd=repository).decode().splitlines()
+    for filename in tracked:
+        relative = Path(filename).relative_to('backend')
+        if any(part.startswith('.env') for part in relative.parts):
+            continue
+        expected = subprocess.check_output(['git', 'show', f'{LEGACY_REVISION}:{filename}'], cwd=repository)
+        assert (legacy / relative).read_bytes() == expected, f'Legacy source differs from exact PR129: {relative}'
     script=tmp_path/'test_legacy_external_seed.py';script.write_text(LEGACY_TEST)
     env={'PATH':os.environ['PATH'],'PYTHONPATH':str(legacy),'DATABASE_URL':'sqlite:///:memory:',
          'FINISH_TEST_DATABASE_URL':URL,'PUBLIC_CERTIFICATE_BASE_URL':'https://cert.example.test'}
