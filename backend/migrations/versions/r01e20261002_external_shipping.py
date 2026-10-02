@@ -30,7 +30,7 @@ def upgrade():
     op.add_column("shipments", sa.Column("recipient_source", sa.String(16)))
     op.add_column("shipments", sa.Column("recipient_command_id", sa.Integer(), sa.ForeignKey("fulfillment_commands.id", ondelete="RESTRICT")))
     op.execute("ALTER TABLE orders ADD CONSTRAINT ck_orders_fulfillment_policy CHECK (fulfillment_policy IN ('LEGACY_V1','EXTERNAL_V2'))")
-    op.execute("ALTER TABLE orders ADD CONSTRAINT ck_orders_result_window CHECK ((result_available_at IS NULL AND result_decision_deadline_at IS NULL AND result_timed_out_at IS NULL) OR (fulfillment_policy='EXTERNAL_V2' AND result_available_at IS NOT NULL AND result_decision_deadline_at=result_available_at+interval '72 hours' AND (result_timed_out_at IS NULL OR result_timed_out_at>=result_decision_deadline_at)))")
+    op.execute("ALTER TABLE orders ADD CONSTRAINT ck_orders_result_window CHECK ((result_available_at IS NULL AND result_decision_deadline_at IS NULL AND result_timed_out_at IS NULL) OR (fulfillment_policy='EXTERNAL_V2' AND result_available_at IS NOT NULL AND result_decision_deadline_at IS NOT NULL AND result_decision_deadline_at=result_available_at+interval '72 hours' AND (result_timed_out_at IS NULL OR result_timed_out_at>=result_decision_deadline_at)))")
     op.execute("ALTER TABLE shipments ADD CONSTRAINT ck_shipments_policy CHECK (fulfillment_policy IN ('LEGACY_V1','EXTERNAL_V2'))")
     op.execute("ALTER TABLE shipments ADD CONSTRAINT ck_shipments_recipient_source CHECK (recipient_source IS NULL OR recipient_source IN ('INSPECTOR','BUYER','SELLER','ADMIN'))")
     op.execute("ALTER TABLE shipments ADD CONSTRAINT uq_shipments_event_tuple UNIQUE(id,order_id,leg)")

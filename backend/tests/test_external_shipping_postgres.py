@@ -49,7 +49,7 @@ def context(pg_engine, monkeypatch, tmp_path):
 def post(c,path,actor,body=None,key=None):
     return c['client'].post(path,json={} if body is None else body,headers={**c[actor],'Idempotency-Key':key or new_key()})
 
-def work(c,result='PASS'):
+def work(c,result='PASS', *, finalize=True):
     created=post(c,'/orders','buyer',order_body(c['product']));assert created.status_code==201,created.text
     ident=created.json()['id']
     assert post(c,f'/orders/{ident}/payments/simulate','buyer',{'outcome':'SUCCESS'}).status_code==200
@@ -61,8 +61,36 @@ def work(c,result='PASS'):
     received=post(c,f'/inspections/{work_id}/receive','inspector',{'note':'Physical center receipt'});assert received.status_code==200,received.text
     started=post(c,f'/inspections/{work_id}/start','inspector');assert started.status_code==200,started.text
     image=c['client'].post(f'/inspections/{work_id}/evidence',files={'file':('photo.png',image_bytes(),'image/png')},headers={**c['inspector'],'Idempotency-Key':new_key()});assert image.status_code==201,image.text
+    if not finalize:
+        return ident, work_id
     final=post(c,f'/inspections/{work_id}/result','inspector',{'result':result,'summary':'Expert final result published atomically with its certificate.','evidence_ids':[image.json()['evidence']['id']]});assert final.status_code==200,final.text
     return ident,work_id
+
+
+def test_positive_result_missing_deadline_rolls_back_the_entire_atomic_publication(context):
+    import app.api.inspections as inspections
+    from app.models.inspection import Inspection, InspectionEvidence
+    c = context
+    ident, work_id = work(c, finalize=False)
+    with c['factory']() as db:
+        evidence_id = db.scalar(select(InspectionEvidence.id).where(InspectionEvidence.inspection_id == work_id))
+    issuer = inspections.issue_certificate
+    def missing_deadline(db, order, inspection, result):
+        order.result_decision_deadline_at = None
+        return issuer(db, order, inspection, result)
+    c['monkeypatch'].setattr(inspections, 'issue_certificate', missing_deadline)
+    body = {'result': 'PASS', 'summary': 'An atomic result requires its complete decision window.', 'evidence_ids': [evidence_id]}
+    key = new_key()
+    response = post(c, f'/inspections/{work_id}/result', 'inspector', body, key)
+    assert response.status_code == 503, response.text
+    with c['factory']() as db:
+        order, inspection = db.get(Order, ident), db.get(Inspection, work_id)
+        assert order.status == 'INSPECTING'
+        assert order.result_available_at is None and order.result_decision_deadline_at is None
+        assert inspection.result is None and inspection.inspected_at is None
+        assert db.scalar(select(Certificate.id).where(Certificate.order_id == ident)) is None
+    c['monkeypatch'].setattr(inspections, 'issue_certificate', issuer)
+    assert post(c, f'/inspections/{work_id}/result', 'inspector', body, key).status_code == 200
 
 def dispatch(c,ident,decision='CONFIRM'):
     if decision is not None:
