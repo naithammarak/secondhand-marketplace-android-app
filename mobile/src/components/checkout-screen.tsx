@@ -27,6 +27,7 @@ import { emptyAddressForm, type AddressFormValues } from '@/orders/checkout-form
 import { formatBaht } from '@/orders/order-format';
 import { useCheckout, useOrderDetail } from '@/orders/orders-provider';
 import { CONDITION_LABELS } from '@/services/product-service';
+import type { OrderDetailState } from '@/orders/order-detail-store';
 
 const FIELDS: { field: keyof AddressFormValues; label: string; placeholder: string; numeric?: boolean }[] = [
   { field: 'recipientName', label: 'ชื่อผู้รับ', placeholder: 'ชื่อ-นามสกุลผู้รับสินค้า' },
@@ -49,8 +50,8 @@ const CO_SAVED: AddressFormValues = {
   postalCode: '10110',
 };
 
-/** Realistic PromptPay QR Code Visual */
-function PromptPayQrCode({ size = 160 }: { size?: number }) {
+/** Decorative QR illustration, intentionally not a valid payment QR. */
+function DecorativeQrIllustration({ size = 160 }: { size?: number }) {
   return (
     <View style={[qrStyles.box, { width: size, height: size }]}>
       <Svg width={size - 24} height={size - 24} viewBox="0 0 100 100">
@@ -126,6 +127,21 @@ function PromptPayQrCode({ size = 160 }: { size?: number }) {
   );
 }
 
+function paymentStateMessage(state: OrderDetailState): string {
+  if (state.loadError) return errorText(state.loadError);
+  if (state.order?.status === 'CANCELLED') {
+    return state.order.cancelReason === 'EXPIRED'
+      ? 'คำสั่งซื้อนี้หมดอายุตามสถานะจากเซิร์ฟเวอร์แล้ว'
+      : 'คำสั่งซื้อนี้ถูกยกเลิกแล้ว';
+  }
+  if (state.order?.status === 'UNKNOWN') return 'ยังไม่รู้จักสถานะคำสั่งซื้อนี้ กรุณาตรวจสอบในหน้ารายละเอียดคำสั่งซื้อ';
+  if (state.uncertain) return 'ยังไม่ทราบผลการชำระ ระบบจะตรวจสอบและลองคำขอเดิมด้วยรหัสเดิม';
+  if (state.payError) return errorText(state.payError, state.payCode);
+  if (state.lastResult === 'failed') return 'เซิร์ฟเวอร์ยืนยันว่าการจ่ายเงินจำลองไม่สำเร็จ คำสั่งซื้อยังไม่ชำระเงิน';
+  if (state.order?.paymentStatus === 'UNPAID') return 'เซิร์ฟเวอร์ยังไม่ยืนยันว่าคำสั่งซื้อนี้ชำระเงินแล้ว';
+  return 'ยังยืนยันผลการชำระเงินไม่ได้ กรุณาตรวจสอบสถานะคำสั่งซื้อ';
+}
+
 const qrStyles = StyleSheet.create({
   box: {
     backgroundColor: '#ffffff',
@@ -153,19 +169,22 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   const isDark = scheme === 'dark';
 
   const { state, store } = useCheckout();
-  const { store: detailStore } = useOrderDetail();
+  const { state: detailState, store: detailStore } = useOrderDetail();
 
   const [values, setValues] = useState<AddressFormValues>(emptyAddressForm);
   const [saveAddressForNextTime, setSaveAddressForNextTime] = useState(true);
   const openedFor = useRef<string | null>(null);
+  const mounted = useRef(true);
+  const paymentOperation = useRef(0);
+  const paymentInFlight = useRef(false);
 
-  // PromptPay QR Modal state
-  const [qrModalVisible, setQrModalVisible] = useState(false);
-  const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
-  const [remainingSecs, setRemainingSecs] = useState(30 * 60); // 30 minutes
-  const [qrExpired, setQrExpired] = useState(false);
-  const [simFailed, setSimFailed] = useState(false);
+  // The QR art is illustrative only. Payment results and expiry come from the API.
+  const [dismissedOrderId, setDismissedOrderId] = useState<number | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
+  const activeOrderId = state.owner === auth.session?.user.id && state.productId === productId
+    ? state.createdOrderId : null;
+  const qrModalVisible = activeOrderId !== null && dismissedOrderId !== activeOrderId;
 
   useEffect(() => {
     if (!state.owner || productId === null) return;
@@ -175,39 +194,14 @@ function CheckoutContent({ productId }: { productId: number | null }) {
     void store.open(productId);
   }, [productId, state.owner, store]);
 
-  useEffect(() => () => store.close(), [store]);
-
-  // When order is created, open the PromptPay QR Modal instead of immediately routing away
   useEffect(() => {
-    if (state.owner === auth.session?.user.id && state.productId === productId && state.createdOrderId !== null) {
-      setActiveOrderId(state.createdOrderId);
-      setQrModalVisible(true);
-      setRemainingSecs(30 * 60);
-      setQrExpired(false);
-      setSimFailed(false);
-    }
-  }, [auth.session?.user.id, productId, state.createdOrderId, state.owner, state.productId]);
-
-  // 30-min countdown timer for QR Modal
-  useEffect(() => {
-    if (!qrModalVisible || qrExpired) return;
-    const timer = setInterval(() => {
-      setRemainingSecs(prev => {
-        if (prev <= 1) {
-          setQrExpired(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [qrModalVisible, qrExpired]);
-
-  const formatTimer = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      paymentOperation.current += 1;
+      store.close();
+    };
+  }, [store]);
 
   const productImageUrl = useProductImage(
     state.quote?.product?.id ?? productId ?? 0,
@@ -237,34 +231,87 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   };
 
   const handlePayLater = () => {
-    setQrModalVisible(false);
-    if (activeOrderId) {
+    paymentOperation.current += 1;
+    if (activeOrderId !== null) {
+      setDismissedOrderId(activeOrderId);
       router.replace({ pathname: '/orders/[orderId]', params: { orderId: String(activeOrderId) } });
     }
   };
 
-  const handleSimulateSuccess = async () => {
-    if (!activeOrderId) return;
+  const runSimulation = async (outcome: 'SUCCESS' | 'FAILED') => {
+    const buyerId = auth.session?.user.id ?? null;
+    const orderId = activeOrderId;
+    const product = productId;
+    if (!buyerId || orderId === null || paymentInFlight.current) return;
+
+    const operation = ++paymentOperation.current;
+    paymentInFlight.current = true;
     setIsSimulating(true);
-    setSimFailed(false);
+    setPaymentMessage(null);
+    const isCurrent = () => mounted.current
+      && paymentOperation.current === operation
+      && store.getSnapshot().owner === buyerId
+      && store.getSnapshot().productId === product
+      && store.getSnapshot().createdOrderId === orderId;
+    const snapshotBelongsToRequest = (snapshot: OrderDetailState) => snapshot.owner === buyerId
+      && snapshot.orderId === orderId;
+    const orderMatchesRequest = (snapshot: OrderDetailState) => snapshot.order?.id === orderId
+      && snapshot.order.viewerRole === 'buyer';
+
     try {
-      await detailStore.open(activeOrderId);
-      await detailStore.pay('SUCCESS');
-      setQrModalVisible(false);
-      router.replace({ pathname: '/receipt/[orderId]', params: { orderId: String(activeOrderId) } });
+      await detailStore.open(orderId);
+      if (!isCurrent()) return;
+
+      let snapshot = detailStore.getSnapshot();
+      if (!snapshotBelongsToRequest(snapshot)) {
+        setPaymentMessage('ไม่สามารถยืนยันบัญชีและคำสั่งซื้อปัจจุบันได้ กรุณาเปิดคำสั่งซื้ออีกครั้ง');
+        return;
+      }
+      if (snapshot.loadError || !snapshot.order) {
+        setPaymentMessage(paymentStateMessage(snapshot));
+        return;
+      }
+      if (!orderMatchesRequest(snapshot)) {
+        setPaymentMessage('ไม่สามารถยืนยันบัญชีและคำสั่งซื้อปัจจุบันได้ กรุณาเปิดคำสั่งซื้ออีกครั้ง');
+        return;
+      }
+
+      if (snapshot.order.paymentStatus === 'PAID') {
+        setDismissedOrderId(orderId);
+        router.replace({ pathname: '/receipt/[orderId]', params: { orderId: String(orderId) } });
+        return;
+      }
+      if (snapshot.order.status === 'CANCELLED' || snapshot.order.status === 'UNKNOWN') {
+        setPaymentMessage(paymentStateMessage(snapshot));
+        return;
+      }
+      if (!snapshot.uncertain && !snapshot.order.canPay) {
+        setPaymentMessage(paymentStateMessage(snapshot));
+        return;
+      }
+
+      // An uncertain outcome must reuse the pending idempotency key and original outcome.
+      if (snapshot.uncertain) await detailStore.retryUncertain();
+      else await detailStore.pay(outcome);
+      if (!isCurrent()) return;
+
+      snapshot = detailStore.getSnapshot();
+      if (!snapshotBelongsToRequest(snapshot) || !orderMatchesRequest(snapshot)) {
+        setPaymentMessage('บัญชีหรือคำสั่งซื้อเปลี่ยนไประหว่างตรวจสอบ จึงไม่ได้เปิดใบเสร็จ');
+        return;
+      }
+      if (snapshot.order?.paymentStatus === 'PAID') {
+        setDismissedOrderId(orderId);
+        router.replace({ pathname: '/receipt/[orderId]', params: { orderId: String(orderId) } });
+        return;
+      }
+      setPaymentMessage(paymentStateMessage(snapshot));
     } catch {
-      setSimFailed(true);
+      if (isCurrent()) setPaymentMessage('ติดต่อระบบจำลองการชำระเงินไม่ได้ กรุณาตรวจสอบสถานะคำสั่งซื้อ');
     } finally {
-      setIsSimulating(false);
+      paymentInFlight.current = false;
+      if (isCurrent()) setIsSimulating(false);
     }
-  };
-
-  const handleSimulateFailure = () => {
-    setSimFailed(true);
-  };
-
-  const handleSimulateExpire = () => {
-    setQrExpired(true);
   };
 
   return (
@@ -435,13 +482,13 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                         backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)',
                       },
                     ]}>
-                    <View style={styles.promptPayLogo}>
-                      <ThemedText style={styles.promptPayLogoText}>Prompt{'\n'}Pay</ThemedText>
+                    <View style={styles.demoPaymentBadge}>
+                      <ThemedText style={styles.demoPaymentBadgeText}>DEMO</ThemedText>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <ThemedText style={styles.paymentMethodTitle}>พร้อมเพย์ QR</ThemedText>
+                      <ThemedText style={styles.paymentMethodTitle}>QR สำหรับการสาธิต</ThemedText>
                       <ThemedText style={[styles.paymentMethodSubtitle, { color: theme.textSecondary }]}>
-                        สแกนจ่ายด้วยแอปธนาคารใดก็ได้
+                        การชำระเงินในแอปนี้เป็นการจำลอง
                       </ThemedText>
                     </View>
                     <View style={styles.paymentCheckedCircle}>
@@ -528,7 +575,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
         </View>
       ) : null}
 
-      {/* PromptPay QR Modal Sheet matching prototype co-qr */}
+      {/* Simulated-payment panel. The decorative QR is not a payment credential. */}
       <Modal visible={qrModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View
@@ -541,62 +588,29 @@ function CheckoutContent({ productId }: { productId: number | null }) {
             ]}>
             <View style={styles.sheetHandle} />
 
-            {qrExpired ? (
-              /* Expired View */
-              <View style={styles.qrExpiredContent}>
-                <View style={[styles.expiredCircle, { backgroundColor: isDark ? 'rgba(245,158,11,0.15)' : '#fef3c7' }]}>
-                  <ThemedText style={{ fontSize: 32 }}>⏰</ThemedText>
-                </View>
-                <ThemedText style={styles.expiredTitle}>หมดเวลาชำระเงิน</ThemedText>
-                <ThemedText style={[styles.expiredDetail, { color: theme.textSecondary }]}>
-                  คำสั่งซื้อนี้ถูกยกเลิกอัตโนมัติ และสินค้ากลับไปขายต่อแล้ว
-                </ThemedText>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="กลับไปดูสินค้า"
-                  onPress={() => {
-                    setQrModalVisible(false);
-                    router.replace('/');
-                  }}
-                  style={styles.backToShopBtn}>
-                  <ThemedText style={styles.backToShopBtnText}>กลับไปดูสินค้า</ThemedText>
-                </Pressable>
-              </View>
-            ) : (
-              /* Main QR View */
-              <View style={styles.qrMainContent}>
-                <ThemedText style={styles.qrTitle}>สแกนเพื่อชำระเงิน</ThemedText>
+            <View style={styles.qrMainContent}>
+                <ThemedText style={styles.qrTitle}>ชำระเงินจำลอง</ThemedText>
                 <ThemedText style={styles.qrAmount}>
                   {quote ? formatBaht(quote.totalAmount) : ''}
                 </ThemedText>
 
                 {/* QR Code Visual */}
                 <View style={styles.qrCodeWrapper}>
-                  <PromptPayQrCode size={160} />
+                  <DecorativeQrIllustration size={160} />
                 </View>
 
                 <ThemedText style={[styles.qrInstructions, { color: theme.textSecondary }]}>
-                  สแกนด้วยแอปธนาคารใดก็ได้ · ชำระภายใน{' '}
-                  <ThemedText style={[styles.timerBold, { color: theme.text }]}>
-                    {formatTimer(remainingSecs)}
-                  </ThemedText>
+                  ภาพ QR นี้เป็นภาพประกอบเท่านั้นและสแกนไม่ได้
                 </ThemedText>
 
                 <ThemedText style={[styles.qrSubnote, { color: theme.textSecondary }]}>
-                  หากเลยเวลา ระบบจะยกเลิกคำสั่งซื้อให้อัตโนมัติ
+                  ไม่มีการเชื่อมต่อธนาคารและไม่มีเงินจริงถูกตัด สถานะหมดอายุต้องยืนยันจากเซิร์ฟเวอร์
                 </ThemedText>
 
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color="#10b981" />
-                  <ThemedText style={[styles.loadingText, { color: theme.textSecondary }]}>
-                    รอการชำระเงิน…
-                  </ThemedText>
-                </View>
-
-                {simFailed ? (
+                {paymentMessage ? (
                   <View style={styles.failNotice}>
-                    <ThemedText style={styles.failNoticeText}>
-                      ชำระเงินไม่สำเร็จ สินค้ายังถูกจองไว้ให้คุณ ลองใหม่ได้
+                    <ThemedText style={styles.failNoticeText} accessibilityLiveRegion="polite">
+                      {paymentMessage}
                     </ThemedText>
                   </View>
                 ) : null}
@@ -605,43 +619,52 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="ชำระภายหลัง"
+                  disabled={isSimulating}
                   onPress={handlePayLater}
                   style={[styles.payLaterBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9' }]}>
                   <ThemedText style={styles.payLaterBtnText}>ชำระภายหลัง</ThemedText>
                 </Pressable>
 
-                {/* Simulation Toolbar for Testing */}
+                {/* Demo controls call the real simulated-payment endpoint. */}
                 <View style={[styles.simToolbar, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                  <ThemedText style={[styles.simLabel, { color: theme.textSecondary }]}>ทดสอบ:</ThemedText>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="จำลองจ่ายสำเร็จ"
-                    disabled={isSimulating}
-                    onPress={handleSimulateSuccess}
-                    style={styles.simBtnSuccess}>
-                    {isSimulating ? (
-                      <ActivityIndicator size="small" color="#10b981" />
+                  <ThemedText style={[styles.simLabel, { color: theme.textSecondary }]}>ผลการสาธิต:</ThemedText>
+                  {detailState.owner === auth.session?.user.id
+                    && detailState.orderId === activeOrderId
+                    && detailState.uncertain ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="ตรวจสอบผลคำขอเดิม ใช้รหัสเดิม"
+                        disabled={isSimulating || detailState.paying !== null}
+                        onPress={() => { void runSimulation('SUCCESS'); }}
+                        style={styles.simBtnSuccess}>
+                        {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
+                          <ThemedText style={styles.simBtnSuccessText}>ตรวจสอบและลองคำขอเดิม</ThemedText>
+                        )}
+                      </Pressable>
                     ) : (
-                      <ThemedText style={styles.simBtnSuccessText}>จำลองจ่ายสำเร็จ</ThemedText>
+                      <>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="จำลองจ่ายสำเร็จ"
+                          disabled={isSimulating || detailState.paying !== null}
+                          onPress={() => { void runSimulation('SUCCESS'); }}
+                          style={styles.simBtnSuccess}>
+                          {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
+                            <ThemedText style={styles.simBtnSuccessText}>จำลองจ่ายสำเร็จ</ThemedText>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="จำลองจ่ายล้มเหลว"
+                          disabled={isSimulating || detailState.paying !== null}
+                          onPress={() => { void runSimulation('FAILED'); }}
+                          style={styles.simBtnFail}>
+                          <ThemedText style={styles.simBtnFailText}>จำลองจ่ายล้มเหลว</ThemedText>
+                        </Pressable>
+                      </>
                     )}
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="จำลองจ่ายล้มเหลว"
-                    onPress={handleSimulateFailure}
-                    style={styles.simBtnFail}>
-                    <ThemedText style={styles.simBtnFailText}>จำลองจ่ายล้มเหลว</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="จำลองหมดเวลา"
-                    onPress={handleSimulateExpire}
-                    style={styles.simBtnExpire}>
-                    <ThemedText style={styles.simBtnExpireText}>จำลองหมดเวลา</ThemedText>
-                  </Pressable>
                 </View>
-              </View>
-            )}
+            </View>
           </View>
         </View>
       </Modal>
@@ -776,7 +799,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 2,
   },
-  promptPayLogo: {
+  demoPaymentBadge: {
     width: 38,
     height: 38,
     borderRadius: 8,
@@ -784,7 +807,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  promptPayLogoText: {
+  demoPaymentBadgeText: {
     color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
@@ -947,21 +970,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  timerBold: {
-    fontWeight: '800',
-  },
   qrSubnote: {
     fontSize: 11,
     marginTop: 4,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  loadingText: {
-    fontSize: 12,
   },
   failNotice: {
     marginTop: 10,
@@ -1026,54 +1037,5 @@ const styles = StyleSheet.create({
     color: '#f43f5e',
     fontSize: 11,
     fontWeight: '600',
-  },
-  simBtnExpire: {
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  simBtnExpireText: {
-    color: '#f59e0b',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  qrExpiredContent: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    width: '100%',
-  },
-  expiredCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  expiredTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  expiredDetail: {
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 18,
-    maxWidth: 260,
-  },
-  backToShopBtn: {
-    marginTop: 16,
-    width: '100%',
-    backgroundColor: '#059669',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  backToShopBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

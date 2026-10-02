@@ -3,7 +3,7 @@
 import secrets
 import logging
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Literal
 from uuid import uuid4
 
@@ -24,6 +24,9 @@ from app.models.buyer_inspection_decision import BuyerInspectionDecision
 from app.models.inspection import Inspection, InspectionEvidence, InspectionIdempotency, InspectionResultEvidence
 from app.models.order import Escrow, Order, Payment
 from app.models.shipment import Shipment, ShipmentDeliveryProof
+from app.models.fulfillment import ShipmentConfirmedProof
+from app.services.transaction_clock import database_now
+from app.services.order_pricing import as_utc
 from app.models.user import User, UserRole, UserStatus
 from app.services import inspection_storage
 from app.services.certificate_urls import public_certificate_base_url
@@ -81,6 +84,8 @@ async def parse_buyer_decision(request: Request) -> BuyerDecisionRequest:
             fields = {"body": "Invalid JSON body"}
         raise decision_validation_error(fields) from exc
     reason = body.reason.strip() if body.reason is not None else None
+    if reason is not None and any(char == "\x00" or 0xD800 <= ord(char) <= 0xDFFF for char in reason):
+        raise decision_validation_error({"reason": "Reason contains unsupported characters"})
     if body.decision == "CONFIRM" and reason is not None:
         raise decision_validation_error({"reason": "CONFIRM does not accept a reason"})
     if body.decision == "REJECT" and reason is not None and len(reason) > 500:
@@ -291,12 +296,27 @@ def ship_to_center(order_id: int, body: ShipRequest, response: Response, actor: 
         raise api_error(409, "invalid_state", "Order cannot be shipped now")
     if db.scalar(select(Payment.id).where(Payment.order_id == order.id)) is None or db.scalar(select(Escrow.id).where(Escrow.order_id == order.id, Escrow.status == "HELD")) is None:
         raise api_error(409, "invalid_state", "Paid Order with held escrow required")
+    shipment = db.scalar(select(Shipment).where(Shipment.order_id == order.id).with_for_update())
+    if shipment is not None:
+        raise api_error(409, "invalid_state", "Shipment already exists")
+    db.scalar(select(Escrow).where(Escrow.order_id == order.id).with_for_update())
+    instant = database_now(db)
+    if order.paid_at is None or instant >= as_utc(order.paid_at) + timedelta(hours=72):
+        raise api_error(409, "seller_shipping_deadline_passed", "Seller shipping deadline has passed")
+    if order.return_address is None:
+        raise api_error(409, "fulfillment_destination_missing", "Seller must save a return address before shipping")
     db.add_all([
-        Shipment(order_id=order.id, leg="TO_CENTER", status="IN_TRANSIT", carrier=carrier, tracking_number=tracking, shipped_at=now()),
+        Shipment(order_id=order.id, leg="TO_CENTER", status="IN_TRANSIT", carrier=carrier, tracking_number=tracking, shipped_at=instant),
         Inspection(order_id=order.id),
     ])
     order.status = "SHIPPING_TO_CENTER"
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) == "ck_shipments_seller_deadline":
+            raise api_error(409, "seller_shipping_deadline_passed", "Seller shipping deadline has passed") from exc
+        raise
     return _commit(db, order.id, actor.id, "ship", key, fingerprint, _progress(db, order))
 
 
@@ -456,7 +476,16 @@ def confirm_courier_delivery(shipment_id: int, response: Response,
         content = inspection_storage.download_object(proof.object_key)
         if len(content) != proof.size_bytes or hashlib.sha256(content).hexdigest() != proof.sha256:
             raise api_error(503, "storage_unavailable", "Delivery photo could not be verified")
-    shipment.courier_delivered_at = now()
+    # Storage I/O completed under Order/Shipment locks; revalidate current metadata.
+    db.refresh(shipment)
+    for proof in proofs:
+        db.refresh(proof)
+        if proof.shipment_id != shipment.id or proof.uploaded_by != shipment.courier_id:
+            raise api_error(409, "invalid_state", "Proof must belong to the assigned Courier")
+    shipment.courier_delivered_at = database_now(db)
+    db.flush()
+    db.add_all([ShipmentConfirmedProof(proof_id=proof.id, shipment_id=shipment.id,
+                courier_id=shipment.courier_id, confirmed_at=shipment.courier_delivered_at) for proof in proofs])
     db.flush()
     return _commit(db, order.id, actor.id, "courier_confirm", key, fingerprint,
                    {"shipment_id": shipment.id, "courier_delivered_at": shipment.courier_delivered_at,

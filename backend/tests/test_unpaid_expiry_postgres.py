@@ -23,6 +23,8 @@ from tests.order_helpers import create_product
 from tests.test_orders_postgres import PG_URL, Session, db, pg_engine, world, insert_order, pay, create_order, cancel
 
 
+pytestmark = pytest.mark.skipif(not PG_URL, reason="isolated PostgreSQL required")
+
 def held_order(db, world, *, product_id=None, deadline=None, key="f2-order"):
     product_id = product_id or world["product_id"]
     order = insert_order(db, world, product_id=product_id, key=key)

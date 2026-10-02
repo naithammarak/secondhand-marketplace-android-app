@@ -12,6 +12,7 @@ from app.api.product_uploads import router as product_uploads_router
 from app.api.product_reads import router as product_reads_router
 from app.api.products import router as products_router
 from app.api.orders import router as orders_router
+from app.api.return_addresses import router as return_address_router
 from app.api.inspections import router as inspections_router
 from app.api.verifications import router as verifications_router
 from app.services.certificate_urls import public_certificate_base_url
@@ -34,11 +35,16 @@ app = FastAPI(
 @app.middleware("http")
 async def sensitive_result_headers(request: Request, call_next):
     """Keep private results and public token lookups out of shared caches."""
-    parts = request.url.path.strip("/").split("/")
+    path = request.scope["path"]
+    root_path = request.scope.get("root_path", "").rstrip("/")
+    if root_path and path.startswith(root_path + "/"):
+        path = path[len(root_path):]
+    parts = path.strip("/").split("/")
     private = (len(parts) in {3, 4} and parts[0] == "orders" and parts[2] == "inspection"
                and (len(parts) == 3 or parts[3] == "decision"))
     certificate = len(parts) in {2, 3} and parts[0] == "certificates"
     response = await call_next(request)
+    private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "return-address")
     if private or certificate:
         response.headers["Cache-Control"] = "no-store"
     if certificate:
@@ -64,6 +70,7 @@ app.include_router(product_reads_router)
 app.include_router(verifications_router)
 app.include_router(admin_verifications_router)
 app.include_router(orders_router)
+app.include_router(return_address_router)
 app.include_router(inspections_router)
 # ORDER-09: มุมมอง Order ของผู้ดูแล (ปิดบังข้อมูลส่วนบุคคลเป็นค่าตั้งต้น)
 app.include_router(admin_orders_router)

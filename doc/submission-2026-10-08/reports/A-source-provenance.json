@@ -1,0 +1,55 @@
+{
+  "status": "REVIEW_PENDING",
+  "source_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
+  "source_root": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app",
+  "worktree": "/home/tmk/.codex/worktrees/a-foundation-20261002/secondhand-marketplace-android-app",
+  "source_differences": [
+    {
+      "path": ".gitignore",
+      "in_base": true,
+      "working_sha256": "8f0331c0efcbdcee389c33c29266b3ae031a6ff8b0f3aaa1134977f71a3e2c59",
+      "base_sha256": "d67904fd8643d719ab8b63430b224e0b3580c1f353d3ec781e7610dc85913f9f"
+    },
+    {
+      "path": "mobile/component-tests/inspection-views.test.tsx",
+      "in_base": true,
+      "working_sha256": "7bd2bc140f86113ac34e38f4719814f0870ec1fe4439ec3a1b2924beb3974068",
+      "base_sha256": "a79a25267cfca838aa02b2f53e7ac3e57f6e6cef8af3f4ff096f45fc7f87fa9f"
+    },
+    {
+      "path": "mobile/component-tests/order-detail-screen.test.tsx",
+      "in_base": true,
+      "working_sha256": "ec611330abf42c4ce950f36aa630560da768ffceed47659cecf161d2f154ca97",
+      "base_sha256": "0b905f8b724dc52e68ea3d600fa0c8fcb041589ec74843ebb88a4613ae2c88e0"
+    },
+    {
+      "path": "mobile/src/components/checkout-screen.tsx",
+      "in_base": true,
+      "working_sha256": "8bb87520b9921b05d231641bf07883cbd22e05a253ae23d5af895d030c84c60a",
+      "base_sha256": "de2f534fd76e74471035d45d202b27ae88aeeb5c43d7a612b38a54ae6586acbb"
+    },
+    {
+      "path": "mobile/src/components/profile-screen.tsx",
+      "in_base": true,
+      "working_sha256": "3e67281be1edd7c8c05b8b8b58d5822ce1fa36f091ac3966461c87b5c7037f40",
+      "base_sha256": "0c937500500924044e6683fe902153ef095f974fba22c496d90cad5faa580f85"
+    }
+  ],
+  "migration_heads_static": [
+    "714f11c84d53"
+  ],
+  "excluded_private_paths": [
+    "all .env* except exactly /backend/.env.example and /mobile/.env.example",
+    "node_modules",
+    "venv",
+    ".venv",
+    "cache",
+    "var",
+    "signing material"
+  ],
+  "approved_environment_templates": [
+    "backend/.env.example",
+    "mobile/.env.example"
+  ],
+  "template_content_policy": "Only synthetic placeholders, documented nonsecret defaults or empty credential fields; no actual credentials/private endpoints, even in templates."
+}

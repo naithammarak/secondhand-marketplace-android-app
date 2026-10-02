@@ -9,6 +9,9 @@ export const orderStatusLabels: Record<string, string> = {
   INSPECTING: 'กำลังตรวจสินค้า',
   RESULT_NOTIFIED: 'แจ้งผลตรวจแล้ว',
   SHIPPING_TO_BUYER: 'กำลังส่งถึงผู้ซื้อ',
+  DELIVERED_PENDING_BUYER: 'ส่งถึงผู้ซื้อแล้ว รอยืนยันรับสินค้า',
+  DELIVERY_DISPUTED: 'ผู้ซื้อแจ้งไม่ได้รับสินค้า รอผู้ดูแลตรวจสอบ',
+  RETURNED_TO_SELLER: 'ส่งคืนถึงผู้ขายแล้ว รอคืนเงิน',
   COMPLETED: 'สำเร็จ',
   RETURNING_TO_SELLER: 'กำลังส่งคืนผู้ขาย',
   REFUNDED: 'คืนเงินแล้ว',
@@ -33,6 +36,7 @@ export const cancelReasonLabels: Record<CancelReason, string> = {
 export const paymentStatusLabels: Record<PaymentStatus, string> = {
   UNPAID: 'ยังไม่ชำระ',
   PAID: 'ชำระแล้ว',
+  REFUNDED: 'คืนเงินแล้ว',
 };
 
 /**

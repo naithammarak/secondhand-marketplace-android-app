@@ -1,8 +1,7 @@
 # Environment variables and local secrets
-.env
-.env.*
-!.env.example
-!.env.*.example
+.env*
+!/backend/.env.example
+!/mobile/.env.example
 
 # Python
 __pycache__/

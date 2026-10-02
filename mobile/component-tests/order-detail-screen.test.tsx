@@ -155,7 +155,7 @@ test('REFUNDED displays refund amount and seller view offers relist button', () 
   expect(screen.getAllByRole('button', { name: 'ลงขายอีกครั้ง' }).length).toBeGreaterThan(0);
 });
 
-test('RESULT_NOTIFIED with failed inspection displays fail banner and button to choose', () => {
+test('RESULT_NOTIFIED negative inspection shows return progress without automatic acceptance', () => {
   mockDetailState = stateWith(order({
     id: 37,
     status: 'RESULT_NOTIFIED',
@@ -167,6 +167,7 @@ test('RESULT_NOTIFIED with failed inspection displays fail banner and button to 
   render(<OrderDetailScreen orderId={37} />);
 
   expect(screen.getByText(/ผลตรวจ: 🟠 ไม่ตรงตามประกาศ/)).toBeTruthy();
-  expect(screen.getByText(/ถ้าไม่ตอบภายใน 72 ชม./)).toBeTruthy();
+  expect(screen.queryByText(/ถ้าไม่ตอบภายใน 72 ชม./)).toBeNull();
+  expect(screen.getByText(/รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'ดูผลตรวจและเลือก' })).toBeTruthy();
 });

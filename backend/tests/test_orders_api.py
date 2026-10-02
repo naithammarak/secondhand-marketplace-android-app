@@ -1048,7 +1048,8 @@ def test_reserved_statuses_are_documented_and_fit_the_column():
     from app.services.order_pricing import ORDER_STATUSES_RESERVED
 
     assert set(ORDER_STATUSES_RESERVED).isdisjoint(ORDER_STATUSES)
-    assert max(len(value) for value in ORDER_STATUSES_RESERVED) <= 32
+    assert max((len(value) for value in ORDER_STATUSES_RESERVED), default=0) <= 32
+    assert max(len(value) for value in ORDER_STATUSES) <= 32
 
 
 def test_replaying_a_failed_attempt_after_the_deadline_applies_the_expiry(world, db):

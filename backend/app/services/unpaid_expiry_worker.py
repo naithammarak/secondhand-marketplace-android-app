@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.order import Order
 from app.services.order_expiry import expire_orders_in_transaction
+from app.services.transaction_clock import database_now
 from app.services.order_pricing import ORDER_WAITING_PAYMENT, as_utc, utcnow
 
 log = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ def run_once(
                     order = db.scalar(
                         select(Order).where(Order.id == order_id).with_for_update(skip_locked=True)
                     )
-                    now = clock()
+                    now = database_now(db) if clock is utcnow else clock()
                     if (
                         order is None
                         or order.status != ORDER_WAITING_PAYMENT
