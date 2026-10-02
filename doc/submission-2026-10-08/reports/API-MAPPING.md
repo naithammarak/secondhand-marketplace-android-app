@@ -1,6 +1,6 @@
 # A foundation API and physical schema mapping
 
-Status: REVIEW_PENDING. Source commit `dcab3898fb4164721264310b62311f79bf1b4551`, upstream base `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`. The final PR head includes documentation-only descendants; its exact SHA is recorded in the review request and coordination state. Migration head: `a02f20261002`, parent `714f11c84d53`. Extend this chain in task order **02 → 07 → 08**; B reuses these models and must not introduce a competing head.
+Status: REVIEW_PENDING. Source commit `5c08ca4b5e614f3f9aaf746423136c593ad7b3af`, upstream base `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`. The final PR head includes documentation-only descendants; its exact SHA is recorded in the review request and coordination state. Migration head: `a02f20261002`, parent `714f11c84d53`. Extend this chain in task order **02 → 07 → 08**; B reuses these models and must not introduce a competing head.
 
 ## Return address
 
