@@ -10,6 +10,8 @@ import { Fonts, MaxContentWidth, Spacing, type MarketplaceTheme } from '@/consta
 import { isProductMockModeEnabled } from '@/products/product-runtime';
 import { createProductService, type MyProductSummary } from '@/services/product-service';
 import { MarketplaceNav } from '@/components/marketplace-nav';
+import { SellerReviewSummary } from '@/components/seller-reviews-modal';
+import { useProfile } from '@/profile/use-profile';
 
 const productService = createProductService({
   baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL,
@@ -35,6 +37,7 @@ export default function MyProductsScreen() {
   const theme = useTheme();
   const styles = makeStyles(theme);
   const { session } = useAuth();
+  const profile = useProfile();
   const accessToken = session?.access_token;
   const [items, setItems] = useState<MyProductSummary[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'CANCELLED'>('ALL');
@@ -99,9 +102,7 @@ export default function MyProductsScreen() {
                 <ThemedText style={styles.verifiedBadge}>
                   ✓ ผู้ขายยืนยันตัวตนแล้ว
                 </ThemedText>
-                <ThemedText style={styles.reviewsText}>
-                  ★ 4.8 <ThemedText style={styles.reviewsCount}>· 32 รีวิว ›</ThemedText>
-                </ThemedText>
+                <SellerReviewSummary sellerId={profile.profile?.role === 'SELLER' ? profile.profile.id : null} />
               </View>
             </View>
 

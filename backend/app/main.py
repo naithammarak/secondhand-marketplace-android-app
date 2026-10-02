@@ -9,6 +9,7 @@ from app.api.admin_orders import router as admin_orders_router
 from app.api.admin_verifications import router as admin_verifications_router
 from app.api.auth import router as auth_router
 from app.api.profile import router as profile_router
+from app.api.reviews import router as reviews_router
 from app.api.product_uploads import router as product_uploads_router
 from app.api.product_reads import router as product_reads_router
 from app.api.products import router as products_router
@@ -47,6 +48,7 @@ async def sensitive_result_headers(request: Request, call_next):
     response = await call_next(request)
     private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "return-address")
     private = private or parts[0] == "profile"
+    private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "review")
     if private or certificate:
         response.headers["Cache-Control"] = "no-store"
     if certificate:
@@ -66,6 +68,7 @@ app.add_middleware(
 # Register API routers.
 app.include_router(auth_router)
 app.include_router(profile_router)
+app.include_router(reviews_router)
 # PRODUCT-02: เปิด API อัปโหลดรูปก่อนสร้างสินค้าใน /docs
 app.include_router(product_uploads_router)
 app.include_router(products_router)

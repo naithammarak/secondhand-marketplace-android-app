@@ -30,7 +30,7 @@ export type ProductImage = ProductMainImage & {
   photoType: 'MAIN' | 'GALLERY';
 };
 
-export type PublicSeller = { displayName: string; verified: boolean };
+export type PublicSeller = { id?: number; displayName: string; verified: boolean };
 
 export type ProductListItem = {
   seller?: PublicSeller | null;
@@ -185,7 +185,7 @@ function toSeller(value: unknown): PublicSeller | null {
   if (value === null || value === undefined) return null;
   const data = obj(value);
   if (typeof data.display_name !== 'string' || !data.display_name.trim() || typeof data.verified !== 'boolean') return null;
-  return { displayName: data.display_name, verified: data.verified };
+  return { ...(Number.isInteger(data.id) && Number(data.id) > 0 ? { id: Number(data.id) } : {}), displayName: data.display_name, verified: data.verified };
 }
 
 function toListItem(value: unknown): ProductListItem {

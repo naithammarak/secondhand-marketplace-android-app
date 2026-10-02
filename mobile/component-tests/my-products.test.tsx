@@ -10,8 +10,10 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
 }));
 jest.mock('@/auth/auth-provider', () => ({
-  useAuth: () => ({ session: { access_token: 'seller-token' } }),
+  useAuth: () => ({ session: { access_token: 'seller-token', user: { id: 'seller' } } }),
 }));
+jest.mock('@/profile/use-profile', () => ({ useProfile: () => ({ profile: { id: 3, role: 'SELLER' } }) }));
+jest.mock('@/reviews/use-seller-reviews', () => ({ useSellerReviews: () => ({ page: { summary: { count: 2, average_rating: 4.5 } }, busy: false, error: false, load: jest.fn() }) }));
 jest.mock('@/services/product-service', () => ({
   createProductService: () => ({ getMyProducts: (...args: unknown[]) => mockGetMyProducts(...args) }),
 }));
@@ -30,6 +32,7 @@ beforeEach(() => {
 test('loads seller inventory with the token and opens available product edit', async () => {
   render(<MyProductsScreen />);
   expect(await screen.findByText('เสื้อพร้อมขาย')).toBeTruthy();
+  expect(screen.getByText('★ 4.5 (2 รีวิว) ›')).toBeTruthy();
   expect(mockGetMyProducts).toHaveBeenCalledWith(1, 'seller-token');
   await fireEvent.press(screen.getByRole('button', { name: 'แก้ไขสินค้า เสื้อพร้อมขาย' }));
   expect(mockPush).toHaveBeenCalledWith({ pathname: '/product/[id]/edit', params: { id: '42' } });

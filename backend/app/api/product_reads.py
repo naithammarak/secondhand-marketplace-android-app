@@ -65,7 +65,7 @@ def public_sellers(db: Session, user_ids: set[int]) -> dict[int, dict]:
     rows = db.execute(select(User.id, Verification.shop_name)
                       .join(Verification, Verification.id == latest_id)
                       .where(User.id.in_(user_ids), Verification.verification_status == "APPROVED"))
-    return {user_id: {"display_name": shop_name or "ร้านค้าที่ได้รับอนุมัติ", "verified": True}
+    return {user_id: {"id": user_id, "display_name": shop_name or "ร้านค้าที่ได้รับอนุมัติ", "verified": True}
             for user_id, shop_name in rows}
 
 

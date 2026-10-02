@@ -556,12 +556,12 @@ def test_public_shop_projection_uses_latest_eligible_record_and_no_pii(db):
     db.commit()
     category, brand = catalog(db)
     product_id = product(db, seller, category, brand)
-    expected = {'display_name': 'ร้านวนดีทดสอบ', 'verified': True}
+    expected = {'id': seller, 'display_name': 'ร้านวนดีทดสอบ', 'verified': True}
     assert client.get('/products').json()['data'][0]['seller'] == expected
     assert client.get(f'/products/{product_id}').json()['seller'] == expected
     record.shop_name = None
     db.commit()
-    assert client.get('/products').json()['data'][0]['seller'] == {'display_name': 'ร้านค้าที่ได้รับอนุมัติ', 'verified': True}
+    assert client.get('/products').json()['data'][0]['seller'] == {'id': seller, 'display_name': 'ร้านค้าที่ได้รับอนุมัติ', 'verified': True}
     # Latest rejection hides old approval and its shop projection.
     approve(db, seller, 'REJECTED', created_at=datetime.now(timezone.utc) + timedelta(seconds=1))
     assert client.get('/products').json()['data'] == []
