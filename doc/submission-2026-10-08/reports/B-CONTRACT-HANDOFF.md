@@ -1,8 +1,12 @@
 # Package B implementation handoff
 
 Status: IMPLEMENTED_AND_TESTED backend; Android/shared runtime acceptance pending.
-Source `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc` on `feat/package-b-delivery-settlement`, existing [PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124).
+Latest correction source `9e8474c8c1bbf8b28d82aba51e4f212497863539`, initial source `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`, on `feat/package-b-delivery-settlement`, existing [PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124).
 A source `33f0eadd8c1739735434ee9f103a5f23398178ed`, A head `94a26a0fbb7a0a82948d95de7db9af070707b770`, merge `76faba8a3fd939e7dad429f3351da583bd302cf0`. B `bc4f6c4` remains an ancestor. One head `a02f20261002`; no B migration. A independent review remains REVIEW_PENDING; source/model handoff is present, with no deployed release asserted.
+
+## PR124 corrections for consumers
+
+Admin discovers final shipment IDs via `GET /admin/orders/{id}.shipments` (id/leg/status/courier_id only), reached from its own Order list; assign using the existing Shipment route. TO_CENTER Order alias and privacy boundaries are unchanged. Admin payment_status reflects committed refunds, with RELEASE still PAID. Generated request-validation detail now omits input/context and safely serializes invalid Unicode, returning422. Paid lifecycle scans persist/rotate their cursor in separate SYSTEM journal commands across processes; dry-run/scoped retry do not move it. No model/migration/financial-ledger changes. [Latest correction evidence](B-PR124-REVIEW-FIXES.md): 192 PostgreSQL passes, 626 default passes/263 skips, source review still pending.
 
 ## E / task06 contracts
 

@@ -170,5 +170,9 @@
   "historical_evidence": {
     "B-contract-tests.xml": "7918fc2 preparation on previous55482 cluster; superseded for implementation acceptance"
   },
-  "github_prs_merged": false
+  "github_prs_merged": false,
+  "latest_backend_source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
+  "latest_reviewed_sha": "29e90c3fe7c283aab6444ad56f011eef455b84fc",
+  "review_fix_evidence": "B-review-fixes-verification.json",
+  "historical_checks_scope": "Initial Task03-05 implementation; current correction results are in review_fix_evidence"
 }

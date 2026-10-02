@@ -6,9 +6,13 @@
 - Original B review checkpoint: `bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c`.
 - A implementation source: `33f0eadd8c1739735434ee9f103a5f23398178ed`; PR #123 head: `94a26a0fbb7a0a82948d95de7db9af070707b770`.
 - A integration merge: `76faba8a3fd939e7dad429f3351da583bd302cf0`; common ancestor `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`.
-- Delivered implementation SHA: `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`. Later commits contain reports/evidence only; the final review head is the PR head.
+- Initial implementation SHA: `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`; latest correction source: `9e8474c8c1bbf8b28d82aba51e4f212497863539`. Use the current PR head including subsequent evidence.
 - Migration predecessor/head: `714f11c84d53` → `a02f20261002`; **no B migration or competing head**.
 - Date / timezone: 2 October 2026 / Asia/Bangkok.
+
+## PR124 review corrections
+
+The four paid-job scans now persist traversal progress in existing SYSTEM commands, rotate across bounded runs/process restarts and wrap for retries. A per-job PostgreSQL advisory transaction lock prevents competing cursor writes; business locks/transactions remain independent. Dry-run writes no cursor and scoped return retry does not move it. [Correction report](B-PR124-REVIEW-FIXES.md) proves broken-first/healthy-second fairness, Storage recovery, cursor contention and four fresh CLI processes with batch=1/max=1. Latest verification: 192 localhost PostgreSQL passes plus 626 default passes/263 skips. Earlier results below remain historical. No migration or runtime scheduler activation.
 
 ## What changed and why
 

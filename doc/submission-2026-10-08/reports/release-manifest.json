@@ -4,7 +4,7 @@
   "scope_version": "submission-2026-10-01",
   "status": "B_IMPLEMENTED_AND_TESTED_RELEASE_ACCEPTANCE_PENDING",
   "app": {
-    "source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+    "source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
     "source_dirty": false,
     "package": "com.kmutnb.secondhandmarketplace",
     "version": null,
@@ -12,7 +12,7 @@
     "api_mode": "complete"
   },
   "api": {
-    "source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+    "source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
     "reachable_https_origin": null,
     "public_certificate_origin": null,
     "deployed_at": null
@@ -23,7 +23,7 @@
     "shared_rollout_evidence": null
   },
   "worker": {
-    "source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+    "source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
     "schedule_minutes": 5,
     "active": null,
     "health_evidence": null
@@ -80,10 +80,17 @@
       "original_review_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
       "implementation_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
       "evidence": "B-verification.json"
+    },
+    {
+      "package_b_pr": 124,
+      "reviewed_sha": "29e90c3fe7c283aab6444ad56f011eef455b84fc",
+      "correction_source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
+      "evidence": "B-review-fixes-verification.json",
+      "independent_review_status": "REREVIEW_PENDING"
     }
   ],
   "known_remaining_issues": [
-    "Independent A round-3 and B implementation review pending",
+    "Independent A review and B correction re-review pending",
     "E/C frontend/reviews and later combined integration/release acceptance remain pending",
     "Legacy in-flight missing return snapshot requires reviewed audited compatibility repair before return dispatch",
     "Shared DB/Storage/OAuth/Android/worker/public QR/release acceptance unverified",
@@ -91,9 +98,10 @@
   ],
   "candidate": {
     "base_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
-    "implementation_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+    "implementation_source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
     "branch": "feat/package-b-delivery-settlement",
-    "review_head_location": "GitHub PR124 head; documentation-only descendants after implementation SHA",
-    "scope": "A tasks01/02 plus B tasks03/04/05 backend; runtime/device acceptance pending"
+    "review_head_location": "GitHub PR124 current head; documentation/evidence descendants after latest correction source SHA",
+    "scope": "A tasks01/02 plus B tasks03/04/05 backend; runtime/device acceptance pending",
+    "initial_implementation_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc"
   }
 }

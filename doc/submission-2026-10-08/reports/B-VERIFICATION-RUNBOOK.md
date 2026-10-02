@@ -1,6 +1,12 @@
 # Package B verification and lifecycle runbook
 
-Implementation source `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`; A source33f0ead/head94a26a0 integrated by76faba8. Task03–05 backend implemented/tested; one heada02f20261002. Independent review, E/C combined release, Android/shared services and task10 activation remain pending.
+Latest correction source `9e8474c8c1bbf8b28d82aba51e4f212497863539`; initial implementation `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`; A source33f0ead/head94a26a0 integrated by76faba8. Task03–05 backend implemented/tested; one heada02f20261002. Independent review, E/C combined release, Android/shared services and task10 activation remain pending.
+
+## PR124 correction verification and recovery
+
+[Correction report](B-PR124-REVIEW-FIXES.md) and [machine evidence](B-review-fixes-verification.json) supersede the initial run's counts for this correction source: 192 actual PostgreSQL checks passed, default626passed/263skipped. New owned PostgreSQL18.6 at127.0.0.1:55484 with temporary private proof files; stopped after verification. Set PUBLIC_CERTIFICATE_BASE_URL to a synthetic HTTPS origin as well as the explicit synthetic/local DATABASE_URL before imports, so local .env cannot select runtime settings. Earlier55483/migration/mobile evidence below remains historical.
+
+Paid-job scan progress is persisted in immutable FulfillmentCommand records (`SYSTEM:lifecycle-cursor`, `LIFECYCLE_SCAN`, `LIFECYCLE_JOB` IDs1 receipt/2 no-ship/3 return/4 overdue). Apply resumes after the last visited Order, including failed/skipped candidates, and wraps once to retry older candidates. Batch/scanned limits still apply. Each job obtains a nonblocking advisory transaction lock; a competing runner logs `lifecycle job busy` and skips that category. Separate business transactions retain their existing locks and exactly-once safeguards. Stop commits traversal progress already visited; an abrupt crash before checkpoint may repeat that bounded traversal, while earlier business commits remain safe. Dry-run allocates/writes nothing; `--retry-order-id` leaves normal progress untouched. Restore synthetic/approved private proof readability and run again to retry; do not edit cursor, snapshot or financial records manually. No migration, shared connection or scheduled task activation was performed.
 
 ## Owned isolation
 

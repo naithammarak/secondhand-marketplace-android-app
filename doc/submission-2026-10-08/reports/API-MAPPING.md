@@ -1,6 +1,15 @@
 # A foundation API and physical schema mapping
 
-> **Current B update:** implementation `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc` supersedes the A-only PENDING selector/API notes below. The original A snapshot is retained for provenance; current contracts are in the B addendum and [handoff](B-CONTRACT-HANDOFF.md). No B migration.
+> **Current B update:** correction source `9e8474c8c1bbf8b28d82aba51e4f212497863539` follows implementation `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`. Original A/initial B snapshots below remain provenance; current contracts include the correction section and [handoff](B-CONTRACT-HANDOFF.md). No B migration.
+
+## PR124 corrected contracts
+
+- Admin starts at `GET /admin/orders?status=SHIPPING_TO_BUYER` (Buyer leg) or `status=RESULT_NOTIFIED` (return transit), then `GET /admin/orders/{id}`. New `shipments` contains only `{id,leg,status,courier_id}` for persisted legs. Select TO_BUYER/TO_SELLER and use the existing `POST /admin/shipments/{id}/assign-courier`; the Order alias still selects TO_CENTER. No private proof, destination or tracking is added to Admin detail.
+- Admin list/detail `payment_status` now use committed OrderSettlement REFUND records: REFUNDED after refund, PAID after RELEASE. Payment/Receipt and original paid_at remain unchanged.
+- Request validation errors keep HTTP422 `{detail:[{loc,msg,type}]}`; raw input/context are omitted and unsafe Unicode in error locations/messages is replaced for serialization. Existing strict Finish rejection of lone surrogates/NUL remains; valid Thai/emoji are accepted.
+- Four paid lifecycle categories rotate using completed `SYSTEM:lifecycle-cursor` / `LIFECYCLE_SCAN` commands with resource `LIFECYCLE_JOB`, IDs1–4 (receipt/no-ship/return/overdue). Per-job advisory locks coordinate scans; cursor records are separate from ORDER history/financial outcomes. Bounded visits, once-per-traversal wrap, per-Order transactions and exact guards remain. Dry-run does not write progress; scoped return retry does not move it.
+
+All four original reviewer checks and 19 new regressions passed; [correction report](B-PR124-REVIEW-FIXES.md) contains current results/commands and limitations.
 
 Status: REVIEW_PENDING. Source commit `33f0eadd8c1739735434ee9f103a5f23398178ed`, upstream base `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`. The final PR head includes documentation-only descendants; its exact SHA is recorded in the review request and coordination state. Migration head: `a02f20261002`, parent `714f11c84d53`. Extend this chain in task order **02 → 07 → 08**; B reuses these models and must not introduce a competing head.
 
