@@ -3,7 +3,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.admin_orders import router as admin_orders_router
 from app.api.admin_verifications import router as admin_verifications_router
@@ -32,6 +35,25 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request: Request, exc: RequestValidationError):
+    # Untrusted input (including escaped lone surrogates) must not be echoed
+    # into an error response. Keep the usual location/type/message envelope.
+    errors = [{key: error[key] for key in ("loc", "msg", "type") if key in error}
+              for error in exc.errors()]
+    safe = jsonable_encoder(errors)
+    # Field names/locations and validation messages can also contain input.
+    def sanitize(value):
+        if isinstance(value, str):
+            return value.encode("utf-8", errors="replace").decode("utf-8")
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        if isinstance(value, dict):
+            return {sanitize(key): sanitize(item) for key, item in value.items()}
+        return value
+    return JSONResponse(status_code=422, content={"detail": sanitize(safe)})
 
 
 @app.middleware("http")

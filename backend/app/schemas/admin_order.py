@@ -66,6 +66,15 @@ class AdminOrderPage(BaseModel):
     offset: int
 
 
+class AdminShipment(BaseModel):
+    """Assignment identifiers only; no destination, tracking or private proof."""
+
+    id: int
+    leg: str
+    status: str
+    courier_id: int | None
+
+
 class AdminOrderDetail(BaseModel):
     id: int
     status: OrderStatus
@@ -84,6 +93,7 @@ class AdminOrderDetail(BaseModel):
     updated_at: datetime | None
     # บอกหน้าจอว่ามีทางขอดูข้อมูลเต็มอยู่ ถ้า Endpoint ถูกปิดค่านี้เป็น false และปุ่มต้องหายไป
     contact_reveal_available: bool
+    shipments: list[AdminShipment]
 
 
 class AdminRevealRequest(BaseModel):

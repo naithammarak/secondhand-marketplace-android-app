@@ -18,10 +18,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from app.api.admin_verifications import require_admin
-from app.api.orders import api_error, sweep_expired_orders, validation_error
+from app.api.orders import api_error, current_payment_status, sweep_expired_orders, validation_error
 from app.database import get_db
 from app.models.audit import MAX_REASON_LENGTH, AdminAccessLog
 from app.models.order import Order, Receipt
+from app.models.fulfillment import OrderSettlement
+from app.models.shipment import Shipment
 from app.models.user import User
 from app.schemas.admin_order import (
     AdminMaskedAddress,
@@ -32,6 +34,7 @@ from app.schemas.admin_order import (
     AdminOrderPage,
     AdminParty,
     AdminRevealRequest,
+    AdminShipment,
 )
 from app.schemas.order import (
     CancelReason,
@@ -82,9 +85,16 @@ def product_snapshot(order: Order) -> ProductSnapshot:
     )
 
 
-def payment_status_of(order: Order) -> PaymentStatus:
-    """ดูจาก `paid_at` ไม่ใช่สถานะ สถานะหลังการจัดส่งในรอบถัดไปก็ยังต้องขึ้นว่าชำระแล้ว"""
-    return PaymentStatus.PAID if order.paid_at is not None else PaymentStatus.UNPAID
+def payment_status_of(order: Order, *, refunded: bool = False) -> PaymentStatus:
+    """Keep paid_at-based charge history, with the shared terminal projection."""
+    return current_payment_status(order, refunded=refunded)
+
+
+def refunded_orders(db: Session, order_ids: list[int]) -> set[int]:
+    """Project committed refunds without changing the original charge or receipt."""
+    return set(db.scalars(select(OrderSettlement.order_id).where(
+        OrderSettlement.order_id.in_(order_ids), OrderSettlement.kind == "REFUND",
+    ))) if order_ids else set()
 
 
 def cancel_reason_of(order: Order) -> CancelReason | None:
@@ -168,11 +178,13 @@ def list_orders(
     if condition is not None:
         query = query.where(condition)
 
+    rows = db.execute(query).all()
+    refunded_ids = refunded_orders(db, [order.id for order, _, _ in rows])
     items = [
         AdminOrderListItem(
             id=order.id,
             status=OrderStatus(order.status),
-            payment_status=payment_status_of(order),
+            payment_status=payment_status_of(order, refunded=order.id in refunded_ids),
             product=product_snapshot(order),
             buyer=party(buyer_user, order.buyer_id),
             seller=party(seller_user, order.seller_id),
@@ -183,7 +195,7 @@ def list_orders(
             created_at=order.created_at,
             paid_at=order.paid_at,
         )
-        for order, buyer_user, seller_user in db.execute(query).all()
+        for order, buyer_user, seller_user in rows
     ]
     return AdminOrderPage(items=items, total=total, limit=limit, offset=offset)
 
@@ -201,7 +213,7 @@ def get_order(
     return AdminOrderDetail(
         id=order.id,
         status=OrderStatus(order.status),
-        payment_status=payment_status_of(order),
+        payment_status=payment_status_of(order, refunded=order.id in refunded_orders(db, [order.id])),
         product=product_snapshot(order),
         buyer=party(db.get(User, order.buyer_id), order.buyer_id),
         seller=party(db.get(User, order.seller_id), order.seller_id),
@@ -223,6 +235,9 @@ def get_order(
         created_at=order.created_at,
         updated_at=order.updated_at,
         contact_reveal_available=contact_reveal_enabled(),
+        shipments=[AdminShipment(id=row.id, leg=row.leg, status=row.status, courier_id=row.courier_id)
+                   for row in db.scalars(select(Shipment).where(Shipment.order_id == order.id)
+                                         .order_by(Shipment.id))],
     )
 
 
