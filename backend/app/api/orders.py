@@ -382,11 +382,18 @@ def order_address(order: Order) -> ShippingAddress:
     )
 
 
+def current_payment_status(order: Order, *, refunded: bool) -> PaymentStatus:
+    """Present terminal refunds while retaining the immutable successful charge."""
+    if refunded:
+        return PaymentStatus.REFUNDED
+    return PaymentStatus.PAID if is_paid(order) else PaymentStatus.UNPAID
+
+
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
     paid = is_paid(order)
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
     refunded = db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == order.id, OrderSettlement.kind == "REFUND")) is not None
-    payment_status = PaymentStatus.REFUNDED if refunded else PaymentStatus.PAID if paid else PaymentStatus.UNPAID
+    payment_status = current_payment_status(order, refunded=refunded)
     # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
     # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
     # จ่ายได้กับยกเลิกได้ตัดสินจากชุดสถานะของตัวเอง ชุดใดชุดหนึ่งเปลี่ยนต้องไม่ลากอีกปุ่มไปด้วย
@@ -695,13 +702,20 @@ def list_orders(
 
     product_ids = {order.product_id for order in orders}
     images_map = get_product_images_map(db, product_ids)
+    # One bounded financial read for this page, including either owner's view.
+    refunded_order_ids = set(db.scalars(
+        select(OrderSettlement.order_id).where(
+            OrderSettlement.order_id.in_([order.id for order in orders]),
+            OrderSettlement.kind == "REFUND",
+        )
+    )) if orders else set()
 
     return OrderPage(
         items=[
             OrderListItem(
                 id=order.id,
                 status=OrderStatus(order.status),
-                payment_status=PaymentStatus.PAID if is_paid(order) else PaymentStatus.UNPAID,
+                payment_status=current_payment_status(order, refunded=order.id in refunded_order_ids),
                 viewer_role=viewer_role,
                 product=product_snapshot(order, images_map.get(order.product_id)),
                 total_amount=order.total_amount if viewer_role == ViewerRole.BUYER else None,

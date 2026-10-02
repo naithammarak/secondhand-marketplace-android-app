@@ -47,6 +47,60 @@ def refund(db,order,**overrides):
     values=dict(order_id=order.id,escrow_id=escrow.id,payment_id=escrow.payment_id,seller_id=order.seller_id,buyer_id=order.buyer_id,command_id=cmd.id,kind='REFUND',source='SELLER_NO_SHIP',reason='SELLER_NO_SHIP',currency=order.currency,held_amount=order.total_amount,seller_payout=0,buyer_refund=order.total_amount,commission_amount=0,inspection_amount=0,shipping_amount=0,settled_at=database_now(db))
     values.update(overrides);return OrderSettlement(**values)
 
+
+@pytest.mark.parametrize("role,headers", [("buyer", "a"), ("seller", "seller_h")])
+@pytest.mark.parametrize("state", ["REFUNDED", "RELEASED", "HELD", "UNPAID", "CANCELLED"])
+def test_list_and_detail_payment_status_preserve_original_receipt(db, world, role, headers, state):
+    # Terminal writes are schema fixtures, not acceptance of B's settlement service.
+    created = post_order(world["a"], order_body(world["product_id"]))
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    original_receipt = None
+    with TestClient(app) as client:
+        if state in {"REFUNDED", "RELEASED", "HELD"}:
+            assert pay(order_id, world["a"]).status_code == 200
+            receipt = client.get(f"/orders/{order_id}/receipt", headers=world["a"])
+            assert receipt.status_code == 200
+            original_receipt = receipt.json()
+            db.expire_all()
+            order = db.get(Order, order_id)
+            if state != "HELD":
+                row = refund(db, order)
+                escrow = db.scalar(select(Escrow).where(Escrow.order_id == order_id))
+                if state == "RELEASED":
+                    row.kind = "RELEASE"
+                    row.source = "AUTO_RECEIPT"
+                    row.reason = "RECEIPT_TIMEOUT"
+                    row.seller_payout = order.seller_payout
+                    row.buyer_refund = 0
+                    row.commission_amount = order.commission_fee
+                    row.inspection_amount = order.inspection_fee
+                    row.shipping_amount = order.shipping_fee
+                    order.receipt_deadline_at = row.settled_at - timedelta(seconds=1)
+                    order.receipt_confirmed_at = row.settled_at
+                    order.receipt_confirmation_source = "AUTO"
+                    order.status = "COMPLETED"
+                else:
+                    order.status = "REFUNDED"
+                escrow.status = state
+                escrow.settled_at = row.settled_at
+                db.add(row)
+                db.commit()
+        elif state == "CANCELLED":
+            assert client.post(f"/orders/{order_id}/cancel", headers=world["a"]).status_code == 200
+
+        detail = client.get(f"/orders/{order_id}", headers=world[headers])
+        listing = client.get(f"/orders?role={role}", headers=world[headers])
+        assert detail.status_code == listing.status_code == 200
+        item = next(item for item in listing.json()["items"] if item["id"] == order_id)
+        expected = "REFUNDED" if state == "REFUNDED" else "PAID" if original_receipt else "UNPAID"
+        assert detail.json()["payment_status"] == item["payment_status"] == expected
+        assert detail.json()["status"] == item["status"]
+        if original_receipt is not None:
+            after = client.get(f"/orders/{order_id}/receipt", headers=world["a"])
+            assert after.status_code == 200
+            assert after.json() == original_receipt
+
 def test_private_strict_return_address_replay_freeze(db,world,paid):
     assert ship(paid.id,world['seller_h']).json()['detail']['code']=='fulfillment_destination_missing'
     first=save(paid.id,world['seller_h']);assert first.status_code==200,first.text

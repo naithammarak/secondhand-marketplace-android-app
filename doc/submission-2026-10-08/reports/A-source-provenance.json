@@ -1,5 +1,5 @@
 {
-  "status": "IN_PROGRESS",
+  "status": "REVIEW_PENDING",
   "source_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
   "source_root": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app",
   "worktree": "/home/tmk/.codex/worktrees/a-foundation-20261002/secondhand-marketplace-android-app",
@@ -39,12 +39,17 @@
     "714f11c84d53"
   ],
   "excluded_private_paths": [
-    "all non-template .env*",
+    "all .env* except exactly /backend/.env.example and /mobile/.env.example",
     "node_modules",
     "venv",
     ".venv",
     "cache",
     "var",
     "signing material"
-  ]
+  ],
+  "approved_environment_templates": [
+    "backend/.env.example",
+    "mobile/.env.example"
+  ],
+  "template_content_policy": "Only synthetic placeholders, documented nonsecret defaults or empty credential fields; no actual credentials/private endpoints, even in templates."
 }
