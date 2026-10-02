@@ -27,6 +27,8 @@ def test_user_model_exposes_the_login_03_schema_contract():
         "status",
         "created_at",
         "updated_at",
+        "privacy_policy_version",
+        "privacy_acknowledged_at",
     }
     assert isinstance(columns["id"].type, Integer)
     assert columns["id"].primary_key
@@ -46,6 +48,10 @@ def test_user_model_exposes_the_login_03_schema_contract():
     assert not columns["status"].nullable
     assert columns["created_at"].type.timezone
     assert columns["updated_at"].type.timezone
+    assert columns["privacy_policy_version"].nullable
+    assert columns["privacy_policy_version"].type.length == 64
+    assert columns["privacy_acknowledged_at"].nullable
+    assert columns["privacy_acknowledged_at"].type.timezone
 
 
 def test_user_model_defines_allowed_role_and_status_values():
@@ -69,7 +75,7 @@ def test_user_model_defines_allowed_role_and_status_values():
         for constraint in User.__table__.constraints
         if isinstance(constraint, CheckConstraint)
     }
-    assert checks == {"ck_users_role", "ck_users_status"}
+    assert checks == {"ck_users_role", "ck_users_status", "ck_users_policy_pair"}
 
 
 def test_user_model_accepts_an_unselected_role():

@@ -11,6 +11,7 @@ from app.models.product_upload import ProductUpload
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.test_message import TestMessage
 from app.models.user import User, UserRole, UserStatus
+from app.models.review import Review
 from app.models.verification import Verification
 
 

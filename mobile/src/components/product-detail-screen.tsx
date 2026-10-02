@@ -23,7 +23,7 @@ import { ProductImage } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 import { Fonts, MaxContentWidth } from '@/constants/theme';
-import { SellerReviewsModal } from '@/components/seller-reviews-modal';
+import { SellerReviewsModal, SellerReviewSummary } from '@/components/seller-reviews-modal';
 import { formatBaht } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import { productCatalogService, productCatalogStore } from '@/products/product-catalog-instance';
@@ -471,9 +471,7 @@ export function ProductDetailScreen() {
                         accessibilityLabel="ดูรีวิวผู้ขาย"
                         onPress={() => setShowSellerReviews(true)}
                         hitSlop={8}>
-                        <ThemedText style={styles.sellerRatingText}>
-                          ★ 4.8 <ThemedText style={styles.sellerReviewsText}>(32 รีวิว) ›</ThemedText>
-                        </ThemedText>
+                        <SellerReviewSummary sellerId={product.seller?.id ?? null} />
                       </Pressable>
                       {product.seller.verified && (
                         <View style={styles.verifiedBadge}>
@@ -658,6 +656,7 @@ export function ProductDetailScreen() {
 
         {product ? (
           <SellerReviewsModal
+            sellerId={product.seller?.id ?? null}
             visible={showSellerReviews}
             onClose={() => setShowSellerReviews(false)}
             sellerName={product.seller?.displayName ?? 'ผู้ขาย'}

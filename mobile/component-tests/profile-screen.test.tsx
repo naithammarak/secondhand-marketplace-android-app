@@ -4,11 +4,14 @@ const mockPush = jest.fn();
 let mockAuth: any;
 let mockState: any;
 const mockStore = { refresh: jest.fn() };
+let mockProfile: any;
+jest.mock('@/profile/use-profile', () => ({ useProfile: () => ({ profile: mockProfile, busy: false, error: null, reload: jest.fn(), save: jest.fn(), acknowledge: jest.fn() }) }));
 jest.mock('expo-router', () => ({ useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]), router: { push: (...args: any[]) => mockPush(...args) } }));
 jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
 jest.mock('@/verification/verification-provider', () => ({ useVerification: () => ({ state: mockState, store: mockStore }) }));
 beforeEach(() => {
   jest.clearAllMocks();
+  mockProfile = null;
   mockAuth = { session: { user: { id: 'buyer' } }, account: { fullName: 'สมใจ', role: 'BUYER', source: 'backend' }, retryAccount: jest.fn(), logout: jest.fn() };
   mockState = { owner: 'buyer', record: { status: 'NOT_SUBMITTED' }, loadError: null };
 });
@@ -61,4 +64,18 @@ test('logout uses the auth provider and clears the saved return', async () => {
   render(<ProfileScreen />);
   fireEvent.press(screen.getByRole('button', { name: 'ออกจากระบบ' }));
   await waitFor(() => expect(mockAuth.logout).toHaveBeenCalledTimes(1));
+});
+
+test('unknown verification is shown as retryable error instead of a fresh application', () => {
+  mockState.record = null; mockState.loadError = 'network-error';
+  render(<ProfileScreen />);
+  expect(screen.queryByRole('button', { name: 'ขอเปิดร้านค้า' })).toBeNull();
+  expect(screen.getByText('โหลดสถานะคำขอผู้ขายไม่สำเร็จ')).toBeTruthy();
+});
+
+test('inactive account can read profile but cannot save or open seller application', () => {
+  mockProfile = { id: 1, full_name: 'Suspended', email: 's@example.test', role: 'BUYER', status: 'SUSPENDED' };
+  render(<ProfileScreen />);
+  expect(screen.getByRole('button', { name: 'บันทึกชื่อ' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'ขอเปิดร้านค้า' })).toBeNull();
 });

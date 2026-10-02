@@ -26,7 +26,7 @@ import {
   styles as orderUiStyles,
 } from '@/components/order-ui';
 import { WondeeLoader } from './wondee/loader';
-import { ReviewModal } from '@/components/review-modal';
+import { OrderReviewEntry } from '@/components/review-modal';
 import { CertificateSheet } from './inspection/views';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
@@ -57,10 +57,7 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const list = useOrdersList();
   const openedFor = useRef<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
-  const [showReviewModal, setShowReviewModal] = useState(false);
-  const [isReviewed, setIsReviewed] = useState(false);
   const [showCertSheet, setShowCertSheet] = useState(false);
-  const [reviewToast, setReviewToast] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [isManualRefresh, setIsManualRefresh] = useState(false);
   const lastDeadlineCheck = useRef(0);
@@ -621,48 +618,10 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                 </View>
               )}
 
-              {/* Review Toast Feedback */}
-              {reviewToast ? (
-                <View style={{ padding: 12, borderRadius: 12, backgroundColor: '#059669', alignItems: 'center' }}>
-                  <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{reviewToast}</ThemedText>
-                </View>
-              ) : null}
-
-              {/* Review Trigger Card for Completed Orders matching prototype */}
+              {/* Server-authorized completed-sale review */}
               {orderStatusStr === 'COMPLETED' && isBuyer && (
-                isReviewed ? (
-                  <View style={[styles.cardBox, { padding: 14, backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
-                      ⭐ คุณรีวิวคำสั่งซื้อนี้แล้ว · ขอบคุณสำหรับรีวิว
-                    </ThemedText>
-                  </View>
-                ) : (
-                  <View style={[styles.cardBox, { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: theme.surface, borderColor: theme.border }]}>
-                    <ThemedText style={{ fontSize: 24 }}>⭐</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText type="smallBold" style={{ fontSize: 14, color: theme.text }}>
-                        ให้คะแนนการซื้อครั้งนี้
-                      </ThemedText>
-                      <ThemedText style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1 }}>
-                        รีวิวสินค้า ผู้ขาย และบริการตรวจสอบ
-                      </ThemedText>
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="รีวิว"
-                      onPress={() => setShowReviewModal(true)}
-                      style={{
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                        borderRadius: 12,
-                        backgroundColor: '#059669',
-                      }}>
-                      <ThemedText style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
-                        รีวิว
-                      </ThemedText>
-                    </Pressable>
-                  </View>
-                )
+                <OrderReviewEntry orderId={order.id} productName={order.product.name}
+                  onReviewed={() => { void store.refresh(); void list.store.refresh(); }} />
               )}
 
               {/* 2-Column Shortcuts Grid: Inspection & Certificate matching prototype */}
@@ -1173,14 +1132,6 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
                   {isInspectionFailed ? "ดูผลตรวจและเลือก" : "ดูผลตรวจและยืนยัน"}
                 </ThemedText>
               </Pressable>
-            ) : isBuyer && orderStatusStr === 'COMPLETED' && !isReviewed ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="รีวิวคำสั่งซื้อ"
-                onPress={() => setShowReviewModal(true)}
-                style={styles.stickyShipBtn}>
-                <ThemedText style={styles.stickyShipBtnText}>ให้คะแนนและรีวิว</ThemedText>
-              </Pressable>
             ) : !isBuyer && (orderStatusStr === 'REFUNDED' || orderStatusStr === 'RETURNED') ? (
               <Pressable
                 accessibilityRole="button"
@@ -1264,20 +1215,6 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
 
         {order ? (
           <>
-            <ReviewModal
-              visible={showReviewModal}
-              onClose={() => setShowReviewModal(false)}
-              orderId={order.id}
-              productName={order.product?.name ?? ''}
-              sellerName="มายด์ มือสอง"
-              imageUrl={productImageUrl}
-              onSubmit={async () => {
-                setIsReviewed(true);
-                setReviewToast('ขอบคุณสำหรับรีวิว ⭐');
-                setTimeout(() => setReviewToast(null), 3000);
-              }}
-            />
-
             <CertificateSheet
               visible={showCertSheet}
               onClose={() => setShowCertSheet(false)}

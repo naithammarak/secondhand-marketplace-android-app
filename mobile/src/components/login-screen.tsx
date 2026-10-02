@@ -234,7 +234,7 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
 
           {/* Legal disclaimer footer */}
           <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center', lineHeight: 18 }}>
-            การเข้าสู่ระบบถือว่าคุณยอมรับ{' '}
+            อ่านและบันทึกการรับทราบได้ที่โปรไฟล์:{' '}
             <ThemedText style={{ color: '#059669', fontWeight: '700' }}>
               ข้อกำหนดการใช้งาน
             </ThemedText>{' '}
@@ -251,13 +251,9 @@ export function LoginScreen({ adapter: adapterOverride }: { adapter?: LoginAdapt
           userName={auth.account?.fullName ?? (auth.session?.user?.user_metadata?.full_name as string | undefined)}
           onAgree={async () => {
             setConsentVisible(false);
-            if (!auth.account?.role) {
-              await auth.selectRole('BUYER');
-            }
           }}
           onCancel={() => {
             setConsentVisible(false);
-            void auth.logout();
           }}
         />
       </SafeAreaView>

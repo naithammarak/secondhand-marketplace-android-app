@@ -14,6 +14,8 @@ import { Button, Loading, Screen } from './order-ui';
 import { ThemedText } from './themed-text';
 import { WondeeMascot, type MascotVariant } from './wondee/brand';
 import { WondeeLoader } from './wondee/loader';
+import { useProfile } from '@/profile/use-profile';
+import { ProfileDetails } from './profile-details';
 
 const statusLabels = {
   NOT_SUBMITTED: 'ขอเปิดร้านค้า',
@@ -32,6 +34,7 @@ const MASCOT_OPTIONS: { variant: MascotVariant; name: string }[] = [
 
 export function ProfileScreen() {
   const auth = useAuth();
+  const profileModel = useProfile();
   const theme = useTheme();
   const { preference, scheme, setPreference } = useThemePreference();
   const isDark = scheme === 'dark';
@@ -61,10 +64,12 @@ export function ProfileScreen() {
   const account =
     auth.session && !auth.accountError && auth.account?.source === 'backend' ? auth.account : null;
   const customer =
-    account?.source === 'backend' && (account.role === 'BUYER' || account.role === 'SELLER');
+    account?.source === 'backend' && (account.role === 'BUYER' || account.role === 'SELLER')
+    && profileModel.profile?.status !== 'SUSPENDED' && profileModel.profile?.status !== 'CLOSED';
   const record = customer && state.owner === owner ? state.record : null;
+  const verificationReady = state.owner === owner && !state.loading && !state.loadError && !!record;
   const approved =
-    account?.role === 'SELLER' && record?.status === 'APPROVED' && !state.loadError && !auth.accountChecking;
+    customer && account?.role === 'SELLER' && record?.status === 'APPROVED' && !state.loadError && !auth.accountChecking;
   const waitingSellerAccess = account?.role === 'BUYER' && record?.status === 'APPROVED';
 
   const currentMascot = MASCOT_OPTIONS[mascotIdx];
@@ -73,10 +78,10 @@ export function ProfileScreen() {
   };
 
   const displayName = auth.session
-    ? account?.fullName ?? 'คุณสมชาย ใจดี'
-    : 'ยินดีต้อนรับสู่ Wondee';
+    ? profileModel.profile?.full_name ?? 'กำลังโหลดข้อมูลบัญชี'
+    : 'ยินดีต้อนรับสู่ 2NDHAND';
 
-  const roleText = account?.role ?? (auth.session ? 'BUYER' : 'GUEST');
+  const roleText = profileModel.profile?.role ?? (auth.session ? '—' : 'GUEST');
 
   const openShopBtnLabel = waitingSellerAccess
     ? 'ตรวจสอบสิทธิ์ผู้ขายอีกครั้ง'
@@ -90,6 +95,7 @@ export function ProfileScreen() {
     setIsManualRefresh(true);
     try {
       if (owner) await auth.retryAccount();
+      if (owner) await profileModel.reload();
       if (
         owner &&
         state.owner === owner &&
@@ -206,7 +212,7 @@ export function ProfileScreen() {
                     </View>
 
                     <View style={styles.memberStatusRow}>
-                      <ThemedText style={styles.memberDateText}>สมาชิก ก.ย. 2026</ThemedText>
+                      <ThemedText style={styles.memberDateText}>{profileModel.profile?.status ?? ''}</ThemedText>
                     </View>
                   </View>
                 </View>
@@ -238,8 +244,14 @@ export function ProfileScreen() {
                 )}
               </View>
 
+              {auth.session && <ProfileDetails key={owner} model={profileModel} />}
+
               {/* Card 2: Open Shop Card (Prototype vfRenderCard: NONE / PENDING / REJECTED) */}
-              {customer && !approved && (
+              {customer && !verificationReady && <View style={styles.card}>
+                <ThemedText>{state.loadError ? 'โหลดสถานะคำขอผู้ขายไม่สำเร็จ' : 'กำลังตรวจสอบสถานะคำขอผู้ขาย'}</ThemedText>
+                <Button label="โหลดสถานะผู้ขายอีกครั้ง" onPress={() => void store.refresh()} />
+              </View>}
+              {customer && verificationReady && !approved && (
                 <View
                   style={[
                     styles.sellerBanner,
@@ -254,7 +266,7 @@ export function ProfileScreen() {
                             กำลังตรวจสอบคำขอเปิดร้าน
                           </ThemedText>
                           <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
-                            ปกติใช้เวลา 1–2 วันทำการ
+                            รอผู้ดูแลตรวจสอบคำขอ
                           </ThemedText>
                         </View>
                       </View>
@@ -334,7 +346,7 @@ export function ProfileScreen() {
                             เปิดร้าน ขายของได้ใน 3 ขั้น
                           </ThemedText>
                           <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight, { marginTop: 2 }]}>
-                            ยืนยันตัวตนด้วยบัตรประชาชนและบัญชีธนาคาร แล้วเริ่มลงขายได้เลย
+                            ส่งเอกสารยืนยันตัวตนและบัญชีธนาคาร แล้วรอผู้ดูแลอนุมัติก่อนลงขาย
                           </ThemedText>
                         </View>
                       </View>
@@ -396,203 +408,8 @@ export function ProfileScreen() {
                 </View>
               )}
 
-              {/* Card 3: 3 Quick Stats Cards */}
-              <View style={styles.statsRow}>
-                {/* 1. My Orders */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="คำสั่งซื้อของฉัน"
-                  onPress={() =>
-                    router.push({ pathname: '/orders', params: { view: 'buyer' } })
-                  }
-                  style={({ pressed }) => [
-                    styles.statCard,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.2 : 0.06,
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.statNumber, { color: theme.text }]}>2</ThemedText>
-                  <ThemedText style={styles.statLabel}>คำสั่งซื้อของฉัน</ThemedText>
-                </Pressable>
-
-                {/* 2. Favorites */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="สินค้าที่ถูกใจ"
-                  onPress={() => router.push('/')}
-                  style={({ pressed }) => [
-                    styles.statCard,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.2 : 0.06,
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.statNumber, { color: theme.text }]}>5</ThemedText>
-                  <ThemedText style={styles.statLabel}>สินค้าที่ถูกใจ</ThemedText>
-                </Pressable>
-
-                {/* 3. Discount Coupons */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="คูปองส่วนลด"
-                  onPress={() => router.push('/')}
-                  style={({ pressed }) => [
-                    styles.statCard,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.2 : 0.06,
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.statNumber, { color: '#10B981' }]}>1</ThemedText>
-                  <ThemedText style={styles.statLabel}>คูปองส่วนลด</ThemedText>
-                </Pressable>
-              </View>
-
-              {/* Card 4: Wondee Inspection Hub */}
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                    shadowColor: '#0F172A',
-                    shadowOpacity: isDark ? 0.25 : 0.06,
-                  },
-                ]}>
-                {/* Hub Header */}
-                <View style={styles.hubHeaderRow}>
-                  <View
-                    style={[
-                      styles.shieldIconContainer,
-                      {
-                        backgroundColor: isDark ? '#0D2822' : '#ECFDF5',
-                        borderColor: isDark ? 'transparent' : '#A7F3D0',
-                        borderWidth: isDark ? 0 : 1,
-                      },
-                    ]}>
-                    <ThemedText style={{ fontSize: 18 }}>🛡️</ThemedText>
-                  </View>
-                  <View style={styles.hubTitleContainer}>
-                    <ThemedText style={[styles.hubTitleText, { color: theme.text }]}>
-                      Wondee Inspection Hub
-                    </ThemedText>
-                    <ThemedText style={[styles.hubSubtitleText, { color: isDark ? '#2DD4BF' : '#0D9488' }]}>
-                      ศูนย์ตรวจสอบสภาพ & ออกใบรับรอง
-                    </ThemedText>
-                  </View>
-                  <View
-                    style={[
-                      styles.officialBadge,
-                      {
-                        backgroundColor: isDark ? '#092D27' : '#CCFBF1',
-                        borderColor: isDark ? 'rgba(15, 118, 110, 0.3)' : '#5EEAD4',
-                      },
-                    ]}>
-                    <ThemedText
-                      style={[
-                        styles.officialBadgeText,
-                        { color: isDark ? '#2DD4BF' : '#0F766E' },
-                      ]}>
-                      Official
-                    </ThemedText>
-                  </View>
-                </View>
-
-                {/* 2 Quick Action Buttons Side-by-Side */}
-                <View style={styles.hubActionsRow}>
-                  {/* Seller Send Inspection */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="ผู้ขายส่งตรวจ"
-                    onPress={() =>
-                      router.push({ pathname: '/orders', params: { view: 'seller' } })
-                    }
-                    style={({ pressed }) => [
-                      styles.hubSubButton,
-                      {
-                        backgroundColor: isDark ? '#10151F' : '#F8FAFC',
-                        borderColor: isDark ? '#1E293B' : '#E2E8F0',
-                        opacity: pressed ? 0.8 : 1,
-                      },
-                    ]}>
-                    <ThemedText style={{ fontSize: 18 }}>🚚</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={[styles.hubSubButtonTitle, { color: theme.text }]}>
-                        ผู้ขายส่งตรวจ
-                      </ThemedText>
-                      <ThemedText style={styles.hubSubButtonSubtitle}>
-                        แจ้งเลข Tracking
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-
-                  {/* Buyer View E-Cert */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="ผู้ซื้อดู E-Cert"
-                    onPress={() =>
-                      router.push({ pathname: '/orders', params: { view: 'buyer' } })
-                    }
-                    style={({ pressed }) => [
-                      styles.hubSubButton,
-                      {
-                        backgroundColor: isDark ? '#10151F' : '#F8FAFC',
-                        borderColor: isDark ? '#1E293B' : '#E2E8F0',
-                        opacity: pressed ? 0.8 : 1,
-                      },
-                    ]}>
-                    <ThemedText style={{ fontSize: 18 }}>📜</ThemedText>
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={[styles.hubSubButtonTitle, { color: theme.text }]}>
-                        ผู้ซื้อดู E-Cert
-                      </ThemedText>
-                      <ThemedText style={styles.hubSubButtonSubtitle}>
-                        ผลตรวจ 4 ระดับ
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-                </View>
-
-                {/* Inspector View Button */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="เข้าสู่มุมมองเจ้าหน้าที่ตรวจ"
-                  onPress={() => router.push('/inspections')}
-                  style={({ pressed }) => [
-                    styles.inspectorButton,
-                    {
-                      backgroundColor: isDark ? '#0C2624' : '#F0FDFA',
-                      borderColor: isDark ? 'rgba(15, 118, 110, 0.3)' : '#99F6E4',
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}>
-                  <ThemedText style={{ fontSize: 16 }}>🔬</ThemedText>
-                  <ThemedText
-                    style={[
-                      styles.inspectorButtonText,
-                      { color: isDark ? '#2DD4BF' : '#0D9488' },
-                    ]}>
-                    เข้าสู่มุมมองเจ้าหน้าที่ตรวจ (INS-042)
-                  </ThemedText>
-                  <ThemedText
-                    style={[
-                      styles.inspectorChevron,
-                      { color: isDark ? '#2DD4BF' : '#0D9488' },
-                    ]}>
-                    ›
-                  </ThemedText>
-                </Pressable>
-              </View>
+              {customer && <Button label="คำสั่งซื้อของฉัน" onPress={() =>
+                router.push({ pathname: '/orders', params: { view: 'buyer' } })} />}
 
               {/* Staff Roles (Admin / Inspector / Courier) */}
               {account?.role === 'ADMIN' && (
@@ -653,57 +470,6 @@ export function ProfileScreen() {
                   <Button label="งานตรวจสินค้า" onPress={() => router.push('/inspections')} />
                 </View>
               )}
-
-              {/* Card 5: Menu List Section */}
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                    shadowColor: '#0F172A',
-                    shadowOpacity: isDark ? 0.25 : 0.06,
-                    padding: 0,
-                  },
-                ]}>
-                {/* Menu Item 1: Order History */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="ประวัติการสั่งซื้อสินค้า"
-                  onPress={() =>
-                    router.push({ pathname: '/orders', params: { view: 'buyer' } })
-                  }
-                  style={({ pressed }) => [
-                    styles.menuListItem,
-                    { opacity: pressed ? 0.7 : 1 },
-                  ]}>
-                  <ThemedText style={styles.menuItemIcon}>📦</ThemedText>
-                  <ThemedText style={[styles.menuItemTitle, { color: theme.text }]}>
-                    ประวัติการสั่งซื้อสินค้า
-                  </ThemedText>
-                  <ThemedText style={styles.menuItemChevron}>›</ThemedText>
-                </Pressable>
-
-                <View style={[styles.menuDivider, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]} />
-
-                {/* Menu Item 2: Shipping Address */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="ที่อยู่สำหรับจัดส่ง"
-                  onPress={() =>
-                    router.push({ pathname: '/orders', params: { view: 'buyer' } })
-                  }
-                  style={({ pressed }) => [
-                    styles.menuListItem,
-                    { opacity: pressed ? 0.7 : 1 },
-                  ]}>
-                  <ThemedText style={styles.menuItemIcon}>📍</ThemedText>
-                  <ThemedText style={[styles.menuItemTitle, { color: theme.text }]}>
-                    ที่อยู่สำหรับจัดส่ง
-                  </ThemedText>
-                  <ThemedText style={styles.menuItemChevron}>›</ThemedText>
-                </Pressable>
-              </View>
 
               {/* Card 6: Theme Preference Setting (Streamlined & Clean) */}
               <View
