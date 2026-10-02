@@ -4,7 +4,7 @@
 - Status: IMPLEMENTED_AND_TESTED (isolated implementation); native acceptance PENDING F
 - Repo / branch: `D:\projectsa\package-c` / `codex/c-profile-reviews-2026-10-02`
 - Upstream SHA: `94a26a0fbb7a0a82948d95de7db9af070707b770`, A PR #123, supplied as completed by owner in this chat. PR itself was OPEN with no reviewDecision; this is not a claim of GitHub approval/merge.
-- Delivered SHA: `710f8e2321df24a0c7d99275d72210f72a78d7a0` (implementation); this report is a following documentation commit.
+- Delivered implementation SHA: `eee71dd06dc2958785bb5ca3824f270c5c44d503` (includes original `710f8e2321df24a0c7d99275d72210f72a78d7a0` plus existing schema-test updates); this report follows as documentation only. Independent delivery branch: `codex/c-task07-profile`.
 - Migration predecessor/head: `a02f20261002` → `c07f20261002`; one head. Reserve review successor `c08f20261002`.
 - Date / timezone: 2 October 2026 / Asia/Bangkok
 
@@ -25,6 +25,7 @@ ProfileScreen ใช้ API, ProfileDetails บันทึกชื่อ/email
 | `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --test-isolation=none tests/profile-service.test.mjs` | isolated HTTP adapters; no credentials | 3 passed | named service test |
 | `npm run typecheck` | exact A dependency lock | PASS | TypeScript |
 | `python -m alembic heads`; `git diff --check` | local source only | `c07f20261002` only; PASS | migration file |
+| `python -m pytest -q -p no:cacheprovider --tb=short` | detached task07-only `D:\projectsa\package-c07-check`, exact `eee71dd`; `DATABASE_URL=sqlite:///:memory:` | 452 passed, 223 environment-dependent tests skipped; actual C PostgreSQL evidence remains the separate command above | backend default suite |
 
 First PG run caught +07:00 serialization; UTC response normalization fixed and suite rerun. First UI run caught saved-message reset; fixed and rerun. Normal Node test subprocess was blocked by Windows sandbox EPERM; `--test-isolation=none` ran the same tests successfully. PostgreSQL startup required sandbox escalation; server listens only on 127.0.0.1. Existing dependency deprecation/JWT-test warnings remain. Initial rendering has existing mascot act warnings; focused final run used `--silent`.
 
@@ -42,7 +43,7 @@ Actual APK Google login/relogin/account switch/keyboard and policy reading remai
 
 ## Handoff
 
-- A may take task07 now without task08/B. Apply code `710f8e2` and this report commit before E's navigation integration. Migration must run after `a02f20261002`.
+- A may take task07 now without task08/B. Take branch `codex/c-task07-profile` (all commits after A through code `eee71dd` and following report), before E's navigation integration. Migration must run after `a02f20261002`. A portable git bundle is supplied outside the source tree in `D:\projectsa\package-c-delivery`.
 - Named exports: `createProfileService`, `Profile`, `POLICY_VERSION`; `useProfile`; `ProfileDetails({model})`; `ConsentModal({visible,userName,onAgree,onCancel})`; `PROTOTYPE_POLICY`. ConsentModal owns persisted acknowledgement; onAgree runs only after successful API response. Account-scoped hook rejects late old-account responses and suppresses duplicate writes.
 - API examples and merge-file coordination are in `C-API-EXAMPLES.md`. Environment: `EXPO_PUBLIC_API_BASE_URL` only; normal API mode never uses profile fixtures.
 - Re-run focused checks after A resolves `main.py` router registration and E's `profile-screen.tsx`/`login-screen.tsx` edits. No navigation file changed in task07. Reports describe implementation, not final release readiness.
