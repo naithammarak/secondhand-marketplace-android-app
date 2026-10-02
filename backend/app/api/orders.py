@@ -390,6 +390,10 @@ def current_payment_status(order: Order, *, refunded: bool) -> PaymentStatus:
 
 
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
+    from app.api.finish import delivery_view
+    finish = delivery_view(db, order, viewer, seller=role == ViewerRole.SELLER)
+    finish_fields = {key: finish[key] for key in (
+        "can_confirm_receipt", "can_report_missing", "receipt_deadline_at", "settlement")}
     paid = is_paid(order)
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
     refunded = db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == order.id, OrderSettlement.kind == "REFUND")) is not None
@@ -412,6 +416,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             db.scalar(select(Receipt.receipt_no).where(Receipt.order_id == order.id)) if paid else None
         )
         return OrderDetail(
+            **finish_fields,
             id=order.id,
             status=OrderStatus(order.status),
             payment_status=payment_status,
@@ -441,6 +446,7 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
 
     # มุมมองผู้ขาย: เห็นยอดที่จะได้รับ และเห็นที่อยู่เมื่อถึงขั้นต้องส่งของเท่านั้น
     return OrderDetail(
+        **finish_fields,
         id=order.id,
         status=OrderStatus(order.status),
         payment_status=payment_status,
@@ -456,7 +462,8 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             seller_payout=order.seller_payout,
         ),
         # ผู้ขายเห็นที่อยู่ตั้งแต่จ่ายเงินสำเร็จเป็นต้นไป และต้องไม่หายไปเมื่อสถานะเดินหน้าต่อ (D-12)
-        shipping_address=order_address(order) if paid else None,
+        shipping_address=order_address(order) if paid and not any(
+            s["leg"] != "TO_CENTER" for s in finish["shipments"]) else None,
         last_payment_attempt=None,
         paid_at=order.paid_at,
         receipt_no=None,

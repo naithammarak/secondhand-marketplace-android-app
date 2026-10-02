@@ -1,6 +1,7 @@
 """Bounded, restartable scan of unpaid Order deadlines without HTTP traffic."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 from datetime import datetime
 import logging
 from threading import Event
@@ -113,6 +114,7 @@ def run_recurring(
     stop: Event,
     *,
     interval_seconds: int = 300,
+    scan: Callable | None = None,
     **scan_options,
 ) -> int:
     """Scan immediately at startup and every interval; SIGTERM can stop cleanly."""
@@ -120,12 +122,15 @@ def run_recurring(
         raise ValueError("interval_seconds must be positive")
     failures = 0
     while not stop.is_set():
-        result = run_once(session_factory, stop=stop, **scan_options)
-        log.info(
-            "unpaid expiry scanned=%s eligible=%s cancelled=%s failed=%s skipped=%s batches=%s limit_reached=%s",
-            result.scanned, result.eligible, result.cancelled, result.failed,
-            result.skipped, result.batches, result.limit_reached,
-        )
+        result = (scan or run_once)(session_factory, stop=stop, **scan_options)
+        if scan is not None:
+            log.info("lifecycle scan %s", json.dumps(asdict(result), sort_keys=True))
+        else:
+            log.info(
+                "unpaid expiry scanned=%s eligible=%s cancelled=%s failed=%s skipped=%s batches=%s limit_reached=%s",
+                result.scanned, result.eligible, result.cancelled, result.failed,
+                result.skipped, result.batches, result.limit_reached,
+            )
         failures += result.failed
         stop.wait(interval_seconds)
     return failures

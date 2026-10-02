@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Package B five lifecycle jobs. Replace approved paths and service-account configuration before task10 activation. Defaults to dry-run.</Description></RegistrationInfo>
+  <Triggers>
+    <TimeTrigger><Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>2026-10-02T00:00:00+07:00</StartBoundary><Enabled>true</Enabled></TimeTrigger>
+  </Triggers>
+  <Principals><Principal id="Author"><UserId>APPROVED_SERVICE_ACCOUNT</UserId><LogonType>Password</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec><Command>powershell.exe</Command><Arguments>-NoProfile -NonInteractive -WindowStyle Hidden -File "C:\APPROVED\backend\deploy\lifecycle-worker.ps1" -BackendDirectory "C:\APPROVED\backend" -ExpectedDatabase "APPROVED_LOCAL_DATABASE" -LogFile "C:\APPROVED\logs\lifecycle.log"</Arguments><WorkingDirectory>C:\APPROVED\backend</WorkingDirectory></Exec>
+  </Actions>
+</Task>

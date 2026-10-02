@@ -136,7 +136,8 @@ def test_inspection_uses_bangkok_day_across_utc_midnight():
 
 
 @pytest.mark.parametrize("environment,enabled,allowed", [
-    ("development", "true", True), ("test", "1", True), ("demo", "yes", True),
+    ("development", "true", True), ("test", "1", False), ("demo", "yes", False),
+    ("test", "true", True), ("demo", "true", True), ("dev", "true", True),
     (" DEMO ", "TRUE", True), ("production", "true", False), ("prod", "true", False),
     ("staging", "true", False), (None, "true", False), ("", "true", False),
     ("test", None, False), ("test", "false", False),

@@ -1,4 +1,4 @@
-"""Strict FINISH command contracts; not yet mounted on pending task02 models."""
+"""Strict FINISH command contracts mounted on A's foundation models."""
 
 from typing import Annotated, Literal
 
@@ -17,6 +17,13 @@ CaseReference = Annotated[str, StringConstraints(
 
 class FinishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def supported_text(cls, value):
+        if isinstance(value, str) and any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+            raise ValueError("Unsupported text characters")
+        return value
 
 
 class FulfillmentRequest(FinishRequest):

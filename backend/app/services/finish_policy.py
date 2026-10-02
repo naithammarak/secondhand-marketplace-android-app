@@ -1,9 +1,9 @@
-"""Schema-independent FINISH rules prepared while package A/task02 is pending.
+"""FINISH eligibility/allocation rules reused by delivery, settlement and jobs.
 
 These helpers do not persist state or grant authority. The integration must load
 the accepted models under Order -> Shipment -> Escrow -> Product locks, refresh
 authorization and selected proof metadata, then sample database_now after I/O.
-No HTTP endpoint or financial worker is enabled by importing this module.
+Runtime simulation authorization uses A's fulfillment_guard.
 """
 
 from dataclasses import dataclass
@@ -155,8 +155,8 @@ def validate_source_reason(kind: str, source: str, reason: str) -> None:
 
 
 def simulation_allowed(environment: str | None, enabled: str | None) -> bool:
-    return ((environment or "").strip().lower() in {"development", "test", "demo"}
-            and (enabled or "").strip().lower() in {"1", "true", "yes"})
+    return ((environment or "").strip().lower() in {"development", "dev", "test", "demo"}
+            and (enabled or "").strip().lower() == "true")
 
 
 def buyer_action_flags(*, role: str, active: bool, owns_order: bool,

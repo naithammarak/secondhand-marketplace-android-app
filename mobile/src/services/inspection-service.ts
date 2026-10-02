@@ -118,7 +118,7 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
         offset = page.next_offset;
       }
     },
-    confirmDelivery: (token: string, id: number, key: string) => request<{ shipment_id: number; courier_delivered_at: string }>(token, `/courier/shipments/${id}/confirm-delivery`, json({}, key)),
+    confirmDelivery: (token: string, id: number, key: string, proofIds: number[]) => request<{ shipment_id: number; courier_delivered_at: string }>(token, `/courier/shipments/${id}/confirm-delivery`, json({ proof_ids: [...proofIds].sort((a, b) => a - b) }, key)),
     uploadProof: (token: string, id: number, file: EvidenceFile, key: string) => {
       const form = new FormData();
       form.append('file', (file.file ?? { uri: file.uri, name: file.name, type: file.type }) as Blob);

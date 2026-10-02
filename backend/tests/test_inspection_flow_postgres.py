@@ -154,14 +154,14 @@ def started_work(world):
     assigned = client.post(assign_url, json={"courier_id": courier_id}, headers=request_headers(admin))
     assert assigned.status_code == 200, assigned.text
     shipment_id = assigned.json()["shipment_id"]
-    assert client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", headers=request_headers(courier)).status_code == 409
+    assert client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", json={"proof_ids": [999999]}, headers=request_headers(courier)).status_code == 409
     assert client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(other)).status_code == 403
     uploaded = client.post(f"/courier/shipments/{shipment_id}/proofs", files={"file": ("photo.png", image_bytes(), "image/png")}, headers=request_headers(courier))
     assert uploaded.status_code == 201, uploaded.text
     proof_id = uploaded.json()["proof"]["id"]
     assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=other).status_code == 404
     assert client.get(f"/shipment-delivery-proofs/{proof_id}", headers=buyer).status_code == 200
-    confirmed = client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", headers=request_headers(courier))
+    confirmed = client.post(f"/courier/shipments/{shipment_id}/confirm-delivery", json={"proof_ids": [proof_id]}, headers=request_headers(courier))
     assert confirmed.status_code == 200, confirmed.text
     received = client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector))
     assert received.status_code == 200 and received.json()["order_status"] == "RECEIVED_AT_CENTER", received.text
@@ -678,12 +678,12 @@ def test_courier_proof_limits_replay_and_storage_failure(world, tmp_path):
     original = stored_path.read_bytes()
     stored_path.write_bytes(b"corrupted")
     confirm_url = f"/courier/shipments/{shipment_id}/confirm-delivery"
-    assert client.post(confirm_url, headers=request_headers(courier)).status_code == 503
+    assert client.post(confirm_url, json={"proof_ids": proof_ids}, headers=request_headers(courier)).status_code == 503
     assert client.post(f"/inspections/{work_id}/receive", json={}, headers=request_headers(inspector)).status_code == 409
     stored_path.write_bytes(original)
-    confirmed = client.post(confirm_url, headers=request_headers(courier))
+    confirmed = client.post(confirm_url, json={"proof_ids": proof_ids}, headers=request_headers(courier))
     assert confirmed.status_code == 200, confirmed.text
-    assert client.post(confirm_url, headers=request_headers(courier)).status_code == 409
+    assert client.post(confirm_url, json={"proof_ids": proof_ids}, headers=request_headers(courier)).status_code == 409
     with Session(engine) as session:
         assert session.query(ShipmentDeliveryProof).filter_by(shipment_id=shipment_id).count() == 3
         assert session.get(Shipment, shipment_id).courier_delivered_at is not None
@@ -765,7 +765,12 @@ def test_seller_as_buyer_keeps_private_inspection_and_one_time_decision(world, p
     for path in (f"/inspection-evidence/{selected_id}", f"/shipment-delivery-proofs/{proof_id}"):
         response = client.get(path, headers=buyer)
         assert response.status_code == 200 and response.headers["cache-control"] == "no-store" and response.content
-        for denied in (seller, other, admin):
+        # FINISH now lets the owning Seller read inbound/return Courier proofs.
+        # Inspection photos and TO_BUYER proofs retain their separate privacy scopes.
+        denied_actors = (seller, other, admin) if path.startswith("/inspection-evidence/") else (other, admin)
+        if path.startswith("/shipment-delivery-proofs/"):
+            assert client.get(path, headers=seller).status_code == 200
+        for denied in denied_actors:
             assert client.get(path, headers=denied).status_code == 404
     assert client.get(f"/inspection-evidence/{unselected_id}", headers=buyer).status_code == 404
     assert client.get(f"/orders/{order_id}", headers=buyer).status_code == 200

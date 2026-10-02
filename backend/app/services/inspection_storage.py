@@ -96,15 +96,24 @@ def download_object(path: str) -> bytes:
     local = _local_path(path)
     if local is not None:
         try:
-            return local.read_bytes()
+            with local.open("rb") as stream:
+                content = stream.read(MAX_BYTES + 1)
+            if len(content) > MAX_BYTES:
+                raise OSError("Private object exceeds image limit")
+            return content
         except OSError as exc:
             raise HTTPException(status_code=503, detail={"code": "storage_unavailable", "message": "Private image is unavailable"}) from exc
     base, headers = _config()
     try:
         with httpx.Client(timeout=20) as client:
-            result = client.get(f"{base}/storage/v1/object/{BUCKET}/{quote(path, safe='/')}", headers=headers)
-            result.raise_for_status()
-            return result.content
+            with client.stream("GET", f"{base}/storage/v1/object/{BUCKET}/{quote(path, safe='/')}", headers=headers) as result:
+                result.raise_for_status()
+                content = bytearray()
+                for chunk in result.iter_bytes():
+                    if len(content) + len(chunk) > MAX_BYTES:
+                        raise HTTPException(status_code=503, detail={"code": "storage_unavailable", "message": "Private image exceeds size limit"})
+                    content.extend(chunk)
+                return bytes(content)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail={"code": "storage_unavailable", "message": "Private image is unavailable"}) from exc
 

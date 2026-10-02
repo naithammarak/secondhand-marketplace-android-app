@@ -130,6 +130,10 @@ class OrderDetail(BaseModel):
     cancel_reason: CancelReason | None
     created_at: datetime | None
     updated_at: datetime | None
+    can_confirm_receipt: bool = False
+    can_report_missing: bool = False
+    receipt_deadline_at: datetime | None = None
+    settlement: dict | None = None
 
 
 class OrderListItem(BaseModel):

@@ -66,13 +66,14 @@ test('Courier and Admin use protected routes and stable mutation keys', async ()
   await service.adminOrders('admin',20);
   await service.assignCourier('admin',42,12,'assign-key');
   await service.courierShipments('courier');
-  await service.confirmDelivery('courier',7,'delivery-key');
+  await service.confirmDelivery('courier',7,'delivery-key',[9,4]);
   assert.equal(calls[0].url, 'https://api.test/admin/orders?status=SHIPPING_TO_CENTER&limit=20&offset=20');
   assert.deepEqual(JSON.parse(calls[1].init.body), {courier_id:12});
   assert.equal(calls[1].init.headers['Idempotency-Key'],'assign-key');
   assert.equal(calls[2].url, 'https://api.test/courier/shipments?scope=pending&offset=0&limit=100');
   assert.equal(calls[3].init.headers.Authorization,'Bearer courier');
   assert.equal(calls[3].init.headers['Idempotency-Key'],'delivery-key');
+  assert.deepEqual(JSON.parse(calls[3].init.body), {proof_ids:[4,9]});
   assert.deepEqual(service.privateImageSource('courier',{url:'/shipment-delivery-proofs/4'}), {uri:'https://api.test/shipment-delivery-proofs/4',headers:{Authorization:'Bearer courier'}});
   assert.throws(() => service.privateImageSource('courier',{url:'https://evil.test/4'}));
 });

@@ -213,7 +213,7 @@ function CourierItem({ item, reload }: { item: CourierShipment; reload(): Promis
     {action.error && <ThemedText accessibilityRole="alert">{action.error}</ThemedText>}
     {!item.courier_delivered_at && <><Button label={pending ? 'ลองส่งรูปเดิมอีกครั้ง' : 'แนบรูปส่งถึงศูนย์ (JPEG/PNG)'} busy={action.busy} disabled={item.proofs.length >= 3} onPress={() => { void upload(); }} />
       <Button label="ยืนยันส่งถึงศูนย์แล้ว" variant="primary" busy={action.busy} disabled={item.proofs.length === 0 || !!pending} onPress={() => {
-        void action.mutate(`deliver:${item.id}`, key => api.call(token => api.service.confirmDelivery(token, item.id, key))).then(ok => { if (ok) void reload(); });
+        void action.mutate(`deliver:${item.id}`, key => api.call(token => api.service.confirmDelivery(token, item.id, key, item.proofs.map(proof => proof.id)))).then(ok => { if (ok) void reload(); });
       }} /></>}
   </Card>;
 }

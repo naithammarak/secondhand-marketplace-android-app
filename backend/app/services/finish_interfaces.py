@@ -1,10 +1,11 @@
-"""Integration interface proposal for A/task02 and B/tasks03-05.
+"""Caller-owned transaction interface implemented by OrderSettlementService."""
 
-There is intentionally no implementation returning simulated success. Bind this
-protocol to order_settlement only after A supplies accepted models/mapping.
-"""
+from typing import TYPE_CHECKING, Literal, Protocol
+from datetime import datetime
+from collections.abc import Callable
 
-from typing import Literal, Protocol
+if TYPE_CHECKING:
+    from app.services.order_settlement import SettlementOutcome
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,9 @@ class SettlementService(Protocol):
                actor_id: int | None, worker_name: str | None,
                idempotency_key: str,
                admin_reason: str | None = None,
-               evidence_refs: tuple[str, ...] = ()) -> dict:
+               evidence_refs: tuple[str, ...] = (),
+               clock: Callable[[], datetime] | None = None,
+               dry_run: bool = False) -> "SettlementOutcome":
         """Caller-owned transaction; no implicit commit or cached authorization.
 
         Acquire Order -> Shipment -> Escrow -> Product; revalidate actor/replay,
