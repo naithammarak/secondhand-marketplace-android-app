@@ -1,6 +1,6 @@
 # 02 FINISH-01 — durable schema and seller return snapshot
 
-Status: REVIEW_PENDING. Upstream `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`; implementation source `5c08ca4b5e614f3f9aaf746423136c593ad7b3af`. Published review head is the documentation-only descendant reported in the review request/coordination state.
+Status: REVIEW_PENDING. Upstream `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`; implementation source `33f0eadd8c1739735434ee9f103a5f23398178ed`. Published review head is the documentation-only descendant reported in the review request/coordination state.
 
 Migration: `a02f20261002` → parent `714f11c84d53`; one head. Next coordinated migrations are task07 then task08; B reuses these tables/models.
 
@@ -20,7 +20,7 @@ Concrete fields, routes, bodies/errors, scopes, snapshot rules and legacy compat
 
 Fresh PostgreSQL install is proven by migration-backed API/constraint fixtures. Five migration checks cover supported 714f11c84d53/e8b2c490a713/d8b7c4e2910a upgrades with paid/unpaid/proof/inspection/certificate/decision rows, exact original-value preservation, unsafe cross-order preflight refusal/rollback, explicit downgrade refusal and anon/authenticated RLS denial even after accidental grants.
 
-37 foundation checks cover canonical save/replay/update/freeze/privacy, strict input, FK/party/currency/amount/kind/source/allocation failures using nested savepoints, immutable original/terminal/proof records, opposing-kind uniqueness, full transaction rollback, save-versus-ship and real lock waits crossing expiry/shipping deadlines. Correct release allocations commit; shifting allocations while retaining the total rolls back. Round 2 adds 10 migration-backed Buyer/Seller list/detail cases spanning REFUNDED/RELEASED/HELD/unpaid/cancelled, retaining the identical original receipt. Orders plus foundation: 63 passed; focused Orders API: 80 passed. Prior INSPECT/CERT/worker checks remain round-1 evidence; see `A-test-evidence.json`.
+37 foundation checks cover canonical save/replay/update/freeze/privacy, strict input, FK/party/currency/amount/kind/source/allocation failures using nested savepoints, immutable original/terminal/proof records, opposing-kind uniqueness, full transaction rollback, save-versus-ship and real lock waits crossing expiry/shipping deadlines. Correct release allocations commit; shifting allocations while retaining the total rolls back. Round 2 adds 10 migration-backed Buyer/Seller list/detail cases spanning REFUNDED/RELEASED/HELD/unpaid/cancelled, retaining the identical original receipt. Round-2 Orders plus foundation: 63 passed; round 3 adds five deterministic checkout race cases (current total 68). Focused Orders API: 80 passed in both rounds. Prior INSPECT/CERT/worker checks remain round-1 evidence; see `A-test-evidence.json`.
 
 ## Compatibility and remaining ownership
 

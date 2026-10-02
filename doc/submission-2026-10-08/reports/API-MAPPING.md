@@ -1,6 +1,6 @@
 # A foundation API and physical schema mapping
 
-Status: REVIEW_PENDING. Source commit `5c08ca4b5e614f3f9aaf746423136c593ad7b3af`, upstream base `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`. The final PR head includes documentation-only descendants; its exact SHA is recorded in the review request and coordination state. Migration head: `a02f20261002`, parent `714f11c84d53`. Extend this chain in task order **02 → 07 → 08**; B reuses these models and must not introduce a competing head.
+Status: REVIEW_PENDING. Source commit `33f0eadd8c1739735434ee9f103a5f23398178ed`, upstream base `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`. The final PR head includes documentation-only descendants; its exact SHA is recorded in the review request and coordination state. Migration head: `a02f20261002`, parent `714f11c84d53`. Extend this chain in task order **02 → 07 → 08**; B reuses these models and must not introduce a competing head.
 
 ## Return address
 
@@ -27,6 +27,8 @@ GET returns `{order_id, return_address, saved_at, frozen}`. Use GET for current 
 Order fields: nullable JSON `return_address`, paired UTC `return_address_saved_at`. PostgreSQL validates the exact field shape and freezes the snapshot after Shipment insertion. API writes and Shipment insertion serialize through the same Order lock.
 
 ## Existing retained mutations
+
+- `POST /orders`: after validation and the initial owning Buyer/key lookup, an availability conflict during product precheck rolls back and rechecks that same scope/key. A committed same canonical request replays the original 201 Order and `Idempotent-Replayed: true`; a changed canonical request returns 409 `idempotency_key_reused`. Other precheck errors retain their original behavior. Existing conditional reservation/unique constraint replay guards remain; different keys/Buyers keep one winner per product.
 
 - `POST /orders/{id}/ship-to-center`: owning ACTIVE Seller, existing carrier/tracking body and idempotency header. Requires paid Order, HELD Escrow, return address, and fresh database time strictly before `paid_at + 72h`. Missing destination: 409 `fulfillment_destination_missing`; deadline: 409 `seller_shipping_deadline_passed`. Successful same-key replay precedes the new deadline guard. A PostgreSQL trigger also checks the actual insertion time and maps its boundary rejection back to 409.
 - `POST /inspections/{id}/receive` remains the sole center receipt mutation. Existing start/evidence/result/Buyer decision routes remain registered.

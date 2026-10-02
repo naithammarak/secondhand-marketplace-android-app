@@ -1,7 +1,7 @@
 {
   "scope": "A FOUNDATION tasks01+02 only; independent review pending",
   "base_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
-  "implementation_source_sha": "5c08ca4b5e614f3f9aaf746423136c593ad7b3af",
+  "implementation_source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
   "migration_head": "a02f20261002",
   "isolated_database": "owned local postgres:16-alpine container; foundation_test, foundation_inspect_test, foundation_migration_test on localhost",
   "environment_limits": [
@@ -91,5 +91,35 @@
       "result": "PASS"
     }
   },
-  "evidence_policy": "Round-1 results retained for their recorded source; round-2 results are affected checks on current implementation source. No mobile/migration/schema/shared-service changes in round 2."
+  "evidence_policy": "Each numbered round records checks on its specified implementation source. Reviewer round2 discovered RF04 in retained baseline/source; deterministic round3 red/green proof supersedes earlier create-race completeness claims. No mobile/model/migration changes in rounds2/3.",
+  "round_2_tests_source_sha": "5c08ca4b5e614f3f9aaf746423136c593ad7b3af",
+  "round_3_tests": {
+    "orders_and_foundation_postgres": {
+      "passed": 68,
+      "orders": 31,
+      "foundation": 37,
+      "new_deterministic_create_race_regressions": 5,
+      "pre_fix_result": "3 failed (exact/canonical replay and changed-body conflict), 2 passed (different key/Buyer)",
+      "command": "DATABASE_URL=sqlite:///:memory: ORDER_TEST_DATABASE_URL=<owned-local-test-db> python -m pytest -q --tb=short tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py",
+      "coverage": "Initial-lookup/product-precheck commit ordering via events, five-way same-key race, different-Buyer reservation lock race and 15-product stress; all prior refund/receipt regressions."
+    },
+    "orders_api": {
+      "passed": 80,
+      "command": "DATABASE_URL=sqlite:///:memory: python -m pytest -q --tb=short tests/test_orders_api.py"
+    },
+    "privacy": {
+      "result": "PASS",
+      "scope": "Exact tracked env inventory, template byte equality to prior reviewed head, private/arbitrary template ignore probes, two changed code/test file credential-signature scan; no private env values read/logged."
+    },
+    "documentation_validation": {
+      "result": "PASS",
+      "tasks": 14,
+      "requirements": 59,
+      "qa_cases": 28,
+      "local_links": 151
+    },
+    "patch_whitespace": {
+      "result": "PASS"
+    }
+  }
 }

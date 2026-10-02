@@ -4,7 +4,7 @@
   "scope_version": "submission-2026-10-01",
   "status": "A_FOUNDATION_REVIEW_PENDING",
   "app": {
-    "source_sha": "5c08ca4b5e614f3f9aaf746423136c593ad7b3af",
+    "source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
     "source_dirty": false,
     "package": "com.kmutnb.secondhandmarketplace",
     "version": null,
@@ -12,7 +12,7 @@
     "api_mode": "complete"
   },
   "api": {
-    "source_sha": "5c08ca4b5e614f3f9aaf746423136c593ad7b3af",
+    "source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
     "reachable_https_origin": null,
     "public_certificate_origin": null,
     "deployed_at": null
@@ -70,7 +70,7 @@
     }
   ],
   "known_remaining_issues": [
-    "Independent A round-2 re-review pending after RF01/RF02/RF03 fixes",
+    "Independent A round-3 re-review pending after RF04 fix; RF01-RF03 resolved by round2 reviewer",
     "B-E downstream features and later global integration remain future work",
     "Legacy in-flight missing return snapshot requires audited compatibility repair before return dispatch",
     "Shared DB/Storage/OAuth/Android/worker/public QR/release acceptance unverified",
@@ -78,7 +78,7 @@
   ],
   "candidate": {
     "base_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
-    "implementation_source_sha": "5c08ca4b5e614f3f9aaf746423136c593ad7b3af",
+    "implementation_source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
     "branch": "codex/a-foundation-2026-10-02",
     "review_head_location": "GitHub PR head and external coordination/A-IMPLEMENT-STATE.json; documentation-only descendants allowed",
     "scope": "tasks01 INT-01 +02 FINISH-01"
