@@ -617,6 +617,11 @@ export function ProfileScreen() {
                     label="มอบหมายผู้ขนส่ง"
                     onPress={() => router.push('/admin-deliveries')}
                   />
+                  <Button
+                    label="จัดการใบรับรอง"
+                    disabled={auth.accountChecking}
+                    onPress={() => router.push('/admin-certificates')}
+                  />
                 </View>
               )}
               {account?.role === 'COURIER' && (

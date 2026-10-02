@@ -50,12 +50,20 @@ test('approval on Buyer does not optimistically promote the account', () => {
   fireEvent.press(screen.getByText('ตรวจสอบสิทธิ์ผู้ขายอีกครั้ง'));
   expect(mockPush).not.toHaveBeenCalled();
 });
-test.each([['ADMIN','ตรวจคำขอยืนยันตัวตน','/admin-verifications'], ['ADMIN','มอบหมายผู้ขนส่ง','/admin-deliveries'], ['INSPECTOR','งานตรวจสินค้า','/inspections'], ['COURIER','งานส่งเข้าศูนย์','/courier']])('%s has its existing staff entry', (role, label, path) => {
+test.each([['ADMIN','ตรวจคำขอยืนยันตัวตน','/admin-verifications'], ['ADMIN','มอบหมายผู้ขนส่ง','/admin-deliveries'], ['ADMIN','จัดการใบรับรอง','/admin-certificates'], ['INSPECTOR','งานตรวจสินค้า','/inspections'], ['COURIER','งานส่งเข้าศูนย์','/courier']])('%s has its existing staff entry', (role, label, path) => {
   mockAuth.account.role = role;
   render(<ProfileScreen />);
   fireEvent.press(screen.getByRole('button', { name: label }));
   expect(mockPush).toHaveBeenCalledWith(path);
   expect(screen.queryByText('ขอเปิดร้านค้า')).toBeNull();
+});
+
+test('certificate entry is unavailable to a Buyer or while Admin authorization is checking', () => {
+  const view = render(<ProfileScreen />);
+  expect(screen.queryByRole('button', { name: 'จัดการใบรับรอง' })).toBeNull();
+  mockAuth.account.role = 'ADMIN'; mockAuth.accountChecking = true;
+  view.rerender(<ProfileScreen />);
+  expect(screen.getByRole('button', { name: 'จัดการใบรับรอง' }).props.accessibilityState.disabled).toBe(true);
 });
 test('logout uses the auth provider and clears the saved return', async () => {
   render(<ProfileScreen />);
