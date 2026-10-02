@@ -415,6 +415,61 @@ def test_parallel_create_stress_single_winner_per_product(world, db):
         assert count(db, Order, product_id=product_id) == 1
 
 
+@pytest.mark.parametrize("contender_kind", ["same_body", "canonical_body", "changed_body", "different_key", "different_buyer"])
+def test_create_commit_between_key_lookup_and_product_precheck(db, world, monkeypatch, contender_kind):
+    entered = threading.Event()
+    release = threading.Event()
+    gate = threading.Lock()
+    paused = False
+    original = orders_module.load_purchasable_product
+
+    def pause_first_precheck(*args, **kwargs):
+        nonlocal paused
+        with gate:
+            should_pause = not paused
+            paused = True
+        if should_pause:
+            entered.set()
+            assert release.wait(10), "product precheck was not released"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(orders_module, "load_purchasable_product", pause_first_precheck)
+    key = new_key()
+    body = order_body(world["product_id"])
+    if contender_kind == "canonical_body":
+        body["shipping_address"]["recipient_name"] = "  " + body["shipping_address"]["recipient_name"] + "  "
+    elif contender_kind == "changed_body":
+        body["shipping_address"]["recipient_name"] = "Different recipient"
+    headers = world["b"] if contender_kind == "different_buyer" else world["a"]
+    contender_key = new_key() if contender_kind == "different_key" else key
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        contender_future = pool.submit(post_order, headers, body, contender_key)
+        try:
+            assert entered.wait(10), "contender did not reach product precheck"
+            winner = post_order(world["a"], order_body(world["product_id"]), key)
+            assert winner.status_code == 201, winner.text
+        finally:
+            release.set()
+        contender = contender_future.result(timeout=10)
+
+    if contender_kind in {"same_body", "canonical_body"}:
+        assert contender.status_code == 201, contender.text
+        assert contender.json()["id"] == winner.json()["id"]
+        assert contender.headers["Idempotent-Replayed"] == "true"
+        assert contender.json()["shipping_address"] == winner.json()["shipping_address"]
+    else:
+        expected_code = {
+            "changed_body": "idempotency_key_reused",
+            "different_key": "already_ordered",
+            "different_buyer": "product_unavailable",
+        }[contender_kind]
+        assert contender.status_code == 409, contender.text
+        assert contender.json()["detail"]["code"] == expected_code
+        assert "Idempotent-Replayed" not in contender.headers
+    assert count(db, Order) == 1
+    assert db.get(Product, world["product_id"]).status == "RESERVED"
+
+
 def test_parallel_same_key_creates_one_order(world, db):
     key = new_key()
     results = run_parallel(

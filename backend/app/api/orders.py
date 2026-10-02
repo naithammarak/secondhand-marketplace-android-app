@@ -592,7 +592,20 @@ def create_order(
     if existing is not None:
         return replay_order(db, existing, fingerprint, buyer, response)
 
-    load_purchasable_product(db, buyer, body.product_id)
+    try:
+        load_purchasable_product(db, buyer, body.product_id)
+    except HTTPException as exc:
+        # A same-key winner may commit after our lookup but before this precheck.
+        # Retry only availability conflicts; preserve unrelated validation/errors.
+        if (exc.status_code != status.HTTP_409_CONFLICT
+                or not isinstance(exc.detail, dict)
+                or exc.detail.get("code") not in {"already_ordered", "product_unavailable"}):
+            raise
+        db.rollback()
+        replay = find_order_by_key(db, buyer.id, idempotency_key)
+        if replay is not None:
+            return replay_order(db, replay, fingerprint, buyer, response)
+        raise
 
     try:
         # ใครเปลี่ยน AVAILABLE -> RESERVED ได้ก่อนคือผู้ชนะ คำขอที่แข่งกันจะรอ row lock
