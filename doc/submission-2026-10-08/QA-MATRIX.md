@@ -1,5 +1,7 @@
 # Final acceptance matrix
 
+> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+
 **ทุกแถวเป็นเกณฑ์ตรวจรับ ยังไม่ใช่ผล PASS** · วันที่เตรียม 1 ต.ค. 2026
 
 บันทึกผลลง `reports/11-QA-01.md` และ TEST-REPORT สำหรับ release เดียวกัน: app/API SHA, migration head, APK hash, environment, เวลา, role, วิธีทดสอบและ evidence path ต้องระบุครบ ใช้ synthetic data บน target ที่อนุญาตเท่านั้น

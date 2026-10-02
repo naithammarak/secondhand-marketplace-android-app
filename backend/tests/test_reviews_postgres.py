@@ -29,7 +29,9 @@ def approve(db, user_id):
 
 
 @pytest.fixture
-def terminal(db, world):
+def terminal(db, world, monkeypatch):
+    import app.api.orders as orders_api
+    monkeypatch.setattr(orders_api, "NEW_ORDER_POLICY", "LEGACY_V1")  # Retained schema fixture, not a new external journey.
     approve(db, world['seller'])
     def make(kind='RELEASE', actor='a'):
         product_id = create_product(db, world['seller'])

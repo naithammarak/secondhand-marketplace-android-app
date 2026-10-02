@@ -48,9 +48,10 @@ class OrderSettlement(Base):
         ForeignKeyConstraint(["order_id", "held_amount", "currency"], ["orders.id", "orders.total_amount", "orders.currency"], name="fk_settlements_order_money", ondelete="RESTRICT"),
         ForeignKeyConstraint(["order_id", "seller_id", "buyer_id"], ["orders.id", "orders.seller_id", "orders.buyer_id"], name="fk_settlements_order_parties", ondelete="RESTRICT"),
         CheckConstraint("held_amount > 0 AND seller_payout >= 0 AND buyer_refund >= 0 AND commission_amount >= 0 AND inspection_amount >= 0 AND shipping_amount >= 0", name="ck_settlements_nonnegative"),
-        CheckConstraint("(kind = 'RELEASE' AND buyer_refund = 0 AND held_amount = seller_payout + commission_amount + inspection_amount + shipping_amount) OR (kind = 'REFUND' AND buyer_refund = held_amount AND seller_payout = 0 AND commission_amount = 0 AND inspection_amount = 0 AND shipping_amount = 0)", name="ck_settlements_allocation"),
-        CheckConstraint("(kind = 'RELEASE' AND ((source = 'BUYER_RECEIPT' AND reason = 'RECEIPT_CONFIRMED') OR (source = 'AUTO_RECEIPT' AND reason = 'RECEIPT_TIMEOUT') OR (source = 'ADMIN_RESOLUTION' AND reason = 'DELIVERY_REVIEW_RELEASE'))) OR (kind = 'REFUND' AND ((source = 'RETURN_DELIVERY' AND reason IN ('BUYER_REJECTED_INSPECTION','INSPECTION_NOT_AS_DESCRIBED','INSPECTION_FAKE')) OR (source = 'SELLER_NO_SHIP' AND reason = 'SELLER_NO_SHIP') OR (source = 'ADMIN_RESOLUTION' AND reason = 'DELIVERY_REVIEW_REFUND')))", name="ck_settlements_codes"),
+        CheckConstraint("(kind = 'RELEASE' AND buyer_refund = 0 AND held_amount = seller_payout + commission_amount + inspection_amount + shipping_amount) OR (kind = 'REFUND' AND seller_payout = 0 AND commission_amount = 0 AND held_amount = buyer_refund + inspection_amount + shipping_amount AND ((fulfillment_policy = 'EXTERNAL_V2' AND source = 'RETURN_DELIVERY' AND reason IN ('BUYER_REJECTED_INSPECTION','RESULT_DECISION_TIMEOUT')) OR (buyer_refund = held_amount AND inspection_amount = 0 AND shipping_amount = 0)))", name="ck_settlements_allocation"),
+        CheckConstraint("(kind = 'RELEASE' AND ((source = 'BUYER_RECEIPT' AND reason = 'RECEIPT_CONFIRMED') OR (source = 'AUTO_RECEIPT' AND reason = 'RECEIPT_TIMEOUT') OR (source = 'ADMIN_RESOLUTION' AND reason = 'DELIVERY_REVIEW_RELEASE'))) OR (kind = 'REFUND' AND ((source = 'RETURN_DELIVERY' AND reason IN ('BUYER_REJECTED_INSPECTION','RESULT_DECISION_TIMEOUT','INSPECTION_NOT_AS_DESCRIBED','INSPECTION_FAKE')) OR (source = 'SELLER_NO_SHIP' AND reason = 'SELLER_NO_SHIP') OR (source = 'ADMIN_RESOLUTION' AND reason = 'DELIVERY_REVIEW_REFUND')))", name="ck_settlements_codes"),
     )
+    fulfillment_policy: Mapped[str] = mapped_column(String(24), nullable=False, server_default="LEGACY_V1")
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(Integer, nullable=False)
     escrow_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -127,3 +128,25 @@ class DeliveryEvidenceAccess(Base):
     admin_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     reason: Mapped[str] = mapped_column(String(2000), nullable=False)
     accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ShippingEvent(Base):
+    """Trusted explicitly simulated transport fact, distinct from physical receipt."""
+    __tablename__ = "shipping_events"
+    __table_args__ = (
+        UniqueConstraint("source", "event_id", name="uq_shipping_event_identity"),
+        UniqueConstraint("shipment_id", name="uq_shipping_event_delivered"),
+        UniqueConstraint("command_id", name="uq_shipping_event_command"),
+        ForeignKeyConstraint(["shipment_id", "order_id", "leg"], ["shipments.id", "shipments.order_id", "shipments.leg"], name="fk_shipping_event_shipment", ondelete="RESTRICT"),
+        CheckConstraint("source = 'ADMIN_DEMO' AND event = 'DELIVERED' AND length(event_id) BETWEEN 8 AND 100", name="ck_shipping_event_source"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    shipment_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    leg: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(24), nullable=False)
+    event: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    command_id: Mapped[int] = mapped_column(ForeignKey("fulfillment_commands.id", ondelete="RESTRICT"), nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

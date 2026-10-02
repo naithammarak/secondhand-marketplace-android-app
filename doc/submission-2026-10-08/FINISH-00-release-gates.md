@@ -1,5 +1,7 @@
 # FINISH-00 — refresh สำหรับ release 8 ต.ค.
 
+> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+
 **วันที่ตรวจ 1 ตุลาคม 2026 · ยังไม่ผ่าน full release gate**
 
 ## Baseline ที่ยืนยันแล้ว

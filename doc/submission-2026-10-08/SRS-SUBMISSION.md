@@ -1,5 +1,7 @@
 # 2NDHAND — Submission Software Requirements Specification
 
+> **แผนแก้ล่าสุด 2 ต.ค.:** อ่าน [ขนส่งภายนอก + เงินคืน / R1–R6](changes/EXTERNAL-SHIPPING-03.md) ก่อน กติกานี้แทน Courier-required flow และคืนเต็มในกรณี Buyer ปฏิเสธ/หมดเวลาผลตรวจ; implementation และการปรับ traceability/QA ทุกกรณียังเป็นงานถัดไป หลักฐานผ่านกติกาเดิมไม่ใช่ผ่านกติกาใหม่
+
 Version: submission-2026-10-01 · Target: Thursday, 8 October 2026 · Timezone: Asia/Bangkok
 
 Status: Scope selected by the project owner on 1 October 2026. Implementation and final acceptance are pending. Teacher acknowledgement of revised scope is not established by this document.

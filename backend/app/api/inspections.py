@@ -199,6 +199,8 @@ def _courier_shipment(db: Session, shipment_id: int, actor: User) -> tuple[Order
     fresh_actor = db.scalar(select(User).where(User.id == actor.id).with_for_update().execution_options(populate_existing=True))
     if fresh_actor is None or fresh_actor.role != UserRole.COURIER or fresh_actor.status != UserStatus.ACTIVE:
         raise api_error(403, "courier_role_required", "Active Courier account required")
+    if order.fulfillment_policy != "LEGACY_V1":
+        raise api_error(409, "legacy_courier_only", "External shipping uses recipient confirmation")
     if shipment is None or shipment.courier_id != actor.id:
         raise api_error(404, "shipment_not_found", "Shipment not found")
     return order, shipment
@@ -285,7 +287,7 @@ def _detail(db: Session, order: Order, work: Inspection) -> dict:
     outbound = db.scalar(select(Shipment).where(Shipment.order_id == order.id, Shipment.leg != "TO_CENTER"))
     next_action = None
     if work.result is not None and outbound is None:
-        next_action = ("WAIT_BUYER_DECISION" if decision is None else
+        next_action = ("RETURN_TO_SELLER" if order.result_timed_out_at is not None else "WAIT_BUYER_DECISION" if decision is None else
                        "SHIP_TO_BUYER" if decision.decision == "CONFIRM" else "RETURN_TO_SELLER") if work.result in POSITIVE else "RETURN_TO_SELLER"
     return {
         "id": work.id, "order_id": order.id, "order_status": order.status,
@@ -294,6 +296,10 @@ def _detail(db: Session, order: Order, work: Inspection) -> dict:
         "inspector_id": work.inspector_id, "started_at": work.started_at,
         "result": work.result, "summary": work.summary, "inspected_at": work.inspected_at,
         "inspection_overdue_escalated_at": order.inspection_overdue_escalated_at,
+        "fulfillment_policy": order.fulfillment_policy,
+        "result_available_at": order.result_available_at,
+        "result_decision_deadline_at": order.result_decision_deadline_at,
+        "result_timed_out_at": order.result_timed_out_at,
         "evidence": [{"id": item.id, "mime_type": item.mime_type, "size_bytes": item.size_bytes, "url": f"/inspection-evidence/{item.id}", "expires_at": None} for item in photos],
         "certificate": _certificate_view(cert),
         "next_action": next_action,
@@ -339,7 +345,7 @@ def ship_to_center(order_id: int, body: ShipRequest, response: Response, actor: 
     if order.return_address is None:
         raise api_error(409, "fulfillment_destination_missing", "Seller must save a return address before shipping")
     db.add_all([
-        Shipment(order_id=order.id, leg="TO_CENTER", status="IN_TRANSIT", carrier=carrier, tracking_number=tracking, shipped_at=instant),
+        Shipment(order_id=order.id, fulfillment_policy=order.fulfillment_policy, leg="TO_CENTER", status="IN_TRANSIT", carrier=carrier, tracking_number=tracking, shipped_at=instant),
         Inspection(order_id=order.id),
     ])
     order.status = "SHIPPING_TO_CENTER"
@@ -631,9 +637,16 @@ def receive_inspection(inspection_id: int, body: ReceiveRequest, response: Respo
     shipment = _shipment(db, order.id)
     if shipment is None or shipment.status != "IN_TRANSIT":
         raise api_error(409, "invalid_state", "Inbound shipment unavailable")
-    if shipment.courier_delivered_at is None or not 1 <= len(_proofs(db, shipment.id)) <= 3:
+    if order.fulfillment_policy == "LEGACY_V1" and (shipment.courier_delivered_at is None or not 1 <= len(_proofs(db, shipment.id)) <= 3):
         raise api_error(409, "courier_delivery_required", "Courier delivery and photos required before receipt")
-    shipment.status, shipment.received_by, shipment.received_at, shipment.received_note = "DELIVERED", actor.id, now(), note
+    instant = database_now(db)
+    if order.fulfillment_policy == "EXTERNAL_V2":
+        from app.services import finish_core as core
+        require_fulfillment_simulation()
+        cmd = core.command(db, order.id, f"USER:{actor.id}", actor.id, "CENTER_RECEIPT", key,
+                           {"note": note}, {"order_id": order.id, "received_at": instant}, instant)
+        shipment.recipient_source, shipment.recipient_command_id = "INSPECTOR", cmd.id
+    shipment.status, shipment.received_by, shipment.received_at, shipment.received_note = "DELIVERED", actor.id, instant, note
     order.status = "RECEIVED_AT_CENTER"
     db.flush()
     return _commit(db, order.id, actor.id, "receive", key, fingerprint, _detail(db, order, work))
@@ -731,7 +744,10 @@ def submit_result(inspection_id: int, body: ResultRequest, response: Response, a
         for evidence_id in body.evidence_ids:
             db.add(InspectionResultEvidence(inspection_id=work.id, evidence_id=evidence_id))
         db.flush()
-        work.result, work.summary, work.inspected_at = body.result, summary, now()
+        work.result, work.summary, work.inspected_at = body.result, summary, database_now(db)
+        if order.fulfillment_policy == "EXTERNAL_V2" and body.result in POSITIVE:
+            order.result_available_at = work.inspected_at
+            order.result_decision_deadline_at = work.inspected_at + timedelta(hours=72)
         cert = issue_certificate(db, order, work, body.result) if body.result in POSITIVE else None
         order.status = "RESULT_NOTIFIED"
         db.flush()
@@ -779,7 +795,9 @@ def buyer_inspection(order_id: int, response: Response, actor: User = Depends(ge
         raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
     decision = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
     can_decide = (actor.status == UserStatus.ACTIVE and order.status == "RESULT_NOTIFIED"
-                  and work.result in POSITIVE and cert is not None and cert.status == "ISSUED" and decision is None)
+                  and work.result in POSITIVE and cert is not None and cert.status == "ISSUED" and decision is None
+                  and (order.fulfillment_policy != "EXTERNAL_V2" or (order.result_timed_out_at is None
+                       and order.result_decision_deadline_at is not None and database_now(db) < order.result_decision_deadline_at)))
     return {
         "order_id": order.id, "order_status": order.status, "result": work.result,
         "summary": work.summary, "inspected_at": work.inspected_at,
@@ -787,8 +805,13 @@ def buyer_inspection(order_id: int, response: Response, actor: User = Depends(ge
                       "url": f"/inspection-evidence/{photo.id}", "expires_at": None} for photo in selected],
         "certificate": _certificate_view(cert),
         "decision": None if decision is None else _decision_view(decision),
+        "fulfillment_policy": order.fulfillment_policy,
+        "result_available_at": order.result_available_at,
+        "result_decision_deadline_at": order.result_decision_deadline_at,
+        "result_timed_out_at": order.result_timed_out_at,
+        "server_time": database_now(db),
         "can_decide": can_decide,
-        "next_action": _next_action(work.result, decision),
+        "next_action": "RETURN_TO_SELLER" if order.result_timed_out_at is not None else _next_action(work.result, decision),
     }
 
 
@@ -824,7 +847,11 @@ def decide_inspection(order_id: int, response: Response, actor: User = Depends(g
             raise api_error(409, "inspection_not_ready", "Inspection result is not ready")
         if order.status != "RESULT_NOTIFIED" or cert.status != "ISSUED":
             raise api_error(409, "decision_not_allowed", "Buyer decision is not available")
-        recorded = BuyerInspectionDecision(order_id=order.id, inspection_id=work.id, buyer_id=actor.id,
+        instant = database_now(db)
+        if order.fulfillment_policy == "EXTERNAL_V2" and (order.result_decision_deadline_at is None
+                or order.result_timed_out_at is not None or instant >= order.result_decision_deadline_at):
+            raise api_error(409, "result_decision_deadline_passed", "Result decision deadline passed")
+        recorded = BuyerInspectionDecision(decided_at=instant, order_id=order.id, inspection_id=work.id, buyer_id=actor.id,
                                            decision=body.decision, reason=body.reason)
         db.add(recorded)
         db.commit()
@@ -834,6 +861,8 @@ def decide_inspection(order_id: int, response: Response, actor: User = Depends(g
         db.rollback()
         existing = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order_id))
         if existing is None:
+            if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) == "ck_result_decision_deadline":
+                raise api_error(409, "result_decision_deadline_passed", "Result decision deadline passed") from exc
             raise
         if (existing.decision, existing.reason) != (body.decision, body.reason):
             raise api_error(409, "decision_already_recorded", "Buyer decision is already recorded") from exc

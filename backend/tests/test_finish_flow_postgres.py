@@ -428,13 +428,15 @@ def test_all_five_jobs_dry_run_no_http_and_repeated_escalation(world, monkeypatc
         at = database_now(db) + timedelta(days=10)
         baseline = db.scalar(select(func.count()).select_from(FulfillmentCommand))
     dry = scan(world, clock=lambda: at)
-    assert all(dry.jobs[job].eligible >= 1 for job in dry.jobs)
+    assert all(dry.jobs[job].eligible >= 1 for job in dry.jobs if job != "result_timeout")
+    assert dry.jobs["result_timeout"].eligible == 0  # These retained journeys are explicitly legacy.
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(FulfillmentCommand)) == baseline
         assert db.get(Order, overdue).inspection_overdue_escalated_at is None
     run = scan(world, apply=True, clock=lambda: at, batch_size=2, max_batches=100)
     assert run.failed == 0
-    assert all(run.jobs[job].applied >= 1 for job in run.jobs)
+    assert all(run.jobs[job].applied >= 1 for job in run.jobs if job != "result_timeout")
+    assert run.jobs["result_timeout"].applied == 0
     assert_terminal(world, returned, "REFUND")
     assert_terminal(world, buyer_delivery, "RELEASE")
     assert_terminal(world, noship, "REFUND")
@@ -738,5 +740,8 @@ def test_two_auto_workers_and_late_buyer_commands_share_guard(world, monkeypatch
         runs = [future.result(timeout=15) for future in runners]
         assert receipt.result(timeout=15).status_code == 409
         assert report.result(timeout=15).status_code == 409
+    # Both bounded runners may skip the Order while a late HTTP command owns
+    # its row lock. Catch-up after those transactions close must settle once.
+    runs.append(scan(world, apply=True, clock=lambda: due))
     assert sum(r.jobs["receipt_release"].applied for r in runs) == 1
     assert_terminal(world, order_id, "RELEASE")

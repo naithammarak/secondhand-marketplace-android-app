@@ -51,14 +51,16 @@ def _in_list(column: str, values: tuple[str, ...]) -> str:
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
+        CheckConstraint("fulfillment_policy IN ('LEGACY_V1','EXTERNAL_V2')", name="ck_orders_fulfillment_policy"),
+        CheckConstraint("(result_available_at IS NULL AND result_decision_deadline_at IS NULL AND result_timed_out_at IS NULL) OR (fulfillment_policy = 'EXTERNAL_V2' AND result_available_at IS NOT NULL AND result_decision_deadline_at IS NOT NULL AND result_decision_deadline_at > result_available_at AND (result_timed_out_at IS NULL OR result_timed_out_at >= result_decision_deadline_at))", name="ck_orders_result_window"),
         UniqueConstraint("id", "buyer_id", name="uq_orders_id_buyer_id"),
         UniqueConstraint("missing_report_id", name="uq_orders_missing_report_id"),
         UniqueConstraint("id", "seller_id", "buyer_id", name="uq_orders_parties"),
         UniqueConstraint("id", "total_amount", "currency", name="uq_orders_currency_amount"),
-        CheckConstraint("(receipt_confirmed_at IS NULL AND receipt_confirmation_source IS NULL) OR (receipt_confirmed_at IS NOT NULL AND receipt_confirmation_source IS NOT NULL AND receipt_confirmation_source IN ('BUYER','AUTO') AND receipt_deadline_at IS NOT NULL AND missing_reported_at IS NULL AND status = 'COMPLETED')", name="ck_orders_receipt_confirmation"),
-        CheckConstraint("(missing_reported_at IS NULL AND missing_report_reason IS NULL AND missing_report_id IS NULL) OR (missing_reported_at IS NOT NULL AND missing_report_reason IS NOT NULL AND missing_report_id IS NOT NULL AND length(trim(missing_report_reason)) BETWEEN 10 AND 2000 AND receipt_deadline_at IS NOT NULL AND missing_reported_at < receipt_deadline_at AND receipt_confirmed_at IS NULL AND status IN ('DELIVERY_DISPUTED','COMPLETED','REFUNDED'))", name="ck_orders_missing_report"),
+        CheckConstraint("(receipt_confirmed_at IS NULL AND receipt_confirmation_source IS NULL) OR (receipt_confirmed_at IS NOT NULL AND receipt_confirmation_source IS NOT NULL AND receipt_confirmation_source IN ('BUYER','AUTO') AND (receipt_deadline_at IS NOT NULL OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_confirmation_source = 'BUYER')) AND missing_reported_at IS NULL AND status = 'COMPLETED')", name="ck_orders_receipt_confirmation"),
+        CheckConstraint("(missing_reported_at IS NULL AND missing_report_reason IS NULL AND missing_report_id IS NULL) OR (missing_reported_at IS NOT NULL AND missing_report_reason IS NOT NULL AND missing_report_id IS NOT NULL AND length(trim(missing_report_reason)) BETWEEN 10 AND 2000 AND ((receipt_deadline_at IS NOT NULL AND missing_reported_at < receipt_deadline_at) OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_deadline_at IS NULL)) AND receipt_confirmed_at IS NULL AND status IN ('DELIVERY_DISPUTED','COMPLETED','REFUNDED'))", name="ck_orders_missing_report"),
         CheckConstraint("(return_address IS NULL) = (return_address_saved_at IS NULL)", name="ck_orders_return_address_pair"),
-        CheckConstraint("receipt_confirmation_source IS NULL OR (receipt_confirmation_source = 'BUYER' AND receipt_confirmed_at < receipt_deadline_at) OR (receipt_confirmation_source = 'AUTO' AND receipt_confirmed_at >= receipt_deadline_at)", name="ck_orders_receipt_boundary"),
+        CheckConstraint("receipt_confirmation_source IS NULL OR (receipt_confirmation_source = 'BUYER' AND (receipt_confirmed_at < receipt_deadline_at OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_deadline_at IS NULL))) OR (receipt_confirmation_source = 'AUTO' AND receipt_confirmed_at >= receipt_deadline_at)", name="ck_orders_receipt_boundary"),
         CheckConstraint(_in_list("status", ORDER_STATUSES), name="ck_orders_status"),
         CheckConstraint("buyer_id <> seller_id", name="ck_orders_not_self_purchase"),
         CheckConstraint(
@@ -109,6 +111,10 @@ class Order(Base):
         Index("ix_orders_inspection_queue", "status", "created_at", "id"),
     )
 
+    fulfillment_policy: Mapped[str] = mapped_column(String(24), nullable=False, server_default="LEGACY_V1")
+    result_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_decision_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_timed_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)

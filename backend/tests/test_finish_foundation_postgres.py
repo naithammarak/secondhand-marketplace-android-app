@@ -23,6 +23,8 @@ pytestmark = pytest.mark.skipif(not PG_URL, reason='isolated PostgreSQL required
 
 @pytest.fixture(autouse=True)
 def foundation_environment(Session, monkeypatch):
+    import app.api.orders as order_api
+    monkeypatch.setattr(order_api, "NEW_ORDER_POLICY", "LEGACY_V1")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("FULFILLMENT_SIMULATION_ENABLED", "true")
 

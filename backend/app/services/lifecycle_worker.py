@@ -1,4 +1,4 @@
-"""Bounded five-category runner, shared transactions and restart catch-up."""
+"""Bounded six-category runner, shared transactions and restart catch-up."""
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
@@ -19,7 +19,7 @@ from app.services import unpaid_expiry_worker
 from app.services.lifecycle_progress import ScanCursor, UNPAID_JOB_ID, scan_cursor
 
 log = logging.getLogger(__name__)
-JOBS = ("unpaid_expiry", "receipt_release", "seller_no_ship", "return_refund", "inspection_overdue")
+JOBS = ("unpaid_expiry", "receipt_release", "seller_no_ship", "return_refund", "inspection_overdue", "result_timeout")
 
 
 @dataclass
@@ -47,6 +47,10 @@ def candidate_query(job, cutoff):
     if job == "seller_no_ship":
         return query.where(Order.status == "WAITING_SELLER_SHIP", Order.paid_at <= cutoff - timedelta(hours=72),
             ~exists(select(Shipment.id).where(Shipment.order_id == Order.id)))
+    if job == "result_timeout":
+        return query.where(Order.fulfillment_policy == "EXTERNAL_V2", Order.status == "RESULT_NOTIFIED",
+            Order.result_decision_deadline_at <= cutoff, Order.result_timed_out_at.is_(None),
+            ~exists(select(BuyerInspectionDecision.id).where(BuyerInspectionDecision.order_id == Order.id)))
     if job == "return_refund":
         return query.where(Order.status == "RETURNED_TO_SELLER")
     return query.join(Shipment, Shipment.order_id == Order.id).join(Inspection, Inspection.order_id == Order.id).where(
@@ -85,7 +89,7 @@ def run_once(session_factory, *, apply=False, batch_size=100, max_batches=10,
                       batch_size=batch_size, max_batches=max_batches, stop=stop,
                       clock=clock, retry_order_id=retry_order_id)
         else:
-            with scan_cursor(session_factory, JOBS.index(job), apply=apply) as progress:
+            with scan_cursor(session_factory, 6 if job == "result_timeout" else JOBS.index(job), apply=apply) as progress:
                 if progress is None:
                     log.info("lifecycle job busy job=%s", job)
                     continue
@@ -129,6 +133,16 @@ def _scan_job(session_factory, job, stats, progress, cutoff, *, apply,
                         stats.skipped += 1
                         continue
                     at = clock() if clock else database_now(db)
+                    if job == "result_timeout":
+                        from app.services.result_timeout import record_result_timeout
+                        _, replayed = record_result_timeout(db, order.id, clock=clock, dry_run=not apply)
+                        stats.eligible += 1
+                        if apply:
+                            db.commit()
+                            stats.applied += int(not replayed)
+                        else:
+                            db.rollback()
+                        continue
                     if job == "inspection_overdue":
                         shipments = core.shipments_locked(db, order.id)
                         inbound = next((s for s in shipments if s.leg == "TO_CENTER"), None)
@@ -163,7 +177,7 @@ def _scan_job(session_factory, job, stats, progress, cutoff, *, apply,
                         work = db.scalar(select(Inspection).where(Inspection.order_id == order.id))
                         decision = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
                         source, kind = "RETURN_DELIVERY", "REFUND"
-                        reason = return_reason(work.result, decision.decision if decision else None)
+                        reason = return_reason(work.result, decision.decision if decision else "TIMEOUT" if order.result_timed_out_at is not None else None)
                     # Dry-run shares validation but allocates no IDs and writes no records.
                     outcome = settlement_service.settle(db, order_id=order.id, kind=kind, source=source,
                         reason=reason, worker_name="lifecycle", idempotency_key=f"{job}-{order.id}", clock=clock,

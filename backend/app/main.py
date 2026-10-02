@@ -22,6 +22,7 @@ from app.api.return_addresses import router as return_address_router
 from app.api.inspections import router as inspections_router
 from app.api.fulfillment import router as fulfillment_router
 from app.api.finish import router as finish_router
+from app.api.external_shipping import router as external_shipping_router
 from app.api.verifications import router as verifications_router
 from app.services.certificate_urls import public_certificate_base_url
 
@@ -76,9 +77,10 @@ async def sensitive_result_headers(request: Request, call_next):
     private = private or (parts[0] in {"courier", "shipment-delivery-proofs"} or
         parts[:2] in [["admin", "delivery-cases"], ["admin", "inspection-overdue"]] or
         (len(parts) >= 3 and parts[0] == "orders" and parts[2] in {
-            "delivery", "history", "fulfillment", "confirm-receipt", "report-not-received"}) or
+            "delivery", "history", "fulfillment", "confirm-receipt", "report-not-received", "confirm-return"}) or
         (len(parts) >= 4 and parts[:2] == ["admin", "orders"] and parts[3] in {
-            "delivery-review", "resolve-delivery", "delivery-proofs"}))
+            "delivery-review", "resolve-delivery", "delivery-proofs", "return-review", "confirm-return"}))
+    private = private or parts[:2] == ["admin", "shipments"]
     private = private or parts[0] == "profile"
     private = private or (len(parts) == 3 and parts[0] == "orders" and parts[2] == "review")
     if private or certificate or admin_certificate:
@@ -112,6 +114,7 @@ app.include_router(return_address_router)
 app.include_router(inspections_router)
 app.include_router(fulfillment_router)
 app.include_router(finish_router)
+app.include_router(external_shipping_router)
 # ORDER-09: มุมมอง Order ของผู้ดูแล (ปิดบังข้อมูลส่วนบุคคลเป็นค่าตั้งต้น)
 app.include_router(admin_orders_router)
 app.include_router(admin_certificates_router)

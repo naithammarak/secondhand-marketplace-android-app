@@ -42,6 +42,6 @@ __all__ = [
     "Verification",
 ]
 from app.models.fulfillment import (
-    FulfillmentCommand, OrderSettlement, ShipmentConfirmedProof,
+    FulfillmentCommand, OrderSettlement, ShipmentConfirmedProof, ShippingEvent,
     OrderStatusHistory, DeliveryResolution, DeliveryEvidenceAccess,
 )

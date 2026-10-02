@@ -11,6 +11,9 @@ from app.database import Base
 class Shipment(Base):
     __tablename__ = "shipments"
     __table_args__ = (
+        UniqueConstraint("id", "order_id", "leg", name="uq_shipments_event_tuple"),
+        CheckConstraint("fulfillment_policy IN ('LEGACY_V1','EXTERNAL_V2')", name="ck_shipments_policy"),
+        CheckConstraint("recipient_source IS NULL OR recipient_source IN ('INSPECTOR','BUYER','SELLER','ADMIN')", name="ck_shipments_recipient_source"),
         UniqueConstraint("order_id", "leg", name="uq_shipments_order_leg"),
         UniqueConstraint("id", "courier_id", name="uq_shipments_courier"),
         UniqueConstraint("id", "courier_delivered_at", name="uq_shipments_delivery_time"),
@@ -22,9 +25,12 @@ class Shipment(Base):
         CheckConstraint("length(tracking_number) BETWEEN 1 AND 100 AND tracking_number = trim(tracking_number)", name="ck_shipments_tracking_number"),
         CheckConstraint("received_note IS NULL OR (length(received_note) <= 1000 AND received_note = trim(received_note))", name="ck_shipments_received_note"),
         CheckConstraint("courier_delivered_at IS NULL OR (courier_id IS NOT NULL AND courier_delivered_at >= shipped_at)", name="ck_shipments_courier_delivery"),
-        CheckConstraint("(leg = 'TO_CENTER' AND ((status = 'IN_TRANSIT' AND received_at IS NULL AND received_by IS NULL) OR (status = 'DELIVERED' AND received_at IS NOT NULL AND received_by IS NOT NULL AND courier_delivered_at IS NOT NULL AND received_at >= courier_delivered_at))) OR (leg IN ('TO_BUYER', 'TO_SELLER') AND received_at IS NULL AND received_by IS NULL AND ((status = 'IN_TRANSIT' AND courier_delivered_at IS NULL) OR (status = 'DELIVERED' AND courier_delivered_at IS NOT NULL)))", name="ck_shipments_receipt"),
+        CheckConstraint("(fulfillment_policy = 'LEGACY_V1' AND ((leg = 'TO_CENTER' AND ((status = 'IN_TRANSIT' AND received_at IS NULL AND received_by IS NULL) OR (status = 'DELIVERED' AND received_at IS NOT NULL AND received_by IS NOT NULL AND courier_delivered_at IS NOT NULL AND received_at >= courier_delivered_at))) OR (leg IN ('TO_BUYER', 'TO_SELLER') AND received_at IS NULL AND received_by IS NULL AND ((status = 'IN_TRANSIT' AND courier_delivered_at IS NULL) OR (status = 'DELIVERED' AND courier_delivered_at IS NOT NULL))))) OR (fulfillment_policy = 'EXTERNAL_V2' AND courier_id IS NULL AND courier_delivered_at IS NULL AND ((received_at IS NULL AND received_by IS NULL AND recipient_source IS NULL AND recipient_command_id IS NULL) OR (received_at IS NOT NULL AND received_at >= shipped_at AND received_by IS NOT NULL AND recipient_source IS NOT NULL AND recipient_command_id IS NOT NULL AND status = 'DELIVERED')))", name="ck_shipments_receipt"),
     )
 
+    fulfillment_policy: Mapped[str] = mapped_column(String(24), nullable=False, server_default="LEGACY_V1")
+    recipient_source: Mapped[str | None] = mapped_column(String(16))
+    recipient_command_id: Mapped[int | None] = mapped_column(ForeignKey("fulfillment_commands.id", ondelete="RESTRICT"))
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     order_id: Mapped[int] = mapped_column(Integer, ForeignKey("orders.id", ondelete="RESTRICT"), nullable=False)
     leg: Mapped[str] = mapped_column(String(16), nullable=False, server_default="TO_CENTER")

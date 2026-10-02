@@ -78,6 +78,8 @@ from app.services.order_pricing import (
     utcnow,
 )
 
+NEW_ORDER_POLICY = "EXTERNAL_V2"
+
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 BUYER_ACCOUNT_ROLES = frozenset({UserRole.BUYER, UserRole.SELLER})
@@ -645,6 +647,7 @@ def create_order(
         amounts = calculate_amounts(reserved.price)
         # เส้นตายคิดจากนาฬิกาของ server ตอนสร้าง เก็บเป็นค่าคงที่ของ Order นี้ไปตลอด
         order = Order(
+            fulfillment_policy=NEW_ORDER_POLICY,
             expires_at=payment_deadline(utcnow()),
             buyer_id=buyer.id,
             seller_id=reserved.user_id,

@@ -116,12 +116,13 @@ def final_inputs(db, order, shipments):
             or work is None or work.inspected_at is None):
         raise api_error(409, "inspection_not_ready", "Final received inspection required")
     try:
-        leg = final_leg(work.result, decision.decision if decision else None)
+        leg = final_leg(work.result, decision.decision if decision else "TIMEOUT" if order.fulfillment_policy == "EXTERNAL_V2" and order.result_timed_out_at is not None else None)
     except FinishPolicyError as exc:
         raise api_error(409, exc.code, "Final inspection and Buyer decision required") from exc
     if work.result in {"PASS", "MINOR_ISSUE"}:
         cert = db.scalar(select(Certificate).where(Certificate.order_id == order.id,
             Certificate.inspection_id == work.id, Certificate.result == work.result))
-        if cert is None or decision.inspection_id != work.id or decision.buyer_id != order.buyer_id:
+        if (cert is None or (decision is not None and (decision.inspection_id != work.id or decision.buyer_id != order.buyer_id))
+                or (decision is None and order.result_timed_out_at is None)):
             raise api_error(409, "inspection_not_ready", "Matching certificate and decision required")
     return work, decision, leg

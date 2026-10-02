@@ -1,5 +1,7 @@
 # DOC-01 — ขอบเขตส่ง 8 ตุลาคม 2026
 
+> **กติกาล่าสุด 2 ต.ค. 2026:** ใช้ขนส่งภายนอก ไม่เปิด Courier workspace ใหม่; ผู้รับแต่ละช่วงยืนยันรับจริง; Buyer ปฏิเสธหรือหมดเวลาผลตรวจ 72h → ส่งคืนและคืนเฉพาะค่าสินค้าหลังรับคืนจริง คงค่าตรวจ/ค่าส่งครั้งเดียว ดู [EXTERNAL-SHIPPING-03](changes/EXTERNAL-SHIPPING-03.md) และ [REFUND-DECISION-02](changes/REFUND-DECISION-02.md) แผนนี้ยังรอ implementation/review ใหม่ ไม่ใช่ผลผ่านจาก PR129
+
 วันที่ตัดสินใจ: 1 ตุลาคม 2026 · ผู้อนุญาต: เจ้าของโครงการใน session นี้ · สถานะ: **Lead scope selected**; ยังไม่มีหลักฐานอาจารย์อนุมัติฉบับใหม่
 
 ## 1. สิ่งที่ต้องส่ง
@@ -10,10 +12,10 @@
 4. สร้าง Order, จองสินค้ากันซื้อซ้ำ, simulated payment ที่บันทึก Payment/Receipt/Escrow จริง; อ่าน/ยกเลิก/หมดเวลา unpaid
 5. ส่งไปศูนย์ตรวจ, Inspector รับ/ตรวจ/บันทึกหลักฐานและผล, certificate/QR สาธารณะ, Buyer ตัดสินผลตรวจตามกฎ
 6. ส่งถึง Buyer → ยืนยันรับหรือ auto receipt ที่มีเงื่อนไข → RELEASE และ payout จำลองที่บันทึกครั้งเดียว
-7. ส่งคืน Seller → REFUND เต็มยอดที่พักไว้; no-ship refund; non-receipt report หยุด AUTO และ Admin resolve แบบมี audit
-8. Worker unpaid expiry / receipt settlement / no-ship refund / return retry / inspection overdue escalation ทำงานโดยไม่มี HTTP traffic
+7. ส่งคืน Seller → ผู้รับยืนยันรับคืนจริง; Buyer ปฏิเสธ/หมดเวลาผลตรวจคืนเฉพาะค่าสินค้า กรณีอื่นคง policy เดิม; no-ship refund; non-receipt report หยุด AUTO และ Admin resolve แบบมี audit
+8. Worker unpaid expiry / receipt settlement / no-ship refund / return retry / inspection overdue escalation / Buyer result timeout ทำงานโดยไม่มี HTTP traffic
 9. รีวิวผู้ขาย 1–5 ดาว + ข้อความไม่บังคับจาก Order ของผู้รีวิวที่ `COMPLETED` แล้ว; อ่าน aggregate/list จริงจาก backend
-10. Admin เฉพาะ seller verification, assignment ที่จำเป็น, non-receipt resolution และ certificate revocation
+10. Admin เฉพาะ seller verification, assignment ที่จำเป็น, scoped delivery/return exceptions, certificate revocation และเหตุการณ์ขนส่งจำลองที่มี audit
 11. HTTPS runtime ใช้จาก Android ได้, private Storage, QR เปิดอีกเครื่องไม่ต้อง login, APK, test report, aligned docs, คู่มือ, demo/slides/backup recording
 
 ## 2. ขอบเขตที่ลด/เลื่อน
@@ -29,6 +31,7 @@
 | Notifications FR-18 / FR-33 | FR-18 เห็นผลตรวจจากหน้าที่โหลด API/refresh; FR-33 push/inbox/email เลื่อน ไม่เรียก refresh ว่า push notification |
 | Admin FR-41 | คง seller application approval + existing permission/status guards; UI จัดการผู้ใช้ทั่วระบบ/ระงับ-คืนสถานะ/ค้นบัญชี/automatic refund on suspension เลื่อน |
 | Payment/transport/payout | จำลองผู้ให้บริการ แต่สถานะ, เงิน, receipt, proof และ settlement บันทึกใน DB จริง; ไม่ใช่ real PromptPay/bank transfer/carrier tracking |
+| External shipping | Seller เลือกบริการ/เลขพัสดุเมื่อส่งเข้าศูนย์; Inspector บันทึกเลขพัสดุเมื่อส่งออก; ผู้รับยืนยันรับ; ไม่ออกแบบ Courier workspace ใหม่และไม่บังคับรูปจากบริษัทภายนอก |
 | Wallet/withdrawals | เลื่อน; seller เห็น settlement payout ที่บันทึกไว้เท่านั้น |
 | Other | Auction, chat/chatbot, wishlist, analytics dashboard, general dispute/appeal/report seller, post-completion returns, extra return fees และ auto relisting เลื่อน |
 
@@ -38,17 +41,17 @@
 
 | เรื่อง | กฎที่เลือก |
 |---|---|
-| Role | Google login ใหม่เป็น BUYER; SELLER หลังอนุมัติ verification; SELLER ซื้อได้; ADMIN/INSPECTOR/COURIER จัดให้โดยเจ้าหน้าที่ ไม่เลือกสิทธิ์จาก client |
+| Role | Google login ใหม่เป็น BUYER; SELLER หลังอนุมัติ verification; SELLER ซื้อได้; ADMIN/INSPECTOR จัดให้โดยเจ้าหน้าที่ ไม่เลือกสิทธิ์จาก client; COURIER/ข้อมูลเก่าคงไว้ย้อนหลังแต่ไม่เป็น workspace ใน flow ใหม่ |
 | Certificate | ออก atomic พร้อม final inspection `PASS`/`MINOR_ISSUE` ก่อน Buyer decision; `FAKE`/`NOT_AS_DESCRIBED` ไม่ออก และไม่ให้ CONFIRM; Admin revoke ไม่ย้อน settlement หรือเปลี่ยนผลตรวจ |
-| Buyer decision | CONFIRM/REJECT คือการตัดสินผลตรวจ แยกจาก confirm physical receipt; ไม่มี auto-CONFIRM ผลตรวจ |
-| Timers | unpaid: ใช้ persisted Order deadline ที่มาจาก `created_at + 30 นาที` ไม่บวกเพิ่มกับ deadline; no-ship: `paid_at + 72h`; receipt: confirmed readable TO_BUYER delivery proof + 72h; inspection: 3 working days หลัง center receive เพื่อ escalation เท่านั้น |
+| Buyer decision | CONFIRM/REJECT ก่อนผลพร้อม +72h แยกจาก physical receipt; เมื่อไม่ตอบทันเวลาระบบบันทึก timeout→return ไม่ปลอม Buyer decision และไม่มี auto-CONFIRM |
+| Timers | unpaid: persisted `created_at + 30 นาที`; no-ship: `paid_at + 72h`; receipt: trusted TO_BUYER event +72h ใน policy ใหม่ ไม่ใช่กรอก tracking; result decision: final availability +72h; inspection: 3 working days หลัง center receive เพื่อ escalation เท่านั้น; legacy timer ใช้ policy เดิม |
 | Receipt/report deadline | หลังได้ Order lock และ revalidate I/O ให้อ่าน DB wall clock ใหม่ก่อน guarded mutation; ก่อน deadline ทำได้, ที่/หลัง deadline คืน 409 แม้ request มาถึงก่อนแต่รอ lock; same-key successful replay อ่านได้หลัง deadline |
 | Missing delivery | Timely report ทำให้ `DELIVERY_DISPUTED` + HELD และกัน AUTO; Admin ดูหลักฐานแบบ scoped/audited แล้ว RELEASE/REFUND ได้ครั้งเดียว |
 | Return address | validated seller-owned snapshot ก่อน ship-to-center; immutable ต่อ Order; ห้ามใช้ address ที่ client/Courier เปลี่ยนเองภายหลัง |
 | Settlement | unique per Order/Escrow: RELEASE หรือ REFUND เท่านั้น; payment/receipt charge เดิม immutable; money Decimal และ snapshots; ไม่ทำ ledger/wallet ซ้ำ |
-| Refund | เต็ม `held_amount` รวมค่าจัดส่ง/ตรวจเดิม; payout/retained allocations = 0; Product CANCELLED ไม่ auto relist |
+| Refund | New-policy Buyer reject/result timeout คืน item snapshot หลังรับคืนจริง, retain inspection/shipping ครั้งเดียว, payout/commission=0; negative/no-ship/Admin non-receipt และ legacy คง full policy เดิม; Product CANCELLED ไม่ auto relist |
 | Fees | ตัวอย่างราคา 1,200 + shipping 50 + inspection 100 = held 1,350; commission 5% item = 60, seller payout 1,140; ใช้ snapshot จริง ไม่ hardcodeคำนวณใหม่บน client |
-| Proof | assigned Courier, private JPEG/PNG, 1–3 selected proof objects ต่อ delivery; server ตรวจขนาด/type/hash/Storage readability/binding; API ไม่เผย object keys หรือ PII ที่ไม่เกี่ยวข้อง |
+| Delivery evidence | New flow ใช้ผู้รับยืนยัน + trusted shipping event พร้อม source/audit; รูปขนส่งไม่บังคับ; legacy Courier/proof constraints และข้อมูลคงไว้; private inspection/identity/proof ยังตรวจสิทธิ์และไม่เผย keys/PII |
 | Scheduler | recurring runner เป้าหมายทุก 5 นาที; ถ้า outage/Storage ใช้ไม่ได้ยัง HELD และ retry; completion คือ successful eligible scan ไม่สัญญาว่าเปลี่ยนสถานะตรงวินาทีครบ 72h |
 | Image | Product สูงสุด 10 รูป, จำกัด 5 MiB/รูปตาม server contract; ไม่อ้างว่าทุกรูป auto-compress ถ้ายังไม่ได้พิสูจน์ |
 | UI truth | แสดงชื่อ/คะแนน/จำนวนรีวิว/สถานะ/เงินจาก API จริง; empty state เมื่อไม่มีข้อมูล; simulation label ชัด; errors/retry ไม่แสดง success ก่อน commit |

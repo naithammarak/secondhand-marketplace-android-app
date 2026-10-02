@@ -1,5 +1,7 @@
 # UX/UI contract สำหรับฉบับส่ง
 
+> **กติกาล่าสุด 2 ต.ค. 2026:** ใช้ขนส่งภายนอก ไม่เปิด Courier workspace ใหม่; ผู้รับแต่ละช่วงยืนยันรับจริง; Buyer ปฏิเสธหรือหมดเวลาผลตรวจ 72h → ส่งคืนและคืนเฉพาะค่าสินค้าหลังรับคืนจริง คงค่าตรวจ/ค่าส่งครั้งเดียว ดู [EXTERNAL-SHIPPING-03](changes/EXTERNAL-SHIPPING-03.md) และ [REFUND-DECISION-02](changes/REFUND-DECISION-02.md) แผนนี้ยังรอ implementation/review ใหม่ ไม่ใช่ผลผ่านจาก PR129
+
 ใช้ visual system และงาน UI ล่าสุดของทีม ชื่อแสดงใน release เลือก **2NDHAND**; identifiers `com.kmutnb.secondhandmarketplace` และ scheme เดิมคงไว้เพื่อลด OAuth migration; UI/สี/iconปรับตาม themeเดิม ไม่มี visual rewrite เพิ่ม
 
 ## Navigation และ role
@@ -10,8 +12,8 @@
 | BUYER | Home, Ordersของตน, Profile/name/policy, สมัครSeller; checkoutและdecision/receipt/reviewของOrderตน |
 | approved SELLER | Buyer capabilities + Myproducts/Newproduct/verification + sales/center/return/payout; แยกซื้อของตนเองจากขาย |
 | INSPECTOR | Workqueue/centerreceive/inspectionphotos/result/outbound; ไม่เห็นcustomerfinancialdetailที่ไม่จำเป็น |
-| COURIER | Assignedqueue/legaddress/captureprivateproof/confirmdelivery; ไม่ใช้ unrestrictedOrderdetail |
-| ADMIN | Verification/assignment/nonreceiptcase/revoke; ไม่ต้องมีgeneraluserdashboard |
+| COURIER (legacy) | คงข้อมูลย้อนหลัง; ไม่สร้าง workspace หรือกำหนดให้บริษัทภายนอกล็อกอินใน flow ใหม่ |
+| ADMIN | Verification/necessaryassignment/scoped delivery-return exceptions/revoke + shipping demo events ที่ระบุว่าจำลอง; ไม่ต้องมีgeneraluserdashboard |
 
 สิทธิ์จาก backend เท่านั้น ปุ่มหรือ routeguardบนclientไม่ใช่authorization ไม่มีrolepickerที่เปิดSELLER/ADMINได้เอง
 
@@ -19,19 +21,19 @@
 
 ### ขายสำเร็จ
 
-Browse → loginเมื่อซื้อ → Order/quote/addresssnapshot → จ่ายเงินจำลองแบบpersisted → Sellerระบุreturnaddressก่อนshipcenter → Courierproof/Inspectorreceive → InspectorบันทึกPASSหรือMINOR_ISSUEพร้อมcertificateatomic → Buyer **ยอมรับผลตรวจ** → Inspectorส่งTO_BUYER → AssignedCourierconfirmproof → Buyer **ยืนยันได้รับสินค้า** → COMPLETED/RELEASED → Review → Sellerpayoutที่บันทึกไว้
+Browse → loginเมื่อซื้อ → Order/quote/addresssnapshot → จ่ายเงินจำลองแบบpersisted → Sellerระบุreturnaddress/carrier/trackingก่อนshipcenter → Inspectorยืนยันรับ → InspectorบันทึกPASSหรือMINOR_ISSUEพร้อมcertificateatomic → Buyer **ยอมรับผลตรวจภายใน72h** → Inspectorส่งTO_BUYERพร้อมcarrier/tracking → Buyer **ยืนยันได้รับสินค้า** (หรือ eligible AUTO หลัง trusted delivery event +72h) → COMPLETED/RELEASED → Review → Sellerpayoutหัก5%ที่บันทึกไว้
 
 ### คืนเงิน
 
-Paid/center/inspection → PASS/MINOR_ISSUEที่BuyerREJECT **หรือ** FAKE/NOT_AS_DESCRIBED → TO_SELLERที่ใช้returnaddresssnapshot → proofconfirmreturn → RETURNED_TO_SELLER/HELDถ้ารอsettlement → REFUNDEDเต็มยอด → originalreceiptยังดูได้ + refundreference; ProductCANCELLED
+Paid/center/inspection → PASS/MINOR_ISSUEที่BuyerREJECTหรือไม่ตอบ72h **หรือ** FAKE/NOT_AS_DESCRIBED → TO_SELLERที่ใช้returnaddresssnapshot → Sellerยืนยันรับคืนหรือscoped audited Admin confirmation → RETURNED_TO_SELLER/HELDถ้ารอsettlement → REFUNDEDตามcause/policy: BuyerREJECT/result timeoutคืนเฉพาะค่าสินค้า; negativeinspectionคงเต็มยอด → originalreceiptยังดูได้ + refundreference; ProductCANCELLED
 
 ## Screen rules
 
 - Home: guestusable, searchทำงาน, card/price/stockจากAPI, boundedpagination, loading/error/emptyretry
 - Checkout: แสดงsnapshotfees, simulationlabel, idempotencykeyคงเดิมต่อattempt, networkuncertainให้refetch persistedOrder/Payment; receiptออกจากsuccessfulbackendstateเท่านั้น
-- Inspectionresult: certificateเมื่อpositivefinalresultทันที; CONFIRM/REJECTเฉพาะeligiblepositive; negativeแสดงreturnflow ไม่มีconfirm; ไม่มีcountdownผลตรวจautoaccept
-- Delivery: countdownจากserverdeadline; receiptbuttonกับnotreceivedreportแยกaction; ที่/หลังdeadlinewritesถูกปฏิเสธตามDBclock; ใช้refreshแสดงจริง อย่าทำsettlementในclienttimer
-- Pendingretry: ถ้าreturnproofcommittedแต่refundล้มเหลว แสดง "ส่งคืนแล้ว กำลังดำเนินการคืนเงิน" ไม่เรียกREFUNDED; workeroutageยังHELD ไม่ปล่อยเงินเอง
+- Inspectionresult: certificateเมื่อpositivefinalresultทันที; CONFIRM/REJECTเฉพาะeligiblepositiveก่อนserverdeadline; แสดง72hผลตรวจ→หมดเวลาส่งคืน ไม่มีautoaccept; negativeแสดงreturnflow ไม่มีconfirm
+- Delivery: carrier/trackingและสถานะtrusted event/ผู้รับยืนยันแยกกัน; ไม่มีCourierworkspaceใหม่หรือรูปบังคับ; countdownจากserverdeadline; receiptbuttonกับnotreceivedreportแยกaction; ที่/หลังdeadlinewritesถูกปฏิเสธตามDBclock; trackingของSellerไม่เริ่มAUTO; ใช้refreshแสดงจริง อย่าทำsettlementในclienttimer
+- Pendingretry: ถ้าactualreturnreceiptcommittedแต่refundล้มเหลว แสดง "รับคืนแล้ว กำลังดำเนินการคืนเงิน" ไม่เรียกREFUNDED; workeroutageยังHELD ไม่ปล่อยเงินเอง
 - Adminresolution: scopedcase/evidence refs/reasonrequired; ต้องเห็นreport/proofจริงและaudit; ไม่เลือกยอด/ผู้รับเอง
 - Reviews/profile: [API contract](PROFILE-REVIEWS-contract.md); เอาฟิลด์/mockstatsที่อยู่นอกscopeออก; persistedชื่อและคะแนนเท่านั้น
 - Certificate: publicHTTPSopaqueQR, ไม่ต้องlogin, noPII; REVOKEDแสดงชัดและinvalidtokennotfound; ไม่เผยprivatereasonnotes
@@ -44,11 +46,13 @@ Paid/center/inspection → PASS/MINOR_ISSUEที่BuyerREJECT **หรือ**
 |---|---|
 | Payment | "ชำระเงินจำลองสำหรับต้นแบบ" |
 | Payout | "ยอดจ่ายให้ผู้ขายจำลองที่บันทึกในระบบ" |
-| Refund | "คืนเงินจำลองเต็มยอด {amount} บาท" |
+| Refund: reject/timeout ใหม่ | "คืนค่าสินค้าจำลอง {amount} บาท; ไม่คืนค่าตรวจ {inspection} และค่าส่ง {shipping}" ใช้ยอดจากAPI ไม่หักซ้ำ |
+| Refund: cause อื่น | "คืนเงินจำลอง {amount} บาท" และรายละเอียดcause/allocationsจากAPI |
 | Resultdecision | "ยอมรับผลการตรวจ" / "ปฏิเสธผลการตรวจและส่งคืน" |
 | Receipt | "ยืนยันว่าได้รับสินค้าแล้ว" |
 | Nonreceipt | "แจ้งว่ายังไม่ได้รับสินค้า" |
-| Receiptwindow | "ยืนยันรับหรือแจ้งไม่ได้รับภายในเวลาที่แสดง หลัง Courier ยืนยันส่งถึง; ระบบประมวลผลอัตโนมัติเมื่อถึงเกณฑ์" |
+| Receiptwindow | "เมื่อระบบได้รับสถานะขนส่งว่าส่งถึงแล้ว โปรดยืนยันรับหรือแจ้งไม่ได้รับภายในเวลาที่แสดง; ระบบประมวลผลเมื่อถึงเกณฑ์" สถานะขนส่งเดโมต้องมีป้ายจำลอง |
+| Resultwindow | "โปรดยอมรับหรือปฏิเสธผลตรวจภายในเวลาที่แสดง หากไม่ตอบ ระบบจะส่งสินค้าคืนผู้ขาย" |
 | Zeroreviews | "ยังไม่มีรีวิวจากผู้ซื้อที่ซื้อสำเร็จ" |
 
 ## Diagrams

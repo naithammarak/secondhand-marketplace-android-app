@@ -24,6 +24,7 @@ SOURCE_REASONS = {
     ("RELEASE", "AUTO_RECEIPT", "RECEIPT_TIMEOUT"),
     ("RELEASE", "ADMIN_RESOLUTION", "DELIVERY_REVIEW_RELEASE"),
     ("REFUND", "RETURN_DELIVERY", "BUYER_REJECTED_INSPECTION"),
+    ("REFUND", "RETURN_DELIVERY", "RESULT_DECISION_TIMEOUT"),
     ("REFUND", "RETURN_DELIVERY", "INSPECTION_NOT_AS_DESCRIBED"),
     ("REFUND", "RETURN_DELIVERY", "INSPECTION_FAKE"),
     ("REFUND", "SELLER_NO_SHIP", "SELLER_NO_SHIP"),
@@ -56,7 +57,7 @@ def final_leg(result: str | None, decision: str | None) -> str:
     if result in {"PASS", "MINOR_ISSUE"}:
         if decision == "CONFIRM":
             return "TO_BUYER"
-        if decision == "REJECT":
+        if decision in {"REJECT", "TIMEOUT"}:
             return "TO_SELLER"
         raise FinishPolicyError("decision_required")
     if result in {"FAKE", "NOT_AS_DESCRIBED"}:
@@ -72,7 +73,7 @@ def return_reason(result: str | None, decision: str | None) -> str:
     return {
         "FAKE": "INSPECTION_FAKE",
         "NOT_AS_DESCRIBED": "INSPECTION_NOT_AS_DESCRIBED",
-    }.get(result, "BUYER_REJECTED_INSPECTION")
+    }.get(result, "RESULT_DECISION_TIMEOUT" if decision == "TIMEOUT" else "BUYER_REJECTED_INSPECTION")
 
 
 def receipt_deadline(confirmed_at: datetime) -> datetime:
@@ -135,7 +136,7 @@ class Allocation:
     shipping: Decimal
 
 
-def allocation(snapshot: PricingSnapshot, held_amount: Decimal, kind: Kind) -> Allocation:
+def allocation(snapshot: PricingSnapshot, held_amount: Decimal, kind: Kind, *, item_only=False) -> Allocation:
     """Copy persisted allocations; never recalculate commission at current rates."""
     snapshot.validate()
     if not isinstance(held_amount, Decimal) or held_amount != snapshot.total_amount:
@@ -144,6 +145,8 @@ def allocation(snapshot: PricingSnapshot, held_amount: Decimal, kind: Kind) -> A
     if kind == "RELEASE":
         return Allocation(held_amount, snapshot.seller_payout, zero,
                           snapshot.commission_fee, snapshot.inspection_fee, snapshot.shipping_fee)
+    if kind == "REFUND" and item_only:
+        return Allocation(held_amount, zero, snapshot.item_price, zero, snapshot.inspection_fee, snapshot.shipping_fee)
     if kind == "REFUND":
         return Allocation(held_amount, zero, held_amount, zero, zero, zero)
     raise FinishPolicyError("invalid_settlement_kind")
@@ -163,11 +166,11 @@ def buyer_action_flags(*, role: str, active: bool, owns_order: bool,
                        status: str, escrow_status: str | None,
                        deadline: datetime | None, now: datetime,
                        reported: bool, settled: bool,
-                       confirmed_buyer_delivery: bool) -> dict[str, bool]:
+                       confirmed_buyer_delivery: bool, external_dispatch: bool = False) -> dict[str, bool]:
     allowed = (role in {"BUYER", "SELLER"} and active and owns_order
-               and status == "DELIVERED_PENDING_BUYER" and escrow_status == "HELD"
-               and deadline is not None and before_deadline(now, deadline)
-               and not reported and not settled and confirmed_buyer_delivery)
+               and status in ({"SHIPPING_TO_BUYER", "DELIVERED_PENDING_BUYER"} if external_dispatch else {"DELIVERED_PENDING_BUYER"}) and escrow_status == "HELD"
+               and (before_deadline(now, deadline) if deadline is not None else external_dispatch)
+               and not reported and not settled and (external_dispatch or confirmed_buyer_delivery))
     return {"can_confirm_receipt": allowed, "can_report_missing": allowed}
 
 

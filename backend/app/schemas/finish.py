@@ -65,3 +65,25 @@ class ResolveDeliveryRequest(FinishRequest):
         if len(value) != len(set(value)):
             raise ValueError("Evidence references must be distinct")
         return sorted(value)
+
+
+class ShippingEventRequest(FinishRequest):
+    leg: Literal["TO_CENTER", "TO_BUYER", "TO_SELLER"]
+    event: Literal["DELIVERED"]
+    event_id: Annotated[str, StringConstraints(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")]
+
+
+class ReturnConfirmationRequest(FinishRequest):
+    pass
+
+
+class AdminReturnConfirmationRequest(FinishRequest):
+    reason: Reason
+    evidence_refs: Annotated[list[Annotated[str, StringConstraints(pattern=r"^(return-shipment|delivery-audit):[1-9][0-9]*$", max_length=100)]], Field(min_length=2, max_length=10)]
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def sorted_distinct_refs(cls, value):
+        if len(value) != len(set(value)):
+            raise ValueError("References must be distinct")
+        return sorted(value)

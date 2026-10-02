@@ -42,7 +42,7 @@ def create_fulfillment(order_id: int, body: FulfillmentRequest, response: Respon
     if destination is None:
         raise api_error(409, "fulfillment_destination_missing", "Frozen return snapshot missing; audited repair required")
     at = database_now(db)
-    row = Shipment(order_id=order.id, leg=leg, status="IN_TRANSIT", carrier=body.carrier,
+    row = Shipment(order_id=order.id, fulfillment_policy=order.fulfillment_policy, leg=leg, status="IN_TRANSIT", carrier=body.carrier,
         tracking_number=body.tracking_number, shipped_at=at, destination_address=destination)
     db.add(row)
     # Return dispatch retains RESULT_NOTIFIED; the leg identifies its progress.

@@ -60,6 +60,8 @@ def pg_engine():
 
 @pytest.fixture
 def world(pg_engine, monkeypatch, tmp_path):
+    import app.api.orders as orders_api
+    monkeypatch.setattr(orders_api, "NEW_ORDER_POLICY", "LEGACY_V1")
     patch_auth(monkeypatch)
     monkeypatch.setenv("PAYMENT_SIMULATION_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "test")

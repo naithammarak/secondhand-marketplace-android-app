@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.auth import get_current_user
 from app.api.orders import api_error, load_order_for, require_idempotency_key
 from app.database import get_db
-from app.models.fulfillment import DeliveryEvidenceAccess, OrderSettlement, OrderStatusHistory
+from app.models.fulfillment import DeliveryEvidenceAccess, OrderSettlement, OrderStatusHistory, ShippingEvent
 from app.models.order import Escrow, Order
 from app.models.shipment import Shipment, ShipmentDeliveryProof
 from app.models.user import User, UserRole, UserStatus
@@ -52,16 +52,40 @@ def delivery_view(db, order, actor, seller=False):
         owns_order=order.buyer_id == actor.id, status=order.status,
         escrow_status=escrow.status if escrow else None, deadline=order.receipt_deadline_at,
         now=now, reported=order.missing_reported_at is not None, settled=settlement is not None,
-        confirmed_buyer_delivery=outbound is not None and outbound.courier_delivered_at is not None)
+        confirmed_buyer_delivery=outbound is not None and outbound.courier_delivered_at is not None,
+        external_dispatch=order.fulfillment_policy == "EXTERNAL_V2" and outbound is not None)
     shipments = []
     for row in rows:
         proofs = core.selected_proofs(db, row)
+        event = db.scalar(select(ShippingEvent).where(ShippingEvent.shipment_id == row.id))
         shipments.append({"id": row.id, "leg": row.leg, "status": row.status,
             "carrier": row.carrier, "tracking_number": row.tracking_number, "shipped_at": row.shipped_at,
             "delivered_at": row.courier_delivered_at, "delivery_proof_confirmed_at": row.courier_delivered_at,
+            "transport_delivered_at": event.confirmed_at if event else row.courier_delivered_at,
+            "transport_source": "ADMIN_DEMO" if event else "LEGACY_COURIER" if row.courier_delivered_at else None,
+            "recipient_received_at": row.received_at, "recipient_source": row.recipient_source,
+            "simulated_transport": event is not None,
             "proofs": [] if seller and row.leg == "TO_BUYER" else
                 [{"id": p.id, "url": f"/shipment-delivery-proofs/{p.id}", "expires_at": None} for p in proofs]})
+    returned = next((s for s in rows if s.leg == "TO_SELLER"), None)
+    from app.models.inspection import Inspection
+    from app.models.buyer_inspection_decision import BuyerInspectionDecision
+    work = db.scalar(select(Inspection).where(Inspection.order_id == order.id))
+    decision = db.scalar(select(BuyerInspectionDecision).where(BuyerInspectionDecision.order_id == order.id))
+    item_only = (order.fulfillment_policy == "EXTERNAL_V2" and work is not None and work.result in {"PASS", "MINOR_ISSUE"}
+                 and (order.result_timed_out_at is not None or decision is not None and decision.decision == "REJECT"))
+    can_return = (order.fulfillment_policy == "EXTERNAL_V2" and seller and actor.id == order.seller_id
+        and actor.status == UserStatus.ACTIVE and returned is not None and returned.received_at is None
+        and order.status == "RESULT_NOTIFIED" and escrow is not None and escrow.status == "HELD")
     return {"order_id": order.id, "order_status": order.status, "server_time": now,
+        "fulfillment_policy": order.fulfillment_policy,
+        "result_available_at": order.result_available_at, "result_decision_deadline_at": order.result_decision_deadline_at,
+        "result_timed_out_at": order.result_timed_out_at, "can_confirm_return": can_return,
+        "charged_amount": None if seller else f"{order.total_amount:.2f}",
+        "refund_quote": None if seller or returned is None else {
+            "buyer_refund": f"{order.item_price if item_only else order.total_amount:.2f}",
+            "retained_inspection": f"{order.inspection_fee if item_only else 0:.2f}",
+            "retained_shipping": f"{order.shipping_fee if item_only else 0:.2f}", "requires_actual_return": True},
         "shipments": shipments, "receipt_deadline_at": order.receipt_deadline_at,
         "receipt_confirmed_at": order.receipt_confirmed_at,
         "receipt_confirmation_source": order.receipt_confirmation_source,
@@ -117,12 +141,16 @@ def report_not_received(order_id: int, body: ReportNotReceivedRequest, response:
     escrow = db.scalar(select(Escrow).where(Escrow.order_id == order.id).with_for_update())
     outbound = next((s for s in shipments if s.leg == "TO_BUYER"), None)
     # Reporting non-receipt remains possible during a Storage outage.
-    if (order.status != "DELIVERED_PENDING_BUYER" or order.missing_reported_at is not None
-            or order.receipt_deadline_at is None or outbound is None or outbound.courier_delivered_at is None
-            or not core.selected_proofs(db, outbound) or escrow is None or escrow.status != "HELD"):
-        raise api_error(409, "invalid_state", "Undisputed Buyer delivery required")
+    external = order.fulfillment_policy == "EXTERNAL_V2"
+    allowed_states = {"SHIPPING_TO_BUYER", "DELIVERED_PENDING_BUYER"} if external else {"DELIVERED_PENDING_BUYER"}
+    if (order.status not in allowed_states or order.missing_reported_at is not None or outbound is None
+            or escrow is None or escrow.status != "HELD" or (not external and (order.receipt_deadline_at is None
+            or outbound.courier_delivered_at is None or not core.selected_proofs(db, outbound)))):
+        raise api_error(409, "invalid_state", "Undisputed Buyer dispatch required")
+    if external:
+        core.final_inputs(db, order, shipments)
     at = database_now(db)
-    if at >= order.receipt_deadline_at:
+    if order.receipt_deadline_at is not None and at >= order.receipt_deadline_at:
         raise api_error(409, "receipt_deadline_passed", "Non-receipt report deadline passed")
     previous = order.status
     order.status = "DELIVERY_DISPUTED"
