@@ -1,71 +1,174 @@
 {
-  "date": "2026-10-02",
-  "timezone": "Asia/Bangkok",
-  "status": "PREPARATORY_TESTS_PASSED_INTEGRATION_BLOCKED",
-  "inspected_parent_sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05",
-  "contract_code_sha": "7918fc26a40df7eb316850482309600d9051d325",
-  "worker_test_sha": "0b219f262ec670369b22053c8bbbc4654b1cb809",
-  "handoff_checkpoint_sha": "4507b22afd760359124ec2e6f25b1f10d5f3a074",
-  "published_draft_pr": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124",
-  "accepted_release_base_sha": null,
-  "accepted_task02_sha": null,
-  "task02_api_mapping_present": false,
-  "root_or_backend_agents_present": false,
-  "migration_head": "714f11c84d53",
-  "b_migrations_added": 0,
+  "status": "IMPLEMENTED_AND_TESTED_BACKEND_RELEASE_ACCEPTANCE_PENDING",
+  "recorded_at_utc": "2026-10-02T07:46:49.461794+00:00",
+  "branch": "feat/package-b-delivery-settlement",
+  "review_pr": 124,
+  "original_b_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
+  "a_source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
+  "a_pr_head_sha": "94a26a0fbb7a0a82948d95de7db9af070707b770",
+  "a_review_status": "REVIEW_PENDING",
+  "a_deployed_release_sha": null,
+  "integration_merge_sha": "76faba8a3fd939e7dad429f3351da583bd302cf0",
+  "implementation_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+  "git_merge_conflicts": [],
+  "migration_head": "a02f20261002",
+  "b_migrations_added": false,
   "environment": {
     "os": "Windows",
     "python": "3.13.5",
     "postgresql": "18.6",
-    "isolated_cluster_endpoint": "127.0.0.1:55482",
-    "synthetic_databases": ["package_b_order_test", "package_b_inspect_test", "package_b_clock_test"],
-    "storage": "deterministic private byte adapter and fresh pytest private directory",
-    "shared_database_used": false,
-    "shared_storage_used": false,
-    "temporary_cluster_stopped": true
+    "host": "127.0.0.1",
+    "port": 55483,
+    "synthetic_role": "package_b_test",
+    "new_owned_temporary_cluster": true,
+    "cluster_stopped": true,
+    "private_storage": "pytest temporary directories"
   },
-  "executed_checks": [
+  "shared_supabase_touched": false,
+  "shared_storage_touched": false,
+  "persistent_schedule_registered": false,
+  "checks": [
     {
-      "command": ".venv/Scripts/python.exe -m pytest tests/test_finish_contract.py tests/test_finish_proofs.py tests/test_finish_fixtures.py tests/test_finish_clock_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-contract-tests.xml",
+      "name": "final FINISH + INSPECT/CERT API PostgreSQL",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_finish_flow_postgres.py tests/test_inspection_flow_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-finish-inspection-tests.xml",
+      "passed": 91,
+      "finish": 45,
+      "inspect": 46,
       "result": "PASS",
-      "passed": 132,
-      "failed": 0,
-      "scope": "131 independent contract/proof/fixture checks plus one real PostgreSQL blocked-lock/fresh-clock test",
-      "evidence": "B-contract-tests.xml"
+      "evidence": "B-finish-inspection-tests.xml",
+      "executed_at_committed_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc"
     },
     {
-      "command": ".venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_unpaid_expiry_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml",
+      "name": "Orders + A foundation + unpaid worker PostgreSQL",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py tests/test_unpaid_expiry_postgres.py -q -x --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml",
+      "passed": 77,
       "result": "PASS",
-      "passed": 35,
-      "failed": 0,
-      "warnings": 2,
-      "scope": "Existing payment/cancel/expiry/migration constraints and unpaid-only scheduled worker recovery; 9 worker tests",
       "evidence": "B-order-worker-tests.xml"
     },
     {
-      "command": ".venv/Scripts/python.exe -m pytest tests/test_inspection_flow_postgres.py -q --tb=short",
+      "name": "A predecessor migration/preflight/downgrade/RLS PostgreSQL",
+      "cwd": "repository root",
+      "command": "backend/.venv/Scripts/python.exe -m pytest backend/tests/test_finish_foundation_migration.py -q -x --tb=short --junitxml=doc/submission-2026-10-08/reports/B-migration-tests.xml",
+      "legacy_source_export_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
+      "passed": 5,
       "result": "PASS",
-      "passed": 40,
-      "failed": 0,
-      "warnings": 2,
-      "scope": "Existing inbound Courier/private proof/inspection/certificate/decision API flow in isolated PostgreSQL"
+      "evidence": "B-migration-tests.xml"
     },
-    {"command": ".venv/Scripts/python.exe -m alembic heads", "result": "PASS", "heads": ["714f11c84d53"]},
-    {"command": "git diff --check", "result": "PASS"},
-    {"command": "backend/.venv/Scripts/python.exe -m compileall -q backend/app/services/finish_policy.py backend/app/services/finish_proofs.py backend/app/services/finish_interfaces.py backend/app/schemas/finish.py", "result": "PASS"}
+    {
+      "name": "default backend",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-default-tests.xml",
+      "passed": 627,
+      "skipped": 243,
+      "warnings": 3,
+      "result": "PASS",
+      "evidence": "B-default-tests.xml"
+    },
+    {
+      "name": "mobile typecheck",
+      "cwd": "mobile",
+      "command": "npm run typecheck",
+      "result": "PASS",
+      "setup": "Refreshed ignored Expo route declarations using installed getTypedRoutesDeclarationFile/requireContext over src/app; no tracked type relaxation"
+    },
+    {
+      "name": "mobile logic",
+      "cwd": "mobile",
+      "command": "npm run test:logic",
+      "passed": 306,
+      "result": "PASS"
+    },
+    {
+      "name": "mobile components",
+      "cwd": "mobile",
+      "command": "npm run test:components -- --silent",
+      "passed": 214,
+      "suites": 29,
+      "result": "PASS"
+    },
+    {
+      "name": "Alembic heads",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m alembic heads",
+      "heads": [
+        "a02f20261002"
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "PowerShell wrapper/Task XML syntax",
+      "result": "PASS",
+      "activated": false
+    },
+    {
+      "name": "documentation package links/JSON/graph",
+      "result": "PASS",
+      "task_files": 14,
+      "requirements": 59,
+      "qa_cases": 28,
+      "checked_links": 190
+    },
+    {
+      "name": "git diff --check",
+      "result": "PASS"
+    }
   ],
-  "baseline_attempts": [
-    {"suite": "Order/unpaid worker", "passed": 17, "failed": 18, "cause": "Invalid PUBLIC_CERTIFICATE_BASE_URL inherited from local configuration; no FINISH policy code involved"},
-    {"suite": "Order/unpaid worker with explicit synthetic HTTPS origin", "passed": 34, "failed": 1, "cause": "Old POSIX graceful termination expectation on Windows; corrected test distinguishes forced termination and verifies subsequent process restart"}
+  "specialized_postgres_passed": 173,
+  "proofs": {
+    "real_decoded_bytes": true,
+    "bound_selected_only": true,
+    "storage_byte_bound": 5242880,
+    "storage_call_timeout_seconds": 20,
+    "maximum_proofs": 3,
+    "historical_bodyless_replay_hashes_preserved": true
+  },
+  "financial_examples": {
+    "release": {
+      "held": "1350.00",
+      "seller": "1140.00",
+      "commission": "60.00",
+      "inspection": "100.00",
+      "shipping": "50.00",
+      "buyer_refund": "0.00"
+    },
+    "refund": {
+      "held": "1350.00",
+      "buyer_refund": "1350.00",
+      "other_allocations": "0.00"
+    },
+    "external_transfers": false,
+    "original_receipt_equality_proven": true
+  },
+  "worker_evidence": [
+    "all five jobs without HTTP after preparation",
+    "exact before/at/after boundaries",
+    "two runners and two processes",
+    "actual DB locks crossing receipt/report deadlines",
+    "partial progress stop/restart",
+    "missing/corrupt Storage and recovery",
+    "durable return before refund failure",
+    "one overdue escalation without automatic decision",
+    "CLI target safeguards/nonzero failure",
+    "Windows forced termination then new process"
   ],
-  "not_run": [
-    "Final fulfillment destination freezing and alternate-final-leg races",
-    "Actual final-leg HTTP private-proof projections and command replay",
-    "Persisted RELEASE/REFUND branches and receipt/report/scoped Admin APIs",
-    "Independent release-versus-refund and report-versus-auto business races",
-    "Durable return delivery followed by actual refund-failure/worker recovery",
-    "All five categories through the implemented full lifecycle runner",
-    "Persistent one-time overdue escalation",
-    "Android two journeys, shared Storage/Auth/QR and real schedule activation"
-  ]
+  "initial_failures_resolved": [
+    "A report ID physical String(36) comparison",
+    "test DB rows from another private Storage root",
+    "legacy assertion versus specified Seller inbound proof scope",
+    "stale ignored Expo generated routes"
+  ],
+  "pending": [
+    "independent A/B review",
+    "legacy in-flight null return snapshot audited repair",
+    "E/C combined feature integration",
+    "real Android/OAuth/shared private Storage/public QR",
+    "task10 scheduler registration/activation/monitoring",
+    "final release acceptance"
+  ],
+  "historical_evidence": {
+    "B-contract-tests.xml": "7918fc2 preparation on previous55482 cluster; superseded for implementation acceptance"
+  },
+  "github_prs_merged": false
 }

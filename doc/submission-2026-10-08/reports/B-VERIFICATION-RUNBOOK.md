@@ -1,144 +1,99 @@
-# Package B isolated verification and integration runbook
+# Package B verification and lifecycle runbook
 
-**Current status:** preparatory contracts tested; accepted task02 missing.
-Final settlement APIs and all-five-job runner are not available. Do not activate
-the existing unpaid-only runner as if it were TIMER-01 completion. Task10 owns
-authorized shared runtime activation after the combined implementation passes.
+Implementation source `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`; A source33f0ead/head94a26a0 integrated by76faba8. Task03–05 backend implemented/tested; one heada02f20261002. Independent review, E/C combined release, Android/shared services and task10 activation remain pending.
 
-## Existing environment used
+## Owned isolation
 
-Windows, Python 3.13.5 in `backend/.venv`, PostgreSQL 18.6. A new disposable
-cluster was initialized at a fresh temporary directory and bound exclusively
-to `127.0.0.1:55482`, with synthetic local user `package_b_test` and databases
-`package_b_order_test`, `package_b_inspect_test`, `package_b_clock_test`.
-This does not use the server/database already running on port5432 or shared
-Supabase. Private Storage in inspection tests uses a fresh pytest directory.
+Windows, Python3.13.5, PostgreSQL18.6. A newly initialized temporary cluster bound exclusively to `127.0.0.1:55483`, synthetic user package_b_test. Separate empty databases for FINISH, INSPECT, Orders and migrations; trust auth only on this loopback test cluster. Private bytes used pytest temporary directories. No central Supabase or existing5432 connection/migration/reset/upload. The owned cluster is stopped after verification; artifacts remain local.
 
-## Repeat the isolated checks on Windows
+## Repeat setup
 
-Run from repository root. Require an unused local port and a new cluster path.
-The cluster uses trust authentication solely for these synthetic local tests.
-Never point the test database variables at a shared or production database.
+From repository root, choose an unused port and fresh directory/database names. FINISH/inspection require empty databases; Order/migration suites reset only their guarded disposable targets. Set variables before app import so backend/.env cannot choose the DB.
 
 ```powershell
 $packageBPgBin = 'C:\Program Files\PostgreSQL\18\bin'
-$packageBCluster = Join-Path ([IO.Path]::GetTempPath()) ('sa-package-b-pg-' + [guid]::NewGuid().ToString('N'))
+$packageBCluster = Join-Path ([IO.Path]::GetTempPath()) ('sa-b-finish-' + [guid]::NewGuid().ToString('N'))
 & "$packageBPgBin\initdb.exe" -D $packageBCluster -U package_b_test -A trust -E UTF8 --no-locale
-& "$packageBPgBin\pg_ctl.exe" -D $packageBCluster -l "$packageBCluster\server.log" -o '-h 127.0.0.1 -p 55482' -w start
-& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55482 -U package_b_test package_b_order_test
-& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55482 -U package_b_test package_b_inspect_test
-& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55482 -U package_b_test package_b_clock_test
-Set-Location backend
+& "$packageBPgBin\pg_ctl.exe" -D $packageBCluster -l "$packageBCluster\server.log" -o '-h 127.0.0.1 -p 55483' -w start
+& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55483 -U package_b_test package_b_finish_test
+& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55483 -U package_b_test package_b_inspect_test
+& "$packageBPgBin\createdb.exe" -h 127.0.0.1 -p 55483 -U package_b_test package_b_order_test
 $env:PYTHONUTF8 = '1'
+$env:DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55483/package_b_order_test'
+$env:FINISH_TEST_DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55483/package_b_finish_test'
+$env:INSPECT_FLOW_TEST_DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55483/package_b_inspect_test'
+$env:ORDER_TEST_DATABASE_URL = $env:DATABASE_URL
 $env:PUBLIC_CERTIFICATE_BASE_URL = 'https://cert.example.test'
-$env:ORDER_TEST_DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55482/package_b_order_test'
-$env:INSPECT_FLOW_TEST_DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55482/package_b_inspect_test'
-$env:FINISH_CLOCK_TEST_DATABASE_URL = 'postgresql+psycopg://package_b_test@127.0.0.1:55482/package_b_clock_test'
-$env:DATABASE_URL = $env:ORDER_TEST_DATABASE_URL
+Set-Location backend
 ```
 
-Run the following commands from `backend`. Inspection tests require their
-database to be empty; allocate a fresh inspection database for another run.
-Order tests clear their disposable database; the clock test creates/drops only
-its probe table and rejects an already populated database.
+Run specialized checks from backend. Actual final API targets were package_b_finish_source_test/package_b_inspect_source_test; only names differ from the reusable sample.
 
 ```powershell
-& .venv/Scripts/python.exe -m pytest tests/test_finish_contract.py tests/test_finish_proofs.py tests/test_finish_fixtures.py tests/test_finish_clock_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-contract-tests.xml
-& .venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_unpaid_expiry_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml
-& .venv/Scripts/python.exe -m pytest tests/test_inspection_flow_postgres.py -q --tb=short
+& .venv/Scripts/python.exe -m pytest tests/test_finish_flow_postgres.py tests/test_inspection_flow_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-finish-inspection-tests.xml
+& .venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py tests/test_unpaid_expiry_postgres.py -q -x --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml
 & .venv/Scripts/python.exe -m alembic heads
 ```
 
-Observed: 132, 35 and 40 passed respectively; head `714f11c84d53`. Existing
-Starlette/anyio deprecation warnings occurred. An initial regression run inherited
-an invalid certificate origin from local configuration; explicitly setting the
-synthetic HTTPS origin corrected that setup failure. The old process test
-expected POSIX graceful SIGTERM on Windows; it now checks Windows forced exit
-and a subsequent separate process's safe restart, while retaining POSIX checks.
+Observed91(45+46),77 and onea02f20261002 head. Allocate new empty FINISH/INSPECT databases for another API run. FINISH cleanup is confined to its already-validated owned database between tests, preventing another test's private Storage root contaminating a scan.
 
-Stop only the temporary cluster created above, after all test processes finish:
+For default suite, unset specialized URL variables; keep DATABASE_URL synthetic/local. Executed `.venv/Scripts/python.exe -m pytest -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-default-tests.xml` →627passed/243skipped/3existing warnings. Specialized skipped cases are not counted as passes.
+
+### Predecessor rehearsal
+
+From repository root: export backend code only from bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c using `git archive --format=zip --output=<temporary-zip> <sha> backend`; expand into a fresh temporary directory. No .env/private configuration copied. Allocate package_b_migration_test; set FINISH_MIGRATION_TEST_DATABASE_URL to its loopback URL and FINISH_LEGACY_SOURCE to the exported backend directory. Execute:
+
+```powershell
+& backend/.venv/Scripts/python.exe -m pytest backend/tests/test_finish_foundation_migration.py -q -x --tb=short --junitxml=doc/submission-2026-10-08/reports/B-migration-tests.xml
+```
+
+Observed5passed: supported714f11c84d53/e8b2c490a713/d8b7c4e2910a preservation, preflight rollback and downgrade/RLS protections. No shared migration executed.
+
+### Actual sale fixture for C/E
+
+Allocate another empty FINISH_TEST_DATABASE_URL; keep DATABASE_URL distinct/local. From backend:
+
+```powershell
+& .venv/Scripts/python.exe -m pytest 'tests/test_finish_flow_postgres.py::test_actual_sale_and_each_return_preserve_charge_and_destinations[PASS-CONFIRM-TO_BUYER]' -q
+```
+
+This uses actual payment, Seller snapshot, center assignment/private proof/receive/start/result/certificate, Buyer CONFIRM, final leg/selected proof and physical receipt APIs. One test leaves actual COMPLETED/RELEASED/SOLD rows in that disposable DB; inspect joined Order/Escrow/OrderSettlement and1350→1140/60/100/50. Actors/proofs are synthetic pytest fixtures, not shared Auth/device fixtures. Another FINISH test resets that owned DB. Refund journey parameters cannot qualify for task08. Old contract-only JSON is not runtime eligibility evidence.
+
+## Five-category CLI
+
+Use a dedicated URL variable and exact approved DB target. Dry-run validates identical settlement/proof guards without ID allocation or business/audit writes. Apply requires APP_ENV dev/development/test/demo and exact FULFILLMENT_SIMULATION_ENABLED=true; production/unknown/disabled deny. HTTP/CLI expose no test clock.
+
+```powershell
+$env:LIFECYCLE_DATABASE_URL = $env:FINISH_TEST_DATABASE_URL
+& .venv/Scripts/python.exe -m scripts.run_lifecycle_jobs --url-env LIFECYCLE_DATABASE_URL --target package_b_finish_test --environment local
+& .venv/Scripts/python.exe -m scripts.run_lifecycle_jobs --url-env LIFECYCLE_DATABASE_URL --target package_b_finish_test --environment local --apply --confirm-target package_b_finish_test
+```
+
+`--repeat --interval-seconds 300` scans immediately then every5minutes. Defaults100records×10batches per category; bounded1–1000 each. `--retry-order-id <id>` restricts retry to one durable return. DATABASE_URL as the named target variable is denied; remote additionally needs --allow-remote, with authorization handled separately by task10.
+
+Summaries include all five jobs' scanned/eligible/applied/failed/skipped/batches/limit_reached and totalfailed. One-shot failures return1; target argument errors return2. Safe failure logs show category/Order ID/code/type, without credentials, object paths or user reasons. Repeated scans share locks, stable keys and the unique ledger. Storage failures leave HELD and retryable candidates.
+
+## Windows schedule and monitoring — not activated
+
+[Wrapper](../../../backend/deploy/lifecycle-worker.ps1) and [Task XML](../../../backend/deploy/lifecycle-worker.task.xml) match this platform. Task10 replaces APPROVED path/database/account placeholders and configures dedicated environment/private Storage and protected log path under that account. Default is dry-run; explicit -Apply also requires the guard. Repetition5minutes, missed-start catch-up, single scheduled instance, one-shot exit status preserved. XML/PowerShell syntax passed; task registration/activation NOT RUN.
+
+Before authorized apply, record source/migration, target name, mode/account, interval/batch limits and Storage adapter. Observe dry-run, then LastRunTime/LastTaskResult and summaries. Persist logs; alert on failures/nonzero exit or no successful scan within two intervals. Review limit_reached and pending HELD/RETURNED_TO_SELLER backlog. Private Admin overdue queue exposes escalation without inventing results.
+
+Recovery: restart the owned process/task, inspect safe codes, restore private proof readability, invoke full scan or scoped return retry. Return delivery already committed before refund; do not re-upload/relist/edit snapshots/manually set REFUNDED. Windows TerminateProcess is abrupt: a fresh process resumes safely. Partial transactions roll back; earlier per-Order commits survive. POSIX SIGTERM retains graceful stop.
+
+## Initial failures and fixes
+
+- A's missing_report_id is String(36). B stores report command ID as a decimal string and validates references against that string. First focused Admin failure exposed this; reruns passed.
+- Earlier incomplete test delivery used another pytest Storage root. Current FINISH fixture clears only its validated owned test DB between cases.
+- Updated upstream Seller proof assertion to the specified inbound/return Courier scope, retaining denial of inspection images/TO_BUYER proofs.
+- Initial typecheck used stale ignored .expo/types/router.d.ts. Regenerated through installed @expo/router-server getTypedRoutesDeclarationFile and expo-router/internal/testing requireContext over src/app. No tracked type relaxation/visual edit. Typecheck then passed; logic306/components214 passed.
+
+Historical B-contract-tests.xml belongs to7918fc2/old55482 preparation. Current [machine evidence](B-verification.json), [final91 API JUnit](B-finish-inspection-tests.xml), [Order/worker JUnit](B-order-worker-tests.xml), [migration JUnit](B-migration-tests.xml) and [default JUnit](B-default-tests.xml) supersede BLOCKED integration claims. Standalone focused XMLs are intermediate successful runs.
+
+Stop only the owned temporary cluster after its test processes finish:
 
 ```powershell
 & "$packageBPgBin\pg_ctl.exe" -D $packageBCluster -m fast -w stop
 ```
 
-No shared cluster stop, recursive delete, production migration, signing secret,
-real transfer or public Storage upload is required.
-
-## Existing unpaid-only CLI
-
-These commands exist and were exercised by the PostgreSQL suite. They process
-unpaid expiry alone; they neither settle paid Orders nor escalate inspections.
-
-```powershell
-$env:ORDER_EXPIRY_DATABASE_URL = $env:ORDER_TEST_DATABASE_URL
-& .venv/Scripts/python.exe -m scripts.release_expired_orders --url-env ORDER_EXPIRY_DATABASE_URL --target package_b_order_test --environment local
-& .venv/Scripts/python.exe -m scripts.release_expired_orders --url-env ORDER_EXPIRY_DATABASE_URL --target package_b_order_test --environment local --apply --confirm-target package_b_order_test
-```
-
-Adding `--repeat --interval-seconds 300` performs an immediate startup scan and
-then recurring scans every five minutes. It defaults to dry-run without
-`--apply`; batches default to100, maximum10 batches per scan. Existing logs show
-scanned/eligible/cancelled/failed/skipped/batches/limit_reached. One-shot failures
-return nonzero. On Windows `terminate()` is abrupt; inspect failure signals and
-restart with the same explicit target. No persistent Windows scheduled task or
-service was registered during this work.
-
-## Required final runner design after A/tasks03/04
-
-Reuse the existing bounded recurring infrastructure, with per-Order locks and
-independent transactions. Preserve deterministic scan order and SKIP LOCKED;
-failed candidates retry on the next scan without starving other candidates.
-
-| Category | Eligibility sampled/rechecked on server | Required persisted result |
-|---|---|---|
-| Unpaid expiry | Persisted `expires_at <= fresh DB clock`, unpaid | CANCELLED/EXPIRED and guarded reservation release |
-| AUTO receipt | Delivered TO_BUYER, immutable selected readable proofs, deadline reached, no timely report, HELD, no settlement | Same service RELEASE; COMPLETED/SOLD; AUTO receipt atomic |
-| Seller no-ship | `paid_at+72h` reached, WAITING_SELLER_SHIP, no inbound shipment, HELD, no settlement | Same service full REFUND; REFUNDED/CANCELLED |
-| Return retry | Durable RETURNED_TO_SELLER, selected readable TO_SELLER proof, HELD, no settlement | Same service full REFUND, preserve delivery/history/replay |
-| Inspection overdue | Center receive+3 Bangkok weekdays, inspection not final, no prior marker | One Admin/workqueue marker; no fabricated inspection result/decision/certificate/money change |
-
-Target scans every300 seconds, immediate catch-up on restart, bounded Storage
-I/O, fresh DB clock after locks and I/O revalidation. Proof outage/missing object
-leaves HELD and a visible failure/retry candidate. Two processes must produce one
-settlement or overdue marker. An existing inbound shipment, even inconsistent
-legacy late data, fails safe against automatic no-ship refund and needs operator
-review. Ship-to-center independently enforces its deadline while the worker is
-down. Production must not accept a test/client clock override.
-
-Planned shared financial guard: `FULFILLMENT_SIMULATION_ENABLED=false` by
-default; `APP_ENV` allowlist `development|test|demo`. Unknown/production values
-deny financial simulation even when enabled. The prepared predicate is not yet
-wired into commands/workers; payment's older guard alone is insufficient.
-
-Deployment configuration for the full runner, its actual CLI, durable failure
-metadata and monitoring are **PENDING** the implemented task05 runner and the
-authorized task10 target. Do not install a configuration pointing at a sample
-`.env` or silently enable a partial worker. F must record process identity,
-combined SHA, revision, interval/batch limits, environment and observed logs.
-
-## Synthetic acceptance procedure still required
-
-1. Receive the accepted A base/task02, verify ancestry and concrete mapping;
-   keep one migration head. Reconcile all prepared contracts with actual names.
-2. Using isolated PostgreSQL/local deterministic Storage, create paid Orders
-   through actual APIs, save owning Seller return address, deliver TO_CENTER,
-   receive/start/finalize inspection. Never patch a shared Order into final state.
-3. PASS/MINOR_ISSUE CONFIRM: prove acceptance leaves HELD; dispatch TO_BUYER,
-   confirm selected readable proof, verify deadline starts once; physical receipt
-   produces one RELEASE with 1350→1140/60/100/50 and preserved original receipt.
-4. Positive REJECT and each negative result: prove exactly one TO_SELLER frozen
-   destination; return confirmation persists before intentionally failing refund;
-   restart the worker and prove one full1350 refund without re-upload/relisting.
-5. Test active/inactive/foreign Buyer, Seller-as-Buyer, Courier assignment,
-   Inspector assignment, scoped Admin audit and cross-case evidence rejection;
-   inspect JSON/bytes for redaction and no-store.
-6. Use independent PostgreSQL sessions for release-vs-refund, duplicate release,
-   duplicate refund, report-vs-AUTO, deadline waits and rollback injection. Assert
-   actual settlement/command/history/receipt/audit row counts after each outcome.
-7. Invoke all five scans with no HTTP traffic at just-before/at/after boundaries;
-   test simultaneous runners, process crash/restart, Storage outage/recovery and
-   repeated escalation. Use synthetic fixture clocks, not sleeps of72 hours.
-8. Run final regression at the combined SHA and publish implemented03/04 commits
-   to A/E/C before05 handoff. Keep Android/shared Storage/QR/Google and actual
-   worker activation pending until observed separately at that release.
+No shared stop/reset, recursive deletion or persistent scheduler registration occurred. Android/Auth/shared Storage/QR, E/C acceptance and task10 activation remain NOT RUN. A independent review and legacy missing return snapshot repair remain separate pending items.

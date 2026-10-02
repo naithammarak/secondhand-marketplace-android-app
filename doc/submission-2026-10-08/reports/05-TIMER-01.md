@@ -1,78 +1,54 @@
 # Task delivery report
 
 - Task ID / owner: 05 / TIMER-01 / package B, backend.
-- Status: **BLOCKED** for all-five-job integration; deadline policy and existing unpaid worker recovery verified.
-- Repo / branch: `naithammarak/secondhand-marketplace-android-app` (origin alias `SA-Project`) / `feat/package-b-delivery-settlement`.
-- Upstream SHA: inspected preparatory parent `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`; accepted A/task02 and implemented tasks03/04 missing.
-- Delivered SHAs: policy/fixture/test preparation `7918fc26a40df7eb316850482309600d9051d325`; worker process regression `0b219f262ec670369b22053c8bbbc4654b1cb809`.
-- Migration predecessor/head: existing `714f11c84d53`; overdue marker must come from A/task02; no B migration.
+- Status: **IMPLEMENTED_AND_TESTED** for package B backend; full release/runtime acceptance remains pending.
+- Repo / branch: `naithammarak/secondhand-marketplace-android-app` / `feat/package-b-delivery-settlement`, existing [PR #124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124).
+- Original B review checkpoint: `bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c`.
+- A implementation source: `33f0eadd8c1739735434ee9f103a5f23398178ed`; PR #123 head: `94a26a0fbb7a0a82948d95de7db9af070707b770`.
+- A integration merge: `76faba8a3fd939e7dad429f3351da583bd302cf0`; common ancestor `d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05`.
+- Delivered implementation SHA: `1e3d6a061be4f6fa8e875885dfd68586aa79b7cc`. Later commits contain reports/evidence only; the final review head is the PR head.
+- Migration predecessor/head: `714f11c84d53` → `a02f20261002`; **no B migration or competing head**.
 - Date / timezone: 2 October 2026 / Asia/Bangkok.
 
 ## What changed and why
 
-Inspected the existing `unpaid_expiry_worker`, transactional `order_expiry`,
-`scripts.release_expired_orders` CLI and runbook. Prepared reusable server rules
-for receipt/no-ship72h deadlines, fresh DB wall clock and three Monday–Friday
-Bangkok working days, excluding weekends without a holiday calendar. No
-automatic inspection decision/certificate/fund change is added.
+Added `lifecycle_worker` and `python -m scripts.run_lifecycle_jobs`. The full runner reuses existing unpaid expiry and its recurring infrastructure, with immediate catch-up and default 300-second intervals. Each category has bounded ID pagination, per-Order SKIP LOCKED, independent transactions, fresh locked eligibility/time and structured applied/eligible/skipped/failed/batch counts. Failed candidates remain retryable and do not stop unrelated progress.
 
-Corrected `backend/tests/test_unpaid_expiry_postgres.py` to distinguish POSIX
-SIGTERM from Windows `TerminateProcess`, and verify another process safely
-restarts afterward with no duplicate cancellation. Production worker code was
-not altered. The [runbook](B-VERIFICATION-RUNBOOK.md) gives the actual unpaid-only
-CLI, isolated cluster/check commands, pending five-category eligibility and
-recovery acceptance procedure. It does not claim a full TIMER runner exists.
+| Category | Guard and durable result |
+|---|---|
+| unpaid_expiry | Unpaid persisted expiry reached → CANCELLED/EXPIRED, reservation AVAILABLE via upstream service |
+| receipt_release | Confirmed selected readable TO_BUYER proof +72h, no report, HELD → shared AUTO RELEASE / COMPLETED / SOLD |
+| seller_no_ship | paid_at+72h, WAITING_SELLER_SHIP, no committed Shipment → shared full REFUND / CANCELLED Product |
+| return_refund | Durable RETURNED_TO_SELLER + confirmed readable return proof + HELD → shared full REFUND |
+| inspection_overdue | Center receipt +3 Monday–Friday Bangkok days, no final result → one immutable marker and history command |
+
+Escalation is visible in Inspector detail and the private Admin overdue queue. It creates no result, decision, certificate or fund transition. Timely inbound shipment blocks no-ship refund; the Seller route independently rejects late shipping while jobs are down.
+
+CLI defaults to dry-run, requires a dedicated named URL plus exact DB target, blocks accidental DATABASE_URL/remote targets and requires matching confirm-target to apply. `--retry-order-id` targets one durable return. Dry-run validates proof-dependent eligibility but writes no records. New writes reuse A's exact simulation guard, including dev alias and only `true` opt-in. Failures are logged without private URLs/reasons/credentials and make one-shot exit nonzero.
+
+A Windows Task Scheduler XML template and PowerShell wrapper match this work environment; they run one-shot every five minutes, default to dry-run, retain exit status/logs and require approved paths/target/service-account environment. XML/PowerShell syntax was checked. No task was registered or enabled. F/task10 owns actual authorized runtime activation/monitoring.
 
 ## Verification performed
 
-| Check / exact command | Environment / DB isolation | Result / count | Evidence path |
+| Check / exact command from `backend` | Environment | Result | Evidence |
 |---|---|---|---|
-| `.venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_unpaid_expiry_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml` | Synthetic local cluster55482, real independent DB connections/processes | 35 passed; 9 existing unpaid-worker tests included | [B-order-worker-tests.xml](B-order-worker-tests.xml) |
-| `.venv/Scripts/python.exe -m pytest tests/test_finish_contract.py tests/test_finish_proofs.py tests/test_finish_fixtures.py tests/test_finish_clock_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-contract-tests.xml` | Independent policies/proof faults plus real clock/lock probe | 132 passed; exact receipt/no-ship boundaries and all weekday starts checked | [B-contract-tests.xml](B-contract-tests.xml) |
-| `.venv/Scripts/python.exe -m alembic heads` | Existing static graph | One `714f11c84d53` head | [verification record](B-verification.json) |
+| `.venv/Scripts/python.exe -m pytest tests/test_finish_flow_postgres.py tests/test_inspection_flow_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-finish-inspection-tests.xml` | Separate owned PostgreSQL databases and private local image files; final API run at implementation SHA | 91 passed: 45 FINISH + 46 INSPECT/CERT API | [JUnit](B-finish-inspection-tests.xml) |
+| `.venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py tests/test_unpaid_expiry_postgres.py -q -x --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml` | Owned PostgreSQL Order database | 77 passed | [JUnit](B-order-worker-tests.xml) |
+| From repository root: `backend/.venv/Scripts/python.exe -m pytest backend/tests/test_finish_foundation_migration.py -q -x --tb=short --junitxml=doc/submission-2026-10-08/reports/B-migration-tests.xml` | Owned migration database; legacy source exported from original B checkpoint, without private environment files | 5 passed | [JUnit](B-migration-tests.xml) |
+| `.venv/Scripts/python.exe -m pytest -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-default-tests.xml` | Default suite with synthetic local configuration; specialized PG URL variables unset | 627 passed, 243 skipped, 3 existing warnings | [JUnit](B-default-tests.xml) |
 
-Existing unpaid tests prove no-HTTP dry-run/bounded scans, two workers yielding
-one cancellation, payment/cancel lock compatibility, failure rollback/retry,
-recurring stop, CLI target safeguards, new-process restart and Windows forced-
-termination recovery. Final paid settlement jobs and persisted overdue marker
-were **NOT RUN**, since required models/services are absent.
+Total specialized PostgreSQL checks: 173. Skipped default tests are not counted as passes. Exact isolated setup, initial failures and fixes are recorded in [runbook](B-VERIFICATION-RUNBOOK.md) and [machine evidence](B-verification.json).
 
-Initial environment failures from an invalid local certificate origin were
-resolved using the synthetic HTTPS test origin. The Windows-specific old exit
-assertion was a baseline test portability failure; it now passes with a
-post-termination restart assertion. Existing dependency warnings remain.
+All five categories ran without HTTP traffic after real API fixture preparation. Tests cover dry-run zero writes, before/exact/after receipt/no-ship/overdue boundaries, three-working-day weekday/weekend policy calculations, two runners/processes, two AUTO workers, inspection escalation once, missing/corrupt Storage failure and subsequent recovery, partial scan stop preserving the first commit, Windows forced termination and fresh-process restart, CLI target safeguards and failure exit status. A return crash leaves RETURNED_TO_SELLER/HELD and is refunded without re-upload on restart. Structured Storage failure remains visible and retryable.
 
 ## Contract and safety checks
 
-- Reuse existing per-Order transaction/SKIP LOCKED/bounded recurring infrastructure; do not implement another financial service or lazy GET settlement.
-- Full runner must call the same task04 RELEASE/REFUND service for AUTO, return retry and seller no-ship. Only unpaid expiry and pure deadline helpers currently exist.
-- Buyer/report writes require fresh DB clock strictly before deadline; AUTO requires at/after, still-readable confirmed proof and no report. Successful committed same-key replay remains readable after deadlines.
-- Any committed center shipment prevents automatic no-ship refund; late legacy inbound data requires operator review. Seller ship write must enforce the deadline even without a worker.
-- Return delivery is independently durable, HELD and retryable; Storage outage must not turn pending processing into success.
-- Three working days preserve Bangkok local time: Friday2Oct10:00 → Wednesday7Oct10:00. Escalation marker must persist once, without result/decision/certificate/settlement invention.
-- No full scheduler deployed, Windows persistent task registered, shared runtime enabled, shared DB changed or client job introduced. Full-runner CLI/deployment/monitoring config remains pending rather than an executable nonexistent command.
+One settlement implementation and one schema chain. No HTTP force-release, client-side timer or environment/client test-clock override. Server clocks can be injected only by Python test callers; production HTTP/CLI expose no clock. Only small per-Order locks span at most three bounded Storage reads. Full scans permit 100 records ×10 batches per category by default; logs identify limit_reached for operators.
 
 ## Remaining work / exact blocker
 
-A's accepted task02 mapping/models and B's actual tasks03/04 implementation are
-missing. There is no terminal settlement service, durable selected final-leg
-proof binding or reserved overdue marker to scan/write safely. Four additional
-categories cannot be implemented against this schema without violating the
-user's instruction to reuse A's models and avoid replacement infrastructure.
-
-After upstream integration: implement actual five-category runner, dry-run/
-one-shot/manual-retry CLI, bounded per-Order revalidation, persistent escalation,
-structured failure monitoring and deployment configuration matching authorized
-task10 runtime. Prove all categories without HTTP, before/at/after deadlines,
-simultaneous runners, interrupted partial progress, Storage outage/recovery and
-repeated escalation with actual PostgreSQL records. Do not substitute current
-unpaid-only tests or contract fixtures for these checks.
+Backend task05 is implemented/tested. Scheduled deployment configuration exists, but actual task10 registration, service-account configuration, monitoring/alert integration and shared five-minute runtime observation are NOT RUN. No shared access is needed to review/test this implementation. Legacy return snapshot repair and Android/shared Storage acceptance remain separate gates.
 
 ## Handoff
 
-- A: supply accepted upstream and durable marker mapping; retain one migration chain.
-- Tasks03/04: shared transaction protocol in `finish_interfaces.py`; no worker-specific financial branch allowed.
-- F/task10: [isolated runbook](B-VERIFICATION-RUNBOOK.md) and this explicit pending status. Do not activate the unpaid-only runner as full TIMER-01.
-- E/C: final API/settlement/review acceptance remains pending; observed worker outage must display HELD/pending processing.
-- Combined release retest and actual Android/shared Storage/schedule activation are separate required acceptance gates.
-- Published preparation and runbook: [draft PR124](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/124); the disposable PostgreSQL cluster has been stopped.
+F/task10: use [runbook](B-VERIFICATION-RUNBOOK.md), source SHA above and head a02f20261002. Start with dry-run on the explicitly authorized target, then activate/monitor only after environment review. Validate last successful scan, failures, pending HELD rows and overdue queue; recover by restart or scoped return retry. PR124 is the existing review destination; no GitHub merge performed.
