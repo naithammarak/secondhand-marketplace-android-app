@@ -1,0 +1,295 @@
+{
+  "implementation_head": "980a5ef57dda682d95a8e60ee2b19c2c42d2980d",
+  "success": true,
+  "passed": 50,
+  "failed": 0,
+  "suites_passed": 6,
+  "suites": [
+    {
+      "file": "component-tests/profile-screen.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "guest has 3 tabs and Google entry without private data",
+          "status": "passed",
+          "duration_ms": 3315
+        },
+        {
+          "name": "Buyer opens application, with no role selector or fake seller tools",
+          "status": "passed",
+          "duration_ms": 43
+        },
+        {
+          "name": "approved Seller has separate purchases and sales",
+          "status": "passed",
+          "duration_ms": 49
+        },
+        {
+          "name": "stale approval from another owner cannot reveal shop or sell controls",
+          "status": "passed",
+          "duration_ms": 48
+        },
+        {
+          "name": "approval on Buyer does not optimistically promote the account",
+          "status": "passed",
+          "duration_ms": 42
+        },
+        {
+          "name": "ADMIN has its existing staff entry",
+          "status": "passed",
+          "duration_ms": 47
+        },
+        {
+          "name": "ADMIN has its existing staff entry",
+          "status": "passed",
+          "duration_ms": 52
+        },
+        {
+          "name": "ADMIN has its existing staff entry",
+          "status": "passed",
+          "duration_ms": 43
+        },
+        {
+          "name": "INSPECTOR has its existing staff entry",
+          "status": "passed",
+          "duration_ms": 45
+        },
+        {
+          "name": "COURIER has its existing staff entry",
+          "status": "passed",
+          "duration_ms": 43
+        },
+        {
+          "name": "certificate entry is unavailable to a Buyer or while Admin authorization is checking",
+          "status": "passed",
+          "duration_ms": 73
+        },
+        {
+          "name": "logout uses the auth provider and clears the saved return",
+          "status": "passed",
+          "duration_ms": 101
+        }
+      ]
+    },
+    {
+      "file": "component-tests/public-certificate-screen.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "refresh hides old issued status and replaces it with the server revocation",
+          "status": "passed",
+          "duration_ms": 127
+        },
+        {
+          "name": "backgrounding clears validity and foreground reload failure does not revive it",
+          "status": "passed",
+          "duration_ms": 127
+        },
+        {
+          "name": "a late response for an old public token cannot overwrite a new certificate",
+          "status": "passed",
+          "duration_ms": 78
+        },
+        {
+          "name": "revoked public certificates are marked invalid without presenting the positive result",
+          "status": "passed",
+          "duration_ms": 62
+        }
+      ]
+    },
+    {
+      "file": "component-tests/admin-certificate-screen.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "denies BUYER before any Admin API",
+          "status": "passed",
+          "duration_ms": 62
+        },
+        {
+          "name": "denies SELLER before any Admin API",
+          "status": "passed",
+          "duration_ms": 4
+        },
+        {
+          "name": "denies INSPECTOR before any Admin API",
+          "status": "passed",
+          "duration_ms": 3
+        },
+        {
+          "name": "denies COURIER before any Admin API",
+          "status": "passed",
+          "duration_ms": 4
+        },
+        {
+          "name": "guest, checking and unverified Admin cannot load certificates",
+          "status": "passed",
+          "duration_ms": 14
+        },
+        {
+          "name": "list opens actual detail route and consumes bounded cursors",
+          "status": "passed",
+          "duration_ms": 126
+        },
+        {
+          "name": "validates reason and confirms once before showing committed revoked state",
+          "status": "passed",
+          "duration_ms": 1840
+        },
+        {
+          "name": "timeout freezes submitted reason and reuses the key for retry",
+          "status": "passed",
+          "duration_ms": 199
+        },
+        {
+          "name": "409 reloads committed server state and does not claim our command succeeded",
+          "status": "passed",
+          "duration_ms": 142
+        },
+        {
+          "name": "late mutation from a previous account cannot show success on the new account",
+          "status": "passed",
+          "duration_ms": 174
+        },
+        {
+          "name": "loading failure offers a retry without a stale revoke form",
+          "status": "passed",
+          "duration_ms": 139
+        }
+      ]
+    },
+    {
+      "file": "component-tests/inspection-connected.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "guest and buyer cannot load the Inspector queue",
+          "status": "passed",
+          "duration_ms": 60
+        },
+        {
+          "name": "queue reads authenticated API data and opens that work",
+          "status": "passed",
+          "duration_ms": 81
+        },
+        {
+          "name": "receive waits for courier delivery, then real receive/start callbacks advance the work",
+          "status": "passed",
+          "duration_ms": 234
+        },
+        {
+          "name": "buyer result submits a confirmed decision and displays the saved decision and shipping next step",
+          "status": "passed",
+          "duration_ms": 98
+        },
+        {
+          "name": "Courier screen selects a queue scope and refreshes that scope from its first page",
+          "status": "passed",
+          "duration_ms": 45
+        }
+      ]
+    },
+    {
+      "file": "component-tests/inspection-views.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "revoked certificate sheet retains public lookup but never shows a valid seal",
+          "status": "passed",
+          "duration_ms": 186
+        },
+        {
+          "name": "revoked certificate does not offer a new decision even with stale capability flags",
+          "status": "passed",
+          "duration_ms": 19
+        },
+        {
+          "name": "NOT_AS_DESCRIBED never offers certificate or decisions, even with malformed positive flags",
+          "status": "passed",
+          "duration_ms": 12
+        },
+        {
+          "name": "FAKE never offers certificate or decisions, even with malformed positive flags",
+          "status": "passed",
+          "duration_ms": 12
+        },
+        {
+          "name": "a decision requires all server capabilities and a separate confirmation",
+          "status": "passed",
+          "duration_ms": 54
+        },
+        {
+          "name": "public certificate capability is independent and no QR is invented",
+          "status": "passed",
+          "duration_ms": 13
+        },
+        {
+          "name": "ship trims valid fields, but unavailable integration cannot submit",
+          "status": "passed",
+          "duration_ms": 42
+        },
+        {
+          "name": "inspection finalization uses only currently available selected evidence and needs confirmation",
+          "status": "passed",
+          "duration_ms": 92
+        },
+        {
+          "name": "reject reason is optional, trimmed, bounded, and requires confirmation",
+          "status": "passed",
+          "duration_ms": 59
+        },
+        {
+          "name": "shipping accepts the contract boundary of one character after trimming",
+          "status": "passed",
+          "duration_ms": 30
+        },
+        {
+          "name": "positive decision fails closed when its certificate is absent",
+          "status": "passed",
+          "duration_ms": 12
+        },
+        {
+          "name": "a saved rejection shows its recorded reason and return next step without decision controls",
+          "status": "passed",
+          "duration_ms": 13
+        },
+        {
+          "name": "negative result NOT_AS_DESCRIBED cannot submit a buyer decision or promise timed acceptance",
+          "status": "passed",
+          "duration_ms": 11
+        },
+        {
+          "name": "negative result FAKE cannot submit a buyer decision or promise timed acceptance",
+          "status": "passed",
+          "duration_ms": 20
+        }
+      ]
+    },
+    {
+      "file": "component-tests/inspection-session.test.tsx",
+      "status": "passed",
+      "tests": [
+        {
+          "name": "request refreshes an expired token once and never retries as another account",
+          "status": "passed",
+          "duration_ms": 66
+        },
+        {
+          "name": "old account cannot start an inspection request after switching sessions",
+          "status": "passed",
+          "duration_ms": 1
+        },
+        {
+          "name": "uncertain mutation retries reuse their key, and duplicate presses send once",
+          "status": "passed",
+          "duration_ms": 2
+        },
+        {
+          "name": "unmounted account cannot trigger navigation after a mutation returns",
+          "status": "passed",
+          "duration_ms": 1
+        }
+      ]
+    }
+  ]
+}
