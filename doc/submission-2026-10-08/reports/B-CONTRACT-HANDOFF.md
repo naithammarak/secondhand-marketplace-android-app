@@ -6,7 +6,7 @@ A source `33f0eadd8c1739735434ee9f103a5f23398178ed`, A head `94a26a0fbb7a0a82948
 
 ## PR124 corrections for consumers
 
-Admin discovers final shipment IDs via `GET /admin/orders/{id}.shipments` (id/leg/status/courier_id only), reached from its own Order list; assign using the existing Shipment route. TO_CENTER Order alias and privacy boundaries are unchanged. Admin payment_status reflects committed refunds, with RELEASE still PAID. Generated request-validation detail now omits input/context and safely serializes invalid Unicode, returning422. Paid lifecycle scans persist/rotate their cursor in separate SYSTEM journal commands across processes; dry-run/scoped retry do not move it. No model/migration/financial-ledger changes. [Latest correction evidence](B-PR124-REVIEW-FIXES.md): 192 PostgreSQL passes, 626 default passes/263 skips, source review still pending.
+Admin discovers final shipment IDs via `GET /admin/orders/{id}.shipments` (id/leg/status/courier_id only), reached from its own Order list; assign using the existing Shipment route. TO_CENTER Order alias and privacy boundaries are unchanged. Admin payment_status reflects committed refunds, with RELEASE still PAID. Generated request-validation detail now omits input/context and safely serializes invalid Unicode, returning422. All five lifecycle scans persist/rotate their cursor in separate SYSTEM journal commands across processes; dry-run/scoped retry do not move it. No model/migration/financial-ledger changes. [Latest correction evidence](B-PR124-REVIEW-FIXES.md): 192 PostgreSQL passes, 626 default passes/263 skips, source review still pending.
 
 ## E / task06 contracts
 
@@ -56,3 +56,5 @@ No replacement model, competing migration, wallet or backfill. Source provenance
 `attempt_return_refund(engine, order_id)` opens its own session after delivery commit. Worker uses the same service for AUTO/no-ship/return retry. Five categories run via `python -m scripts.run_lifecycle_jobs`; target guards, dry-run/apply/recurring/retry, monitoring and Windows template are in the [runbook](B-VERIFICATION-RUNBOOK.md).
 
 173 specialized PostgreSQL checks, default627/243skipped, mobile306logic/214components/typecheck pass; [evidence](B-verification.json). Android/shared Storage/OAuth/QR, E/C combined acceptance and task10 activation remain NOT RUN. Repository handoff is available to A/E/C/F; no direct teammate message was sent because no recipient/channel was supplied. Neither GitHub PR was merged.
+
+Unpaid fairness follow-up: [B-RF05-REWORK](B-RF05-REWORK.md) records the separate correction on the current B base, new durable deadline/ID cursor and focused independent-review gates. Earlier verification totals above remain historical.

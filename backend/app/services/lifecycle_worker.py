@@ -16,7 +16,7 @@ from app.services.fulfillment_guard import require_fulfillment_simulation
 from app.services.order_settlement import settlement_service
 from app.services.transaction_clock import database_now
 from app.services import unpaid_expiry_worker
-from app.services.lifecycle_progress import ScanCursor, scan_cursor
+from app.services.lifecycle_progress import ScanCursor, UNPAID_JOB_ID, scan_cursor
 
 log = logging.getLogger(__name__)
 JOBS = ("unpaid_expiry", "receipt_release", "seller_no_ship", "return_refund", "inspection_overdue")
@@ -66,9 +66,13 @@ def run_once(session_factory, *, apply=False, batch_size=100, max_batches=10,
         options = dict(apply=apply, batch_size=batch_size, max_batches=max_batches, stop=stop)
         if clock:
             options["clock"] = clock
-        unpaid = unpaid_expiry_worker.run_once(session_factory, **options)
-        result.jobs["unpaid_expiry"] = JobResult(unpaid.scanned, unpaid.eligible, unpaid.cancelled,
-            unpaid.failed, unpaid.skipped, unpaid.batches, unpaid.limit_reached)
+        with scan_cursor(session_factory, UNPAID_JOB_ID, apply=apply) as progress:
+            if progress is not None:
+                unpaid = unpaid_expiry_worker.run_once(session_factory, progress=progress, **options)
+                result.jobs["unpaid_expiry"] = JobResult(unpaid.scanned, unpaid.eligible, unpaid.cancelled,
+                    unpaid.failed, unpaid.skipped, unpaid.batches, unpaid.limit_reached)
+            else:
+                log.info("lifecycle job busy job=unpaid_expiry")
     with session_factory() as db:
         cutoff = clock() if clock else database_now(db)
     for job in JOBS[1:]:

@@ -37,20 +37,27 @@ def run_once(
     max_batches: int = 10,
     stop: Event | None = None,
     clock: Callable[[], datetime] = utcnow,
+    progress=None,
 ) -> ScanResult:
     """Scan a fixed cutoff in deterministic pages; failed rows retry next run.
 
     Each Order is locked and committed independently. A failed row rolls back
     without holding the other rows hostage. SKIP LOCKED leaves a payment or
-    other worker's in-flight Order for the next scan.
+    other worker's in-flight Order for the next scan. The five-job runner supplies
+    durable progress; standalone callers retain an in-memory traversal.
     """
     if not 1 <= batch_size <= 1000 or not 1 <= max_batches <= 1000:
         raise ValueError("batch_size and max_batches must each be between 1 and 1000")
 
     result = ScanResult()
     cutoff = clock()
-    cursor: tuple[datetime, int] | None = None
-    for _ in range(max_batches):
+    cursor: tuple[datetime, int] | None = (
+        (progress.last_expires_at, progress.last_order_id)
+        if progress is not None and progress.last_expires_at is not None else None
+    )
+    start = cursor
+    wrapped = False
+    while result.batches < max_batches:
         if stop is not None and stop.is_set():
             break
         query = select(Order.id, Order.expires_at).where(
@@ -64,17 +71,28 @@ def run_once(
                 Order.expires_at > deadline,
                 and_(Order.expires_at == deadline, Order.id > order_id),
             ))
+        if wrapped:
+            deadline, order_id = start
+            query = query.where(or_(
+                Order.expires_at < deadline,
+                and_(Order.expires_at == deadline, Order.id <= order_id),
+            ))
         query = query.order_by(Order.expires_at, Order.id).limit(batch_size)
         with session_factory() as db:
             candidates = db.execute(query).all()
             db.rollback()  # end the read transaction before locking any Order
         if not candidates:
+            if start is not None and not wrapped:
+                cursor, wrapped = None, True
+                continue
             break
         result.batches += 1
         for order_id, deadline in candidates:
             if stop is not None and stop.is_set():
-                return result
+                break
             cursor = (deadline, order_id)
+            if progress is not None:
+                progress.last_expires_at, progress.last_order_id = cursor
             result.scanned += 1
             if not apply:
                 result.eligible += 1  # snapshot estimate; no locks or writes
@@ -102,10 +120,12 @@ def run_once(
                     db.rollback()
                     result.failed += 1
                     log.error("unpaid expiry failed order_id=%s error_type=%s", order_id, type(exc).__name__)
-        if len(candidates) < batch_size:
+        if len(candidates) < batch_size and start is None:
             break
     else:
         result.limit_reached = True
+    if progress is not None:
+        progress.scanned, progress.failed = result.scanned, result.failed
     return result
 
 
