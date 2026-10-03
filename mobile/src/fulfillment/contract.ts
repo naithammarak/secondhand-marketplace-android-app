@@ -118,6 +118,11 @@ export type ReturnReviewResult = {
 };
 export type AdminConfirmReturnInput = { reason: string; evidence_refs: string[] };
 
+/** Admin order reads (existing ORDER-09): masked parties, shipment IDs only (no destination/tracking). */
+export type AdminOrderSummary = { id: number; status: string; payment_status: string; product: { id: number; name: string }; total_amount: string; created_at: string | null; paid_at: string | null };
+export type AdminOrdersPage = { items: AdminOrderSummary[]; total: number; limit: number; offset: number };
+export type AdminOrderShipments = { id: number; status: string; product: { id: number; name: string }; shipments: { id: number; leg: ShipmentLeg; status: string; courier_id: number | null }[] };
+
 /** Every mutation resolves with the server body plus whether it was an Idempotent-Replayed answer. */
 export type CommandResult<T> = { result: T; replayed: boolean };
 

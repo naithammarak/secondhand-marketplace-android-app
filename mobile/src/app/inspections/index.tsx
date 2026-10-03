@@ -1,2 +1,2 @@
-import { InspectionScreen } from '@/components/inspection/connected-screens';
-export default function ConnectedScreen() { return <InspectionScreen kind="queue" />; }
+import { InspectorQueueScreen } from '@/components/staff/inspector-queue';
+export default function InspectorQueueRoute() { return <InspectorQueueScreen />; }

@@ -6,7 +6,7 @@
  */
 import {
   CARRIER_MAX, DELIVERY_CASE_REF, EVENT_ID, IDEMPOTENCY_KEY, REASON_MAX, REASON_MIN, RETURN_CASE_REF,
-  type AddressDto, type AdminConfirmReturnInput, type CarrierInput, type CommandResult, type DeliveryCasesPage,
+  type AddressDto, type AdminConfirmReturnInput, type AdminOrderShipments, type AdminOrdersPage, type CarrierInput, type CommandResult, type DeliveryCasesPage,
   type DeliveryReviewResult, type DeliveryView, type FulfillmentResult, type HistoryPage, type ReceiptResult,
   type ReportResult, type ResolveDeliveryInput, type ResolveDeliveryResult, type ReturnAddressView, type ReturnReceiptResult,
   type ReturnReviewResult, type SaveReturnAddressResult, type ShippingEventInput, type ShippingEventResult,
@@ -146,6 +146,9 @@ export function createFulfillmentService(options: { baseUrl?: string; fetch?: Fe
     confirmAdminReturn: async (token: string, orderId: number, input: AdminConfirmReturnInput, idempotencyKey: string) =>
       post<ReturnReceiptResult>(token, `/admin/orders/${id(orderId)}/confirm-return`,
         { reason: reason(input.reason), evidence_refs: refs(input.evidence_refs, RETURN_CASE_REF, 2) }, idempotencyKey),
+    listAdminOrders: async (token: string, status: string, offset = 0, signal?: AbortSignal) =>
+      read<AdminOrdersPage>(token, `/admin/orders?status=${encodeURIComponent(status)}&limit=20&offset=${offset}`, signal),
+    getAdminOrder: async (token: string, orderId: number, signal?: AbortSignal) => read<AdminOrderShipments>(token, `/admin/orders/${id(orderId)}`, signal),
     listDeliveryCases: async (token: string, page: { limit?: number; offset?: number } = {}, signal?: AbortSignal) =>
       read<DeliveryCasesPage>(token, `/admin/delivery-cases?limit=${page.limit ?? 20}&offset=${page.offset ?? 0}`, signal),
     reviewDelivery: async (token: string, orderId: number, text: string, idempotencyKey: string) =>
