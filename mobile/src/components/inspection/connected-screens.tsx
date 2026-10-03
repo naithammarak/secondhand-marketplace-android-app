@@ -77,7 +77,8 @@ function Ship({ id }: { id: number }) {
   const orders = useRef(createOrderService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL })).current;
   const resource = useResource(useCallback(() => api.call(token => orders.getOrder(token, id)), [api, orders, id]));
   const address = useResource(useCallback(async () => port ? parseReturnAddress(await port.getReturnAddress(id)) : null, [port, id]));
-  const command = useJourneyCommand(useCallback(async () => { await address.reload(); }, [address]));
+  const reloadAddress = address.reload;
+  const command = useJourneyCommand(useCallback(async () => { await reloadAddress(); }, [reloadAddress]), undefined, id);
   const ship = useInspectionMutation();
   const order = resource.data;
   const view = address.data ?? null;

@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/auth/auth-provider';
 import { useInspectionApi } from '@/inspections/use-inspection-api';
 import type { OrderDetail } from '@/services/order-service';
@@ -13,6 +13,21 @@ import {
 const RESULT_STATUSES = new Set(['RESULT_NOTIFIED', 'SHIPPING_TO_BUYER', 'DELIVERED_PENDING_BUYER', 'DELIVERY_DISPUTED', 'RETURNED_TO_SELLER', 'COMPLETED', 'REFUNDED']);
 const PAID_STATUSES = new Set(['WAITING_SELLER_SHIP', 'SHIPPING_TO_CENTER', 'RECEIVED_AT_CENTER', 'INSPECTING', ...RESULT_STATUSES]);
 
+/** A reload carries logical ownership, not its changing callback identity. */
+type JourneyReload = (() => Promise<void>) & { scope: string | null };
+
+/** Each committed visit has its own lifetime, including A → B → A. */
+function useScopeLifetime(scope: string | null) {
+  const epoch = useMemo(() => ({ scope }), [scope]);
+  const active = useRef<typeof epoch | null>(epoch);
+  useLayoutEffect(() => {
+    active.current = epoch;
+    return () => { active.current = null; };
+  }, [epoch]);
+  const isCurrent = useCallback(() => active.current === epoch, [epoch]);
+  return { epoch, isCurrent };
+}
+
 export type JourneyData = {
   delivery: DeliveryView | null;
   history: HistoryPage | null;
@@ -22,7 +37,7 @@ export type JourneyData = {
   failure: ActionFailure | null;
   /** No shipping client bound in this build (before E_BASE) — show the unavailable state. */
   unavailable: boolean;
-  reload(): Promise<void>;
+  reload: JourneyReload;
 };
 
 /**
@@ -39,12 +54,14 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
   const invalidate = useCallback(() => { generation.current++; }, []);
   const scope = order && owner ? `${owner}:${order.id}` : null;
   const lastScope = useRef<string | null>(null);
+  const { isCurrent } = useScopeLifetime(scope);
   const status = order?.status ?? null;
   const orderId = order?.id ?? null;
   const buyer = order?.viewerRole === 'buyer';
 
   const reload = useCallback(async () => {
-    if (orderId === null || status === null || !owner) return;
+    // Captured callbacks must no-op BEFORE they can invalidate the active request.
+    if (!isCurrent() || orderId === null || status === null || !owner) return;
     const order = { id: orderId, status };
     const current = ++generation.current;
     setState(previous => ({ ...previous, loading: true, failure: null }));
@@ -61,7 +78,7 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
           })
           : Promise.resolve(null),
       ]);
-      if (generation.current !== current) return;
+      if (!isCurrent() || generation.current !== current) return;
       setState({
         scope,
         delivery: deliveryRaw ? parseDelivery(deliveryRaw) : null,
@@ -71,10 +88,10 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
         loading: false, failure: null,
       });
     } catch (error) {
-      if (generation.current !== current) return;
+      if (!isCurrent() || generation.current !== current) return;
       setState(previous => ({ ...previous, loading: false, failure: describeActionError(error) }));
     }
-  }, [orderId, status, owner, port, inspection, buyer, scope]);
+  }, [orderId, status, owner, port, inspection, buyer, scope, isCurrent]);
 
   useEffect(() => {
     if (scope !== lastScope.current) {
@@ -89,13 +106,14 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
 
   // Effects run after render: never expose the preceding account/order in that gap.
   const visible = state.scope === scope ? state : { delivery: null, history: null, result: null, rawResult: null, loading: !!scope, failure: null };
-  return { ...visible, unavailable: !port, reload };
+  const scopedReload = useMemo(() => Object.assign(reload, { scope }), [reload, scope]);
+  return { ...visible, unavailable: !port, reload: scopedReload };
 }
 
 export type JourneyCommand = {
   busy: boolean;
   failure: ActionFailure | null;
-  /** Run a command; returns true when the server committed it. Always refetches afterwards. */
+  /** Run a command; returns true when the server committed it. Refetches afterwards only while its account/Order is current. */
   run(identity: string, operation: (port: FulfillmentPort, key: string) => Promise<unknown>): Promise<boolean>;
   clear(): void;
 };
@@ -105,36 +123,53 @@ export type JourneyCommand = {
  * kept after an uncertain outcome (network/timeout/5xx) so a retry is the same command,
  * and dropped after a definitive answer. Success is shown only after the refetch.
  */
-export function useJourneyCommand(refetch: () => Promise<void>, newKey: () => string = Crypto.randomUUID): JourneyCommand {
+export function useJourneyCommand(
+  refetch: (() => Promise<void>) & { scope?: string | null },
+  newKey: () => string = Crypto.randomUUID,
+  orderId?: number | null,
+): JourneyCommand {
   const port = useFulfillmentPort();
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<ActionFailure | null>(null);
-  const keys = useRef(new Map<string, string>());
-  const lock = useRef(false);
-  const alive = useRef(true);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const owner = useAuth().session?.user.id ?? null;
+  // Direct journey.reload carries its scope; composed refreshes pass the route ID.
+  const scope = !owner ? null : orderId !== undefined
+    ? (orderId === null ? null : `${owner}:${orderId}`)
+    : (refetch.scope !== undefined ? refetch.scope : owner);
+  const { epoch, isCurrent } = useScopeLifetime(scope);
+  const pending = useRef({ epoch, keys: new Map<string, string>(), locked: false });
+  useLayoutEffect(() => {
+    if (pending.current.epoch !== epoch) pending.current = { epoch, keys: new Map<string, string>(), locked: false };
+  }, [epoch]);
+  const [state, setState] = useState<{ epoch: typeof epoch; busy: boolean; failure: ActionFailure | null }>({ epoch, busy: false, failure: null });
+  const latestRefetch = useRef(refetch);
+  useLayoutEffect(() => { latestRefetch.current = refetch; }, [refetch]);
   const run = useCallback(async (identity: string, operation: (port: FulfillmentPort, key: string) => Promise<unknown>) => {
-    if (!port || lock.current) return false;
-    lock.current = true;
-    setBusy(true); setFailure(null);
-    const key = keys.current.get(identity) ?? newKey();
-    keys.current.set(identity, key);
+    const visit = pending.current;
+    if (!isCurrent() || !scope || !port || visit.epoch !== epoch || visit.locked) return false;
+    visit.locked = true;
+    setState({ epoch, busy: true, failure: null });
+    const key = visit.keys.get(identity) ?? newKey();
+    visit.keys.set(identity, key);
     let committed = false;
     try {
       await operation(port, key);
-      keys.current.delete(identity);
-      committed = true;
+      visit.keys.delete(identity);
+      committed = true; // The original server transaction remains truthful after navigation.
     } catch (error) {
       const described = describeActionError(error);
-      if (described.next !== 'retry-same') keys.current.delete(identity);
-      if (alive.current) setFailure(described);
+      if (described.next !== 'retry-same') visit.keys.delete(identity);
+      if (isCurrent()) setState({ epoch, busy: true, failure: described });
     } finally {
-      // Refetch persisted state after every attempt, including ambiguous ones.
-      await refetch().catch(() => undefined);
-      lock.current = false;
-      if (alive.current) setBusy(false);
+      // Rerenders can replace composed callbacks without changing logical ownership.
+      // Never invoke an obsolete account/Order refresh, including after unmount.
+      if (isCurrent()) await latestRefetch.current().catch(() => undefined);
+      visit.locked = false; // This belongs to this visit, never a newer visit's lock/key.
+      if (isCurrent()) setState(previous => ({ ...previous, busy: false }));
     }
     return committed;
-  }, [port, refetch, newKey]);
-  return useMemo(() => ({ busy, failure, run, clear: () => setFailure(null) }), [busy, failure, run]);
+  }, [port, scope, epoch, isCurrent, newKey]);
+  const clear = useCallback(() => {
+    if (isCurrent()) setState(previous => ({ ...previous, failure: null }));
+  }, [isCurrent]);
+  const visible = state.epoch === epoch ? state : { busy: false, failure: null };
+  return useMemo(() => ({ busy: visible.busy, failure: visible.failure, run, clear }), [visible.busy, visible.failure, run, clear]);
 }

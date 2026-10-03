@@ -50,12 +50,13 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
   const deadline = waitingPayment ? deadlineAt(order?.expiresAt) : null;
   const deadlinePassed = deadline !== null && now >= deadline;
 
+  const reloadJourney = data.reload;
   const refreshAll = useCallback(async () => {
     await store.refresh();
-    await data.reload();
+    await reloadJourney();
     void list.store.refresh();
-  }, [store, data, list.store]);
-  const command = useJourneyCommand(refreshAll);
+  }, [store, reloadJourney, list.store]);
+  const command = useJourneyCommand(refreshAll, undefined, orderId);
 
   const journey = useMemo(() => order ? deriveJourney({ order, delivery: data.delivery, result: data.result }) : null, [order, data.delivery, data.result]);
   const money = useMemo(() => order ? deriveMoney(order, data.delivery) : null, [order, data.delivery]);
