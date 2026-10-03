@@ -190,6 +190,21 @@ function Returns() {
 
 // ------------------------------------------------------------ demo transport events
 
+export function DemoEventIntro() {
+  return <Notice tone="warning" title="เหตุการณ์ขนส่งจำลอง (เดโม)" testID="demo-event-panel"
+    detail="บันทึกว่าขนส่งแจ้งส่งถึงแล้วสำหรับการสาธิต ไม่ใช่การยืนยันรับของผู้รับ ไม่ปิดการคืนสินค้าหรือการคืนเงิน และใช้ได้เมื่อระบบเปิด EXTERNAL_SHIPPING_DEMO_ENABLED">
+    <SimLabel text="จำลองผู้ให้บริการขนส่ง" />
+  </Notice>;
+}
+
+export function DemoEventRecorded({ result }: { result: ShippingEventResult }) {
+  return <Notice tone="success" title="บันทึกเหตุการณ์ขนส่งจำลองแล้ว" testID="demo-event-recorded">
+    <Field label="ขาการขนส่ง" value={LEG_LABEL[result.leg]} /><Field label="แหล่งที่มา" value={result.source} />
+    <Field label="เวลาเซิร์ฟเวอร์" value={when(result.confirmed_at)} /><Field label="รหัสเหตุการณ์" value={result.event_id} mono />
+    <ThemedText type="small">ผู้รับยังไม่ได้ยืนยันรับ (recipient_confirmed = false)</ThemedText>
+  </Notice>;
+}
+
 export function newEventId(orderId: number, shipmentId: number) {
   return `demo-${orderId}-${shipmentId}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -205,10 +220,7 @@ function Events() {
   const [result, setResult] = useState<ShippingEventResult | null>(null);
   const shipment = order.data?.shipments.find(item => item.id === shipmentId) ?? null;
   return <>
-    <Notice tone="warning" title="เหตุการณ์ขนส่งจำลอง (เดโม)" testID="demo-event-panel"
-      detail="บันทึกว่าขนส่งแจ้งส่งถึงแล้วสำหรับการสาธิต ไม่ใช่การยืนยันรับของผู้รับ ไม่ปิดการคืนสินค้าหรือการคืนเงิน และใช้ได้เมื่อระบบเปิด EXTERNAL_SHIPPING_DEMO_ENABLED">
-      <SimLabel text="จำลองผู้ให้บริการขนส่ง" />
-    </Notice>
+    <DemoEventIntro />
     <OrderPicker statuses={[{ value: 'SHIPPING_TO_CENTER', label: 'กำลังส่งเข้าศูนย์' }, { value: 'SHIPPING_TO_BUYER', label: 'กำลังส่งถึงผู้ซื้อ' }, { value: 'RESULT_NOTIFIED', label: 'แจ้งผลแล้ว (ส่งคืน)' }]}
       selected={orderId} onPick={id => { setOrderId(id); setShipmentId(null); setResult(null); }} />
     {order.data ? <Notice tone="neutral" title={`พัสดุของคำสั่งซื้อ #${order.data.id}`}>
@@ -220,11 +232,7 @@ function Events() {
       <TextField label="รหัสเหตุการณ์ (ไม่ซ้ำ)" value={eventId} onChangeText={setEventId} editable={!action.busy} autoCapitalize="none" />
       <Button label="บันทึกว่า 'ส่งถึงแล้ว' (จำลอง)" variant="primary" busy={action.busy} disabled={!/^[A-Za-z0-9_-]{8,100}$/.test(eventId)} onPress={() => setConfirming(true)} />
     </View> : null}
-    {result ? <Notice tone="success" title="บันทึกเหตุการณ์ขนส่งจำลองแล้ว" testID="demo-event-recorded">
-      <Field label="แหล่งที่มา" value={result.source} /><Field label="เวลาเซิร์ฟเวอร์" value={when(result.confirmed_at)} />
-      <Field label="รหัสเหตุการณ์" value={result.event_id} mono />
-      <ThemedText type="small">ผู้รับยังไม่ได้ยืนยันรับ (recipient_confirmed = false)</ThemedText>
-    </Notice> : null}
+    {result ? <DemoEventRecorded result={result} /> : null}
     {action.error ? <Notice tone="danger" title="บันทึกไม่สำเร็จ" detail={action.error} /> : null}
     <ConfirmationSheet visible={confirming} title="ยืนยันเหตุการณ์ขนส่งจำลอง" onClose={() => setConfirming(false)}>
       <ThemedText type="small">พัสดุ #{shipmentId} · {shipment ? LEG_LABEL[shipment.leg] : ''} · {eventId}</ThemedText>
