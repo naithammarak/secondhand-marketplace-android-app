@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-10-03T13:59:30.612548+00:00",
+  "scope": "E-RF01 correction local hook/component/logic verification; independent E review pending",
+  "pr": 133,
+  "prUrl": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/133",
+  "startingReviewedHead": "49abbbd046f99ceb4b273c2186a49d8e7deed83f",
+  "testedCodeSource": "626711acbc8f1276db1864cbc091c152230f1f85",
+  "base": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+  "migrationHead": "r01e20261002",
+  "backendSourceChanged": false,
+  "commandsCwd": "mobile",
+  "checks": {
+    "originalReviewerReproduction": {
+      "command": "node node_modules/jest/bin/jest.js --runInBand --runTestsByPath component-tests/reviewer-e-state.test.tsx --json --outputFile=/tmp/e-rf01-before.json",
+      "passed": 0,
+      "failed": 4,
+      "skipped": 0,
+      "expectedExit": 1,
+      "localLog": "/tmp/e-rf01-before.log",
+      "logSha256": "5f3639b99b03c7c9cd1f273e7ddb1bdbac814e1033c6391dbd0adc883a1f32ea"
+    },
+    "finalComponents": {
+      "command": "npm run test:components -- --json --outputFile=/tmp/e-rf01-components-final.json",
+      "passed": 273,
+      "failed": 0,
+      "skipped": 0,
+      "suites": 36,
+      "exit": 0,
+      "localLog": "/tmp/e-rf01-components-final.log",
+      "logSha256": "de457eb4ba26efe41515fff90197c9154b2495a851c43b996f2dfe1e606ad240"
+    },
+    "finalLogic": {
+      "command": "npm run test:logic",
+      "passed": 347,
+      "failed": 0,
+      "skipped": 0,
+      "exit": 0,
+      "localLog": "/tmp/e-rf01-logic-final.log",
+      "logSha256": "13d7588c57ac14da72131d0562ec1362fdf7ec65ece5c2cba0e19bdc1bf459b1"
+    },
+    "finalTypecheck": {
+      "command": "npm run typecheck",
+      "exit": 0,
+      "localLog": "/tmp/e-rf01-typecheck-final.log",
+      "logSha256": "fa2d53e56b09d6d97d0d5fdfffcf56860b37b31c84dd608af04fa65e609cc3be"
+    },
+    "finalChangedLint": {
+      "command": "node node_modules/eslint/bin/eslint.js src/orders/use-order-journey.ts src/components/order-detail-screen.tsx src/components/inspection/connected-screens.tsx component-tests/reviewer-e-state.test.tsx component-tests/journey-command-scope.test.tsx",
+      "exit": 0,
+      "warnings": 0,
+      "errors": 0,
+      "localLog": "/tmp/e-rf01-lint-final.log",
+      "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "correctionDiffCheck": {
+      "command": "git diff --check",
+      "exit": 0
+    },
+    "inheritedCombinedDiffCheck": {
+      "command": "git diff 0ffff2de66d321ab37a0a725d4427716cbfecba3 49abbbd046f99ceb4b273c2186a49d8e7deed83f --check",
+      "exit": 2,
+      "scope": "Inherited whitespace in already-published smoke logs; untouched by this correction",
+      "localLog": "/tmp/e-rf01-inherited-diff-check.log",
+      "logSha256": "cf22d45cc77309fa14d4eb1c79aa1c1a7f69d8aaf71405ca6ecdd8a5fe83cf30"
+    },
+    "packageValidation": {
+      "command": "python3 doc/submission-2026-10-08/scripts/check-package.py",
+      "cwd": "repo root",
+      "result": "PASS",
+      "tasks": 14,
+      "requirements": 59,
+      "qaCases": 28,
+      "links": 305,
+      "localLog": "/tmp/e-rf01-package.log"
+    }
+  },
+  "focusedCasesInFinalFullSuite": [
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "เลยเส้นตายแล้วแต่ server ยังตอบสถานะเดิม ต้องถามซ้ำไม่ใช่ค้างที่ข้อความตรวจสอบ",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "ยังไม่ถึงเส้นตายต้องไม่ถามซ้ำและยังนับถอยหลังอยู่",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "ยกเลิกแล้วต้องหยุดถามซ้ำ แม้เส้นตายจะอยู่ในอดีต",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order data is hidden immediately when the store still belongs to the previous account",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey positive result: decision entry and server deadline appear only from can_decide",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey negative result: no certificate, no acceptance window",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey report before provider event: flags enable actions, reason 10–1000 required, same key on uncertain retry",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey 409 on receipt shows refetch guidance, never local success",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey Seller confirms actual return from the server flag, then sees pending refund processing",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey positive reject refund shows server 1,200 refund with retained 100 + 50 and original charge",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/order-detail-screen.test.tsx",
+      "name": "order journey paid order without a bound shipping client shows the unavailable state",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/reviewer-e-state.test.tsx",
+      "name": "old successful receipt completion cannot replace the newly opened order journey",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/reviewer-e-state.test.tsx",
+      "name": "old receipt rejection cannot attach its error to the new order controls",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/reviewer-e-state.test.tsx",
+      "name": "a captured old reload cannot invalidate the active order refresh",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/reviewer-e-state.test.tsx",
+      "name": "old mutation refresh cannot show an authorization error for the new healthy account",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "a retired run callback cannot start a mutation for a previous Order",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "old completion cannot unlock a newer visit or erase its uncertain retry key",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "callback identity churn keeps the same lock and key, but uses the current composed refresh",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "account transition immediately hides old failure and busy before the new read finishes",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "unmount skips late read errors, obsolete refetch and captured commands",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "returning to the same Order cannot reactivate callbacks from its earlier visit",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "captured old reload does not invalidate the new Order while its read is pending",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/journey-command-scope.test.tsx",
+      "name": "composed refreshes use the explicit route scope and skip obsolete finally callbacks",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/fulfillment-binding.test.tsx",
+      "name": "production provider binds the UI2 client to recipient commands without a fixture provider",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/fulfillment-binding.test.tsx",
+      "name": "journey immediately hides previous account data and drops its late response",
+      "status": "passed"
+    },
+    {
+      "suite": "component-tests/fulfillment-binding.test.tsx",
+      "name": "journey drops the old order response when navigating to a new order",
+      "status": "passed"
+    }
+  ],
+  "changedMobileSha256": {
+    "mobile/component-tests/journey-command-scope.test.tsx": "1e2bec42640e4920ebaab638ea94e78b387c205ac68b602e3d56b734de23316b",
+    "mobile/component-tests/reviewer-e-state.test.tsx": "f9c43fc97d5bdc34453041bd4fe3238dd7b3cea7b1b13076131aa5ce867319ab",
+    "mobile/src/components/inspection/connected-screens.tsx": "d379c160ce390386122d2a272da2734968512a1ece7b657b49a28d081a6311a4",
+    "mobile/src/components/order-detail-screen.tsx": "ab7d7bbf59a6d220c7517679120864d3de12808a07855e870473c0c33e28042d",
+    "mobile/src/orders/use-order-journey.ts": "5f670703352e5c30334447325849537398df4247d8448311353803dce61d657e"
+  },
+  "reviewerProbeCopiedSha256": "f9c43fc97d5bdc34453041bd4fe3238dd7b3cea7b1b13076131aa5ce867319ab",
+  "realEnvironmentVerified": false,
+  "limits": [
+    "Synthetic deferred services/auth, production provider/adapter/hooks; not real OAuth/Storage/native checks",
+    "Old server commit is not undone by UI navigation; obsolete UI callbacks/refetch are ignored",
+    "Same-scope key retained for uncertain canonical retry, callback identity alone does not reset lock/key",
+    "No backend exhaustive rerun, normal API harness/native export or real environment rollout claimed by this correction",
+    "Baseline React act warnings from existing Wondee motion tests remain",
+    "Inherited full-PR whitespace warnings remain in published historical logs"
+  ],
+  "independentReview": "PENDING"
+}
