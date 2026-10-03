@@ -125,7 +125,7 @@ describe('ProductListScreen', () => {
     expect(mockStore.setCategory).toHaveBeenCalledWith(42);
     fireEvent.press(screen.getByRole('tab', { name: 'คำสั่งซื้อ' }));
     expect(mockReplace).toHaveBeenCalledWith('/orders');
-    fireEvent.press(screen.getByRole('tab', { name: 'ฉัน' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'โปรไฟล์' }));
     expect(mockReplace).toHaveBeenCalledWith('/profile');
     fireEvent.press(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
     expect(mockPush).toHaveBeenCalledWith('/login');
@@ -185,11 +185,11 @@ describe('ProductListScreen', () => {
 
     expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
     expect(screen.getByText('฿1,290.00')).toBeTruthy();
-    expect(screen.getByText('สภาพดี')).toBeTruthy();
+    expect(screen.getByLabelText('สภาพดี')).toBeTruthy();
 
     expect(screen.getByText('กระเป๋าสะพายหนัง')).toBeTruthy();
     expect(screen.getByText('฿1,990.00')).toBeTruthy();
-    expect(screen.getByText('สภาพเหมือนใหม่')).toBeTruthy();
+    expect(screen.getByLabelText('สภาพเหมือนใหม่')).toBeTruthy();
   });
 
   test('updates query when user types in search input', () => {
@@ -231,7 +231,8 @@ describe('ProductListScreen', () => {
     });
     render(<ProductListScreen />);
 
-    expect(screen.getByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
+    expect(screen.getByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')).toBeTruthy();
+    expect(screen.getByText('กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
     const retryButton = screen.getByText('ลองใหม่อีกครั้ง');
     fireEvent.press(retryButton);
     expect(mockStore.retry).toHaveBeenCalledTimes(1);
@@ -321,5 +322,30 @@ describe('ProductListScreen', () => {
 
     expect(screen.getByText('Bottega Veneta')).toBeTruthy();
     expect(screen.getByText('ร้านวนดีช็อป')).toBeTruthy();
+  });
+
+  test('hides the shop row instead of inventing a shop name when the API sends none', () => {
+    mockState = defaultState({
+      loaded: true,
+      items: [{ ...sampleItem1, seller: null }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, hasNext: false },
+    });
+    render(<ProductListScreen />);
+
+    expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+    expect(screen.queryByText('ร้านวนดีช็อป')).toBeNull();
+    expect(screen.queryByLabelText('ผู้ขายยืนยันตัวตนแล้ว')).toBeNull();
+  });
+
+  test('titles the list with the selected API category', () => {
+    mockState = defaultState({
+      loaded: true,
+      categoryId: 42,
+      categories: [{ id: 42, categoryName: 'หมวดจาก API', parentCategoryId: null }],
+    });
+    render(<ProductListScreen />);
+
+    expect(screen.getAllByText('หมวดจาก API').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('หมวดนี้ยังไม่มีสินค้าลงขาย ลองดูหมวดอื่นก่อนนะ')).toBeTruthy();
   });
 });

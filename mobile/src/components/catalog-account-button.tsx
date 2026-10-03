@@ -20,13 +20,13 @@ export function CatalogAccountButton() {
         style={({ pressed }) => [
           styles.bagButton,
           {
-            backgroundColor: isDark ? theme.surface : '#ffffff',
-            borderColor: isDark ? theme.border : '#e1e7ef',
-            opacity: pressed ? 0.75 : 1,
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.border,
+            transform: [{ scale: pressed ? 0.94 : 1 }],
           },
         ]}
       >
-        <MarketplaceIcon name="orders" color="#10b981" size={19} />
+        <MarketplaceIcon name="orders" color={isDark ? '#f8fafc' : '#0f172a'} size={18} />
       </Pressable>
     );
   }
@@ -39,9 +39,8 @@ export function CatalogAccountButton() {
       style={({ pressed }) => [
         styles.loginButton,
         {
-          borderColor: '#10b981',
-          backgroundColor: isDark ? theme.surface : '#ffffff',
-          opacity: pressed ? 0.75 : 1,
+          backgroundColor: pressed ? '#10b981' : '#059669',
+          transform: [{ scale: pressed ? 0.96 : 1 }],
         },
       ]}
     >
@@ -54,22 +53,23 @@ export function CatalogAccountButton() {
 
 const styles = StyleSheet.create({
   loginButton: {
-    height: 42,
-    paddingHorizontal: 16,
-    borderRadius: 21,
-    borderWidth: 1.5,
+    minHeight: 32,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loginText: {
-    color: '#10b981',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#ffffff',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
   },
   bagButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

@@ -45,12 +45,13 @@ function AppLayout() {
                 screenOptions={{
                   headerShown: false,
                   contentStyle: { backgroundColor: theme.background },
-                  animation: 'slide_from_right',
-                  animationDuration: 250,
+                  // เข้าหน้าย่อยใช้ fade สั้น ๆ; แท็บล่าง (router.replace) ไม่มี animation
+                  animation: 'fade',
+                  animationDuration: 150,
                 }}>
-                <Stack.Screen name="index" />
+                <Stack.Screen name="index" options={{ animation: 'none' }} />
                 <Stack.Screen name="login" />
-                <Stack.Screen name="profile" />
+                <Stack.Screen name="profile" options={{ animation: 'none' }} />
                 <Stack.Screen name="sell" />
                 <Stack.Screen name="auth/callback" />
                 <Stack.Screen name="seller-verification" />
@@ -58,9 +59,9 @@ function AppLayout() {
                 <Stack.Screen name="buy-by-product-id" />
                 <Stack.Screen name="products/index" />
                 <Stack.Screen name="products/[id]" />
-                <Stack.Screen name="product" />
+                <Stack.Screen name="product" options={{ animation: 'none' }} />
                 <Stack.Screen name="checkout/[productId]" />
-                <Stack.Screen name="orders/index" />
+                <Stack.Screen name="orders/index" options={{ animation: 'none' }} />
                 <Stack.Screen name="orders/[orderId]" />
                 <Stack.Screen name="receipt/[orderId]" />
                 <Stack.Screen name="orders/[orderId]/inspection" />
