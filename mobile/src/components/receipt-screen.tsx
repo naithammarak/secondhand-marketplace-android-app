@@ -2,16 +2,59 @@ import { Redirect, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import { useAuth } from '@/auth/auth-provider';
 import { ThemedText } from '@/components/themed-text';
-import { Card, errorText, Loading, Row, Screen } from '@/components/order-ui';
-import { BrandIcon, BrandWordmark } from '@/components/wondee/brand-logo';
+import { errorText, Loading, Screen } from '@/components/order-ui';
+import { EmptyState, ErrorState, Skeleton } from '@/components/wondee/primitives';
+import { Fonts } from '@/constants/theme';
+import { useMotionAllowed } from '@/components/wondee/motion';
+import { BrandIcon } from '@/components/wondee/brand-logo';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
 import { formatBaht, formatDateTime } from '@/orders/order-format';
 import { useOrderDetail } from '@/orders/orders-provider';
+
+/** วงกลมเครื่องหมายถูกแบบ design (.success-check) เด้งเข้าเมื่อเปิดใบเสร็จ */
+function SuccessCheck() {
+  const motionAllowed = useMotionAllowed();
+  const progress = useSharedValue(motionAllowed ? 0 : 1);
+  useEffect(() => {
+    progress.value = motionAllowed ? withTiming(1, { duration: 450, easing: Easing.bezier(0.2, 1.4, 0.4, 1) }) : 1;
+  }, [motionAllowed, progress]);
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.6 + 0.4 * progress.value }],
+  }));
+  return (
+    <Animated.View style={[localStyles.successCheck, style]}>
+      <Svg width={84} height={84} viewBox="0 0 52 52" fill="none">
+        <Circle cx={26} cy={26} r={24} stroke="#10b981" strokeWidth={3} />
+        <Path d="M15 27l7 7 15-15" stroke="#10b981" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+function ReceiptRow({ label, value, strong, mono }: { label: string; value: string; strong?: boolean; mono?: boolean }) {
+  const theme = useTheme();
+  return (
+    <View style={localStyles.row}>
+      <ThemedText style={[localStyles.rowLabel, { color: theme.textSecondary }]}>{label}</ThemedText>
+      <ThemedText
+        style={[
+          localStyles.rowValue,
+          { color: theme.text },
+          strong && { fontWeight: '700' },
+          mono && { fontFamily: Fonts.mono },
+        ]}>
+        {value}
+      </ThemedText>
+    </View>
+  );
+}
 
 export function ReceiptScreen({ orderId }: { orderId: number | null }) {
   const auth = useAuth();
@@ -31,47 +74,67 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
     if (!state.receipt && !state.receiptLoading && !state.receiptError) void store.loadReceipt();
   }, [orderId, state.orderId, state.owner, state.receipt, state.receiptError, state.receiptLoading, store]);
 
+  // รอกู้ session ก่อน ไม่งั้นเปิดลิงก์ใบเสร็จตรง ๆ จะถูกส่งไปหน้า login ทั้งที่ล็อกอินอยู่
+  if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
   if (!auth.session) return <Redirect href="/login" />;
 
   const order = state.owner === auth.session?.user.id && state.orderId === orderId ? state.order : null;
   const receipt = state.owner === auth.session?.user.id && state.orderId === orderId ? state.receipt : null;
   const issuedAt = formatDateTime(receipt?.issuedAt);
+  const divider = { borderColor: 'rgba(100, 116, 139, 0.3)' };
+  const showLoading = (state.receiptLoading || (!receipt && !state.receiptError)) && !receipt;
 
   return (
     <Screen>
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={localStyles.scrollContent} showsVerticalScrollIndicator={false}>
-        <SafeAreaView style={localStyles.container}>
-          {/* Success Check Header matching prototype screen-order-success */}
-          <View style={localStyles.successSection}>
-            <View style={[localStyles.successCheckCircle, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.12)' }]}>
-              <Svg width={36} height={36} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M5 13l4 4L19 7"
-                  stroke="#10b981"
-                  strokeWidth={3}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </Svg>
+        <View style={localStyles.container}>
+          {orderId === null ? (
+            <View style={{ paddingTop: 24 }}>
+              <EmptyState title="ไม่พบใบเสร็จ" detail="ลิงก์ใบเสร็จไม่ถูกต้อง" />
             </View>
-            <ThemedText style={localStyles.successTitle}>ชำระเงินสำเร็จ</ThemedText>
-            <ThemedText style={[localStyles.successSubtitle, { color: theme.textSecondary }]}>
-              ผู้ขายจะส่งสินค้าเข้าตรวจสภาพก่อนส่งถึงคุณ
-            </ThemedText>
-          </View>
+          ) : null}
 
-          {state.receiptLoading && !receipt ? <Loading label="กำลังโหลดใบเสร็จ" /> : null}
+          {orderId !== null && showLoading ? (
+            <View style={{ gap: 14, paddingTop: 24 }}>
+              <View style={{ alignSelf: 'center', width: 96 }}><Skeleton height={96} label="กำลังโหลดใบเสร็จ" /></View>
+              <Skeleton height={320} />
+            </View>
+          ) : null}
+
           {state.receiptError && !receipt ? (
-            <Card>
-              <ThemedText accessibilityLiveRegion="polite">{errorText(state.receiptError)}</ThemedText>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="ลองใหม่อีกครั้ง"
-                onPress={() => { void store.loadReceipt(); }}
-                style={[localStyles.retryBtn, { backgroundColor: theme.primary }]}>
-                <ThemedText style={localStyles.retryBtnText}>ลองใหม่อีกครั้ง</ThemedText>
-              </Pressable>
-            </Card>
+            <View style={{ paddingTop: 24 }}>
+              <ErrorState
+                icon={state.receiptError === 'network-error' ? 'offline' : 'alert'}
+                title="โหลดใบเสร็จไม่สำเร็จ"
+                detail={errorText(state.receiptError)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="ลองใหม่อีกครั้ง"
+                  onPress={() => { void store.loadReceipt(); }}
+                  style={localStyles.retryBtn}>
+                  <ThemedText style={localStyles.retryBtnText}>ลองใหม่อีกครั้ง</ThemedText>
+                </Pressable>
+              </ErrorState>
+            </View>
+          ) : null}
+
+          {/* หัว "ชำระเงินสำเร็จ" แสดงเมื่อมีใบเสร็จที่เซิร์ฟเวอร์บันทึกแล้วเท่านั้น */}
+          {receipt ? (
+            <View style={localStyles.successSection}>
+              <SuccessCheck />
+              <ThemedText style={[localStyles.successTitle, { color: theme.text }]}>ชำระเงินสำเร็จ</ThemedText>
+              {/* ข้อความถัดไปตามสถานะจริง: ใบเสร็จเดิมไม่เปลี่ยนแม้คืนเงินแล้ว */}
+              {order?.paymentStatus === 'REFUNDED' ? (
+                <ThemedText style={[localStyles.successSubtitle, { color: theme.textSecondary }]}>
+                  คำสั่งซื้อนี้คืนเงินแล้ว ใบเสร็จด้านล่างเป็นรายการชำระเดิม ดูยอดคืนในสถานะคำสั่งซื้อ
+                </ThemedText>
+              ) : order?.status === 'WAITING_SELLER_SHIP' ? (
+                <ThemedText style={[localStyles.successSubtitle, { color: theme.textSecondary }]}>
+                  ผู้ขายจะส่งสินค้าเข้าตรวจสภาพก่อนส่งถึงคุณ
+                </ThemedText>
+              ) : null}
+            </View>
           ) : null}
 
           {receipt ? (
@@ -85,49 +148,33 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
                     borderColor: theme.border,
                   },
                 ]}>
-                {/* Brand Header */}
-                <View style={localStyles.receiptHeader}>
+                <View style={[localStyles.receiptHeader, localStyles.dashed, divider]}>
                   <View style={localStyles.brandRow}>
-                    <BrandIcon size={24} />
-                    <BrandWordmark width={78} height={24} />
+                    <BrandIcon size={22} />
+                    <ThemedText style={[localStyles.brandText, { color: theme.text }]}>2NDHAND</ThemedText>
                   </View>
-                  <View style={[localStyles.receiptBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9' }]}>
-                    <ThemedText style={[localStyles.receiptBadgeText, { color: theme.textSecondary }]}>
-                      ใบเสร็จรับเงิน
-                    </ThemedText>
-                  </View>
+                  <ThemedText style={[localStyles.receiptTitle, { color: theme.textSecondary }]}>ใบเสร็จรับเงิน</ThemedText>
                 </View>
 
-                {/* Dashed line */}
-                <View style={[localStyles.dashedDivider, { borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }]} />
-
-                {/* Metadata */}
-                <View style={localStyles.metaSection}>
-                  <Row label="เลขที่ใบเสร็จ" value={receipt.receiptNo} bold />
-                  <Row label="คำสั่งซื้อ" value={`#${receipt.orderId}`} />
-                  {issuedAt ? <Row label="วันเวลา" value={issuedAt} /> : null}
-                  <Row label="วิธีชำระ" value={receipt.paymentMethod === 'SIMULATED' || !receipt.paymentMethod ? 'ชำระเงินจำลอง' : receipt.paymentMethod} />
+                <View style={[localStyles.section, localStyles.dashed, divider]}>
+                  <ReceiptRow label="เลขที่ใบเสร็จ" value={receipt.receiptNo} strong mono />
+                  <ReceiptRow label="คำสั่งซื้อ" value={`#${receipt.orderId}`} mono />
+                  {issuedAt ? <ReceiptRow label="วันเวลา" value={issuedAt} /> : null}
+                  <ReceiptRow
+                    label="วิธีชำระ"
+                    value={receipt.paymentMethod === 'SIMULATED' || !receipt.paymentMethod ? 'ชำระเงินจำลอง' : receipt.paymentMethod}
+                  />
                 </View>
 
-                {/* Dashed line */}
-                <View style={[localStyles.dashedDivider, { borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }]} />
-
-                {/* Items & Fees */}
-                <View style={localStyles.itemsSection}>
-                  <ThemedText type="smallBold" style={{ marginBottom: 6 }}>
-                    {receipt.productName}
-                  </ThemedText>
-                  <Row label="ราคาสินค้า" value={formatBaht(receipt.itemPrice)} />
-                  <Row label="ค่าจัดส่ง" value={formatBaht(receipt.shippingFee)} />
-                  <Row label="ค่าตรวจสอบสินค้า" value={formatBaht(receipt.inspectionFee)} />
+                <View style={[localStyles.section, localStyles.dashed, divider]}>
+                  <ThemedText style={[localStyles.productName, { color: theme.text }]}>{receipt.productName}</ThemedText>
+                  <ReceiptRow label="ราคาสินค้า" value={formatBaht(receipt.itemPrice)} />
+                  <ReceiptRow label="ค่าจัดส่ง" value={formatBaht(receipt.shippingFee)} />
+                  <ReceiptRow label="ค่าตรวจสอบสินค้า" value={formatBaht(receipt.inspectionFee)} />
                 </View>
 
-                {/* Dashed line */}
-                <View style={[localStyles.dashedDivider, { borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)' }]} />
-
-                {/* Total */}
                 <View style={localStyles.totalSection}>
-                  <ThemedText style={localStyles.totalLabel}>ยอดรวม</ThemedText>
+                  <ThemedText style={[localStyles.totalLabel, { color: theme.text }]}>ยอดรวม</ThemedText>
                   <ThemedText style={localStyles.totalAmount}>{formatBaht(receipt.totalAmount)}</ThemedText>
                 </View>
 
@@ -136,13 +183,10 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
                   <View
                     style={[
                       localStyles.addressBox,
-                      {
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
-                        borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-                      },
+                      { backgroundColor: theme.backgroundElement },
                     ]}>
                     <ThemedText style={[localStyles.addressText, { color: theme.textSecondary }]}>
-                      <ThemedText style={[localStyles.addressLabel, { color: theme.text }]}>จัดส่งถึง </ThemedText>
+                      <ThemedText style={[localStyles.addressText, localStyles.addressLabel, { color: theme.text }]}>จัดส่งถึง </ThemedText>
                       {order.shippingAddress.recipientName} · {order.shippingAddress.phone}
                       {'\n'}
                       {order.shippingAddress.addressLine} {order.shippingAddress.subdistrict}{' '}
@@ -153,7 +197,7 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
                 ) : null}
 
                 {/* Disclaimer */}
-                <ThemedText style={[localStyles.disclaimer, { color: theme.textSecondary }]}>
+                <ThemedText style={[localStyles.disclaimer, { color: isDark ? '#64748b' : '#94a3b8' }]}>
                   เอกสารนี้ออกจากระบบจำลองเพื่อการทดสอบ ไม่ใช่ใบเสร็จทางภาษี
                 </ThemedText>
               </View>
@@ -173,7 +217,10 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
             </View>
           ) : null}
 
-          {/* Action Buttons matching prototype screen-order-success */}
+        </View>
+      </ScrollView>
+
+          {/* ปุ่มล่างคงที่แบบ design */}
           <View style={localStyles.actionsSection}>
             <Pressable
               accessibilityRole="button"
@@ -205,163 +252,57 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
               </ThemedText>
             </Pressable>
           </View>
-        </SafeAreaView>
-      </ScrollView>
+      </SafeAreaView>
     </Screen>
   );
 }
 
 const localStyles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  successSection: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  successCheckCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  successTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  successSubtitle: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 6,
-    maxWidth: 260,
-    lineHeight: 18,
-  },
-  receiptWrapper: {
-    marginTop: 12,
-    marginBottom: 20,
-  },
+  scrollContent: { flexGrow: 1, paddingBottom: 16 },
+  container: { flex: 1, paddingHorizontal: 20, paddingTop: 16, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  successSection: { alignItems: 'center', paddingTop: 16 },
+  successCheck: { borderRadius: 999, padding: 6, backgroundColor: 'rgba(16, 185, 129, 0.12)' },
+  successTitle: { fontFamily: Fonts.extraBold, fontSize: 18, lineHeight: 26, fontWeight: '800', textAlign: 'center', marginTop: 16 },
+  successSubtitle: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 4, maxWidth: 280 },
+  receiptWrapper: { marginTop: 20 },
   receiptCard: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
     borderWidth: 1,
     borderBottomWidth: 0,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 24,
   },
-  receiptHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 12,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  receiptBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  receiptBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  dashedDivider: {
-    borderBottomWidth: 1,
-    borderStyle: 'dashed',
-    marginVertical: 12,
-  },
-  metaSection: {
-    gap: 6,
-  },
-  itemsSection: {
-    gap: 6,
-  },
-  totalSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  totalLabel: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  totalAmount: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#10b981',
-  },
-  addressBox: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  addressText: {
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  addressLabel: {
-    fontWeight: '700',
-  },
-  disclaimer: {
-    fontSize: 10,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  zigzagEdge: {
-    marginTop: -1,
-  },
-  actionsSection: {
-    gap: 10,
-    paddingBottom: 16,
-  },
+  dashed: { borderBottomWidth: 1, borderStyle: 'dashed' },
+  receiptHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brandText: { fontSize: 12, lineHeight: 18, fontWeight: '800', letterSpacing: 0.6 },
+  receiptTitle: { fontSize: 11, lineHeight: 16, fontWeight: '600' },
+  section: { paddingVertical: 12, gap: 6 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  rowLabel: { fontSize: 12, lineHeight: 17 },
+  rowValue: { fontSize: 12, lineHeight: 17, flexShrink: 1, textAlign: 'right' },
+  productName: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  totalSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12 },
+  totalLabel: { fontSize: 14, lineHeight: 20, fontWeight: '800' },
+  totalAmount: { fontSize: 14, lineHeight: 20, fontWeight: '800', color: '#10b981' },
+  addressBox: { marginTop: 12, padding: 10, borderRadius: 12 },
+  addressText: { fontSize: 11, lineHeight: 17 },
+  addressLabel: { fontWeight: '600' },
+  disclaimer: { fontSize: 10, lineHeight: 14, textAlign: 'center', marginTop: 12 },
+  zigzagEdge: { marginTop: -1 },
+  actionsSection: { gap: 8, paddingHorizontal: 20, paddingTop: 8, paddingBottom: 20, width: '100%', maxWidth: 560, alignSelf: 'center' },
   primaryBtn: {
     backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryBtnText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  ghostBtn: {
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ghostBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  retryBtn: {
-    marginTop: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  retryBtnText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  primaryBtnText: { color: '#ffffff', fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  ghostBtn: { paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
+  ghostBtnText: { fontSize: 12, fontWeight: '600' },
+  retryBtn: { marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#059669' },
+  retryBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
 });

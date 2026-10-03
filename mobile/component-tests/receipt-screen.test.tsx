@@ -11,8 +11,9 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }));
 
+let mockAuth: { initializing?: boolean; session: unknown } = { session: { user: { id: 'buyer-test' } } };
 jest.mock('@/auth/auth-provider', () => ({
-  useAuth: () => ({ session: { user: { id: 'buyer-test' } } }),
+  useAuth: () => mockAuth,
 }));
 
 const mockDetailStore = {
@@ -41,6 +42,8 @@ const mockReceipt = {
 
 const mockOrder = {
   id: 42,
+  status: 'WAITING_SELLER_SHIP',
+  paymentStatus: 'PAID',
   shippingAddress: {
     recipientName: 'สมชาย ใจดี',
     phone: '0812345678',
@@ -54,6 +57,7 @@ const mockOrder = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuth = { session: { user: { id: 'buyer-test' } } };
   mockDetailState = {
     owner: 'buyer-test',
     orderId: 42,
@@ -92,4 +96,35 @@ test('navigates to home when clicking กลับหน้าแรก', () => 
   render(<ReceiptScreen orderId={42} />);
   fireEvent.press(screen.getByRole('button', { name: 'กลับหน้าแรก' }));
   expect(mockReplace).toHaveBeenCalledWith('/');
+});
+
+test('does not claim payment success before the persisted receipt loads', () => {
+  mockDetailState = { ...mockDetailState, receipt: null, receiptLoading: true };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.queryByText('ชำระเงินสำเร็จ')).toBeNull();
+  expect(screen.getByLabelText('กำลังโหลดใบเสร็จ')).toBeTruthy();
+});
+
+test('a receipt load error shows retry and no success claim', () => {
+  mockDetailState = { ...mockDetailState, receipt: null, receiptError: 'network-error' };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.queryByText('ชำระเงินสำเร็จ')).toBeNull();
+  expect(screen.getByText('โหลดใบเสร็จไม่สำเร็จ')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' }));
+  expect(mockDetailStore.loadReceipt).toHaveBeenCalled();
+});
+
+test('waits for session restore instead of redirecting a deep link to login', () => {
+  mockAuth = { initializing: true, session: null };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.getByText('กำลังตรวจสอบบัญชี')).toBeTruthy();
+  expect(screen.queryByText('ใบเสร็จรับเงิน')).toBeNull();
+});
+
+test('a refunded order keeps the original receipt and does not promise shipping', () => {
+  mockDetailState = { ...mockDetailState, order: { ...mockOrder, status: 'REFUNDED', paymentStatus: 'REFUNDED' } };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.getByText('฿4,000.00')).toBeTruthy();
+  expect(screen.queryByText('ผู้ขายจะส่งสินค้าเข้าตรวจสภาพก่อนส่งถึงคุณ')).toBeNull();
+  expect(screen.getByText(/คำสั่งซื้อนี้คืนเงินแล้ว/)).toBeTruthy();
 });

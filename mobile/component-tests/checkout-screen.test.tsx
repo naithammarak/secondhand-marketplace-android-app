@@ -126,10 +126,10 @@ beforeEach(() => {
 test('renders checkout with simulation language, product, address, and price summary', () => {
   render(<CheckoutScreen productId={7} />);
   expect(screen.getByText('กระเป๋าหนังแท้')).toBeTruthy();
-  expect(screen.getByText('สภาพเหมือนใหม่')).toBeTruthy();
+  expect(screen.getByLabelText('สภาพเหมือนใหม่')).toBeTruthy();
+  expect(screen.getByText('เหมือนใหม่')).toBeTruthy();
   expect(screen.getByText('ขนาด M')).toBeTruthy();
   expect(screen.getByText('ที่อยู่จัดส่ง')).toBeTruthy();
-  expect(screen.getByText('ใช้ที่อยู่ล่าสุด')).toBeTruthy();
   expect(screen.getByText('ชำระเงินจำลองสำหรับต้นแบบ')).toBeTruthy();
   expect(screen.queryByText('สแกนจ่ายด้วยแอปธนาคารใดก็ได้')).toBeNull();
   expect(screen.getByText('สรุปยอด')).toBeTruthy();
@@ -137,19 +137,19 @@ test('renders checkout with simulation language, product, address, and price sum
   expect(screen.getByRole('button', { name: 'ชำระเงิน' })).toBeTruthy();
 });
 
-test('quick-fill button populates address fields', async () => {
+test('has no address book: no prefilled address and no save-address control', () => {
   render(<CheckoutScreen productId={7} />);
-  fireEvent.press(screen.getByRole('button', { name: 'ใช้ที่อยู่ล่าสุด' }));
-  await waitFor(() => {
-    expect(screen.getByDisplayValue('สมชาย ใจดี')).toBeTruthy();
-    expect(screen.getByDisplayValue('0812345678')).toBeTruthy();
-    expect(screen.getByDisplayValue('128/9 ซอยสุขุมวิท 39')).toBeTruthy();
-  });
+  expect(screen.queryByRole('button', { name: 'ใช้ที่อยู่ล่าสุด' })).toBeNull();
+  expect(screen.queryByText('บันทึกที่อยู่นี้ไว้ใช้ครั้งถัดไป')).toBeNull();
+  expect(screen.queryByDisplayValue('สมชาย ใจดี')).toBeNull();
+  expect(screen.getByLabelText('ชื่อผู้รับ').props.value).toBe('');
 });
 
 test('submitting order invokes store.submit with form values', () => {
   render(<CheckoutScreen productId={7} />);
-  fireEvent.press(screen.getByRole('button', { name: 'ใช้ที่อยู่ล่าสุด' }));
+  fireEvent.changeText(screen.getByLabelText('ชื่อผู้รับ'), 'สมชาย ใจดี');
+  fireEvent.changeText(screen.getByLabelText('เบอร์โทรศัพท์'), '0812345678');
+  fireEvent.changeText(screen.getByLabelText('รหัสไปรษณีย์'), '10110');
   fireEvent.press(screen.getByRole('button', { name: 'ชำระเงิน' }));
   expect(mockCheckoutStore.submit).toHaveBeenCalledWith(expect.objectContaining({
     recipientName: 'สมชาย ใจดี',

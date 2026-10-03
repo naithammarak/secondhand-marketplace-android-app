@@ -2,24 +2,26 @@ import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { useAuth } from '@/auth/auth-provider';
-import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceLoginRequired } from '@/components/marketplace-login-required';
 import { ThemedText } from '@/components/themed-text';
-import { Card, errorText, Loading, Row, Screen } from '@/components/order-ui';
-import { TextField } from './wondee/primitives';
+import { errorText, Loading, Screen } from '@/components/order-ui';
+import { ProductImage, cardConditionLabels, conditionBadgeTheme } from '@/components/product-catalog-ui';
+import { EmptyState, ErrorState, Skeleton } from './wondee/primitives';
+import { Fonts, MaxContentWidth } from '@/constants/theme';
+import type { ProductCondition } from '@/services/product-catalog-service';
 import { SimulationLabel } from './wondee/status';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
@@ -30,26 +32,15 @@ import { useCheckout, useOrderDetail } from '@/orders/orders-provider';
 import { CONDITION_LABELS } from '@/services/product-service';
 import type { OrderDetailState } from '@/orders/order-detail-store';
 
-const FIELDS: { field: keyof AddressFormValues; label: string; placeholder: string; numeric?: boolean }[] = [
+const FIELDS: { field: keyof AddressFormValues; label: string; placeholder: string; numeric?: boolean; full?: boolean }[] = [
   { field: 'recipientName', label: 'ชื่อผู้รับ', placeholder: 'ชื่อ-นามสกุลผู้รับสินค้า' },
   { field: 'phone', label: 'เบอร์โทรศัพท์', placeholder: 'เช่น 0812345678', numeric: true },
-  { field: 'addressLine', label: 'ที่อยู่', placeholder: 'บ้านเลขที่ ถนน ซอย' },
+  { field: 'addressLine', label: 'ที่อยู่', placeholder: 'บ้านเลขที่ ถนน ซอย', full: true },
   { field: 'subdistrict', label: 'ตำบล/แขวง', placeholder: 'ตำบลหรือแขวง' },
   { field: 'district', label: 'อำเภอ/เขต', placeholder: 'อำเภอหรือเขต' },
   { field: 'province', label: 'จังหวัด', placeholder: 'จังหวัด' },
   { field: 'postalCode', label: 'รหัสไปรษณีย์', placeholder: '5 หลัก', numeric: true },
 ];
-
-/** Prototype prefill address */
-const CO_SAVED: AddressFormValues = {
-  recipientName: 'สมชาย ใจดี',
-  phone: '0812345678',
-  addressLine: '128/9 ซอยสุขุมวิท 39',
-  subdistrict: 'คลองตันเหนือ',
-  district: 'วัฒนา',
-  province: 'กรุงเทพมหานคร',
-  postalCode: '10110',
-};
 
 function paymentStateMessage(state: OrderDetailState): string {
   if (state.loadError) return errorText(state.loadError);
@@ -82,7 +73,6 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   const { state: detailState, store: detailStore } = useOrderDetail();
 
   const [values, setValues] = useState<AddressFormValues>(emptyAddressForm);
-  const [saveAddressForNextTime, setSaveAddressForNextTime] = useState(true);
   const openedFor = useRef<string | null>(null);
   const mounted = useRef(true);
   const paymentOperation = useRef(0);
@@ -124,15 +114,11 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   const busy = state.submitting;
   const locked = busy || state.uncertain;
   const quote = state.owner === auth.session.user.id ? state.quote : null;
+  const mutedText = isDark ? '#64748b' : '#94a3b8';
 
   const update = (field: keyof AddressFormValues, text: string) => {
     setValues(current => ({ ...current, [field]: text }));
     store.clearFieldError(field);
-  };
-
-  const useSavedAddress = () => {
-    setValues(CO_SAVED);
-    Object.keys(CO_SAVED).forEach(k => store.clearFieldError(k as keyof AddressFormValues));
   };
 
   const openExisting = () => {
@@ -224,156 +210,133 @@ function CheckoutContent({ productId }: { productId: number | null }) {
     }
   };
 
+  const conditionKey = (quote?.product.condition ?? 'UNKNOWN') as ProductCondition;
+  const badge = conditionBadgeTheme[conditionKey];
+  const productSize = quote?.product.size?.trim();
+  const barColor = isDark ? '#121622' : '#ffffff';
+
   return (
     <Screen>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <SafeAreaView style={styles.content}>
-            <MarketplaceHeader title="สั่งซื้อและชำระเงิน" back />
+      <SafeAreaView style={[styles.page, { backgroundColor: theme.background }]}>
+        {/* หัวจอแบบ design: ปุ่มกลับ + ชื่อหน้า */}
+        <View style={[styles.header, { backgroundColor: barColor, borderBottomColor: theme.border }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="กลับ"
+            hitSlop={8}
+            disabled={busy}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={styles.headerBack}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Path d="M15 19l-7-7 7-7" stroke={theme.text} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Pressable>
+          <ThemedText accessibilityRole="header" style={[styles.headerTitle, { color: theme.text }]}>
+            สั่งซื้อและชำระเงิน
+          </ThemedText>
+        </View>
 
-            {productId === null ? <ThemedText>รหัสสินค้าไม่ถูกต้อง</ThemedText> : null}
-            {state.quoteLoading ? <Loading label="กำลังโหลดราคาสินค้า" /> : null}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            {productId === null ? (
+              <EmptyState title="รหัสสินค้าไม่ถูกต้อง" detail="กรุณากลับไปเลือกสินค้าจากหน้ารายการ" />
+            ) : null}
+
+            {state.quoteLoading ? (
+              <View style={{ gap: 14 }}>
+                <Skeleton height={80} label="กำลังโหลดราคาสินค้า" />
+                <Skeleton height={224} />
+                <Skeleton height={128} />
+              </View>
+            ) : null}
 
             {state.quoteError ? (
-              <Card>
-                <ThemedText accessibilityLiveRegion="polite">{errorText(state.quoteError, state.quoteCode)}</ThemedText>
+              <ErrorState
+                icon={state.quoteError === 'network-error' ? 'offline' : 'alert'}
+                title={state.existingOrderId !== null ? 'มีคำสั่งซื้อสินค้านี้อยู่แล้ว' : 'โหลดข้อมูลการสั่งซื้อไม่สำเร็จ'}
+                detail={errorText(state.quoteError, state.quoteCode)}>
                 {state.existingOrderId !== null ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="ดูคำสั่งซื้อเดิม"
                     onPress={openExisting}
-                    style={styles.primaryActionButton}>
-                    <ThemedText style={styles.primaryActionButtonText}>ดูคำสั่งซื้อเดิม</ThemedText>
+                    style={styles.stateButton}>
+                    <ThemedText style={styles.stateButtonText}>ดูคำสั่งซื้อเดิม</ThemedText>
                   </Pressable>
                 ) : (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="ลองใหม่อีกครั้ง"
                     onPress={() => { void store.reloadQuote(); }}
-                    style={styles.outlineActionButton}>
-                    <ThemedText style={[styles.outlineActionButtonText, { color: theme.text }]}>ลองใหม่อีกครั้ง</ThemedText>
+                    style={styles.stateButton}>
+                    <ThemedText style={styles.stateButtonText}>ลองใหม่อีกครั้ง</ThemedText>
                   </Pressable>
                 )}
-              </Card>
+              </ErrorState>
             ) : null}
 
             {quote ? (
               <>
-                {/* 1. Product Summary Card matching prototype screen-checkout */}
-                <View style={[styles.cardBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <View style={styles.productRow}>
-                    <View style={styles.productImageContainer}>
-                      {productImageUrl ? (
-                        <Image source={{ uri: productImageUrl }} style={styles.productImage} resizeMode="cover" />
-                      ) : (
-                        <ThemedText style={{ fontSize: 24 }}>👜</ThemedText>
-                      )}
-                    </View>
-                    <View style={styles.productInfo}>
-                      <ThemedText numberOfLines={2} style={styles.productName}>
-                        {quote.product.name}
-                      </ThemedText>
-                      <View style={styles.productMetaRow}>
-                        <View style={styles.conditionPill}>
-                          <ThemedText style={styles.conditionPillText}>
-                            {CONDITION_LABELS[quote.product.condition] ?? 'เหมือนใหม่'}
+                {/* สินค้า */}
+                <View style={[styles.card, styles.productCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={styles.productImage}>
+                    <ProductImage
+                      uri={productImageUrl}
+                      width={56}
+                      height={56}
+                      borderRadius={12}
+                      accessibilityLabel={`รูปสินค้า ${quote.product.name}`}
+                    />
+                  </View>
+                  <View style={styles.productInfo}>
+                    <ThemedText numberOfLines={2} style={[styles.productName, { color: theme.text }]}>
+                      {quote.product.name}
+                    </ThemedText>
+                    <View style={styles.productMetaRow}>
+                      {badge && CONDITION_LABELS[quote.product.condition] ? (
+                        <View
+                          accessibilityLabel={CONDITION_LABELS[quote.product.condition]}
+                          style={[styles.conditionBadge, { backgroundColor: badge.bg }]}>
+                          <ThemedText style={[styles.conditionBadgeText, { color: badge.text }]}>
+                            {cardConditionLabels[conditionKey]}
                           </ThemedText>
                         </View>
-                        <ThemedText style={[styles.productSize, { color: theme.textSecondary }]}>
-                          ขนาด {quote.product.size}
-                        </ThemedText>
-                      </View>
-                    </View>
-                    <ThemedText style={styles.productPrice}>{formatBaht(quote.itemPrice)}</ThemedText>
-                  </View>
-                </View>
-
-                {/* 2. Shipping Address Card */}
-                <View style={[styles.cardBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <ThemedText style={styles.sectionHeaderTitle}>ที่อยู่จัดส่ง</ThemedText>
-
-                  {/* Feature: Use Saved Address Quick-fill */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="ใช้ที่อยู่ล่าสุด"
-                    onPress={useSavedAddress}
-                    style={[
-                      styles.savedAddressBtn,
-                      {
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.06)',
-                        borderColor: isDark ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.3)',
-                      },
-                    ]}>
-                    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" style={{ marginTop: 2 }}>
-                      <Path
-                        d="M12 21s-7-6.2-7-11a7 7 0 1 1 14 0c0 4.8-7 11-7 11z"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                      />
-                      <Path d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#10b981" strokeWidth={2} />
-                    </Svg>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <ThemedText style={styles.savedAddressTitle}>ใช้ที่อยู่ล่าสุด</ThemedText>
-                        <ThemedText style={styles.savedAddressTag}>แตะเพื่อใส่ข้อมูล</ThemedText>
-                      </View>
-                      <ThemedText style={[styles.savedAddressDetail, { color: theme.textSecondary }]}>
-                        {CO_SAVED.recipientName} · {CO_SAVED.phone}
-                        {'\n'}
-                        {CO_SAVED.addressLine} {CO_SAVED.subdistrict} {CO_SAVED.district} {CO_SAVED.province} {CO_SAVED.postalCode}
-                      </ThemedText>
-                    </View>
-                  </Pressable>
-
-                  {/* 7 Address Input Fields */}
-                  <View style={styles.fieldsContainer}>
-                    {FIELDS.map(({ field, label, placeholder, numeric }) => {
-                      const error = state.fieldErrors[field];
-                      return (
-                        <TextField
-                          key={field}
-                          label={label}
-                          error={error}
-                          value={values[field]}
-                          onChangeText={text => update(field, text)}
-                          placeholder={placeholder}
-                          editable={!locked}
-                          keyboardType={numeric ? 'number-pad' : 'default'}
-                        />
-                      );
-                    })}
-                  </View>
-
-                  {/* Save address checkbox */}
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: saveAddressForNextTime }}
-                    onPress={() => setSaveAddressForNextTime(prev => !prev)}
-                    style={styles.checkboxRow}>
-                    <View
-                      style={[
-                        styles.checkbox,
-                        {
-                          backgroundColor: saveAddressForNextTime ? '#10b981' : 'transparent',
-                          borderColor: saveAddressForNextTime ? '#10b981' : theme.border,
-                        },
-                      ]}>
-                      {saveAddressForNextTime ? (
-                        <ThemedText style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>✓</ThemedText>
+                      ) : null}
+                      {productSize ? (
+                        <ThemedText style={[styles.productSize, { color: mutedText }]}>ขนาด {productSize}</ThemedText>
                       ) : null}
                     </View>
-                    <ThemedText style={[styles.checkboxLabel, { color: theme.textSecondary }]}>
-                      บันทึกที่อยู่นี้ไว้ใช้ครั้งถัดไป
-                    </ThemedText>
-                  </Pressable>
+                  </View>
+                  <ThemedText style={[styles.productPrice, { color: theme.text }]}>{formatBaht(quote.itemPrice)}</ThemedText>
+                </View>
+
+                {/* ที่อยู่จัดส่ง: กรอกใหม่ทุกครั้ง (สมุดที่อยู่ไม่อยู่ใน release นี้) */}
+                <View style={[styles.card, styles.cardPadded, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>ที่อยู่จัดส่ง</ThemedText>
+                  <View style={styles.fieldGrid}>
+                    {FIELDS.map(({ field, label, placeholder, numeric, full }) => (
+                      <AddressField
+                        key={field}
+                        label={label}
+                        placeholder={placeholder}
+                        numeric={numeric}
+                        full={full}
+                        error={state.fieldErrors[field]}
+                        value={values[field]}
+                        editable={!locked}
+                        maxLength={field === 'postalCode' ? 5 : undefined}
+                        onChangeText={text => update(field, text)}
+                      />
+                    ))}
+                  </View>
 
                   {state.submitError ? (
-                    <View style={[styles.noticeBox, { borderColor: theme.danger }]}>
-                      <ThemedText type="small" style={{ color: theme.danger }} accessibilityLiveRegion="polite">
+                    <View style={styles.errorNotice}>
+                      <ThemedText style={styles.errorNoticeText} accessibilityLiveRegion="polite">
                         {errorText(state.submitError, state.submitCode)}
                       </ThemedText>
                       {state.uncertain ? (
-                        <ThemedText type="small">
+                        <ThemedText style={[styles.errorNoticeHint, { color: theme.textSecondary }]}>
                           ยังไม่ทราบว่าคำสั่งซื้อถูกสร้างหรือไม่ กด &quot;ตรวจสอบและลองอีกครั้ง&quot; ระบบจะส่งคำขอเดิม ไม่สร้างคำสั่งซื้อซ้ำ
                         </ThemedText>
                       ) : null}
@@ -381,195 +344,167 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                   ) : null}
                 </View>
 
-                {/* 3. Payment Method Card */}
-                <View style={[styles.cardBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <ThemedText style={styles.sectionHeaderTitle}>วิธีชำระเงิน</ThemedText>
-                  <View
-                    style={[
-                      styles.paymentMethodCard,
-                      {
-                        borderColor: '#10b981',
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.08)' : 'rgba(16, 185, 129, 0.04)',
-                      },
-                    ]}>
-                    <View style={styles.demoPaymentBadge}>
-                      <ThemedText style={styles.demoPaymentBadgeText}>DEMO</ThemedText>
+                {/* วิธีชำระเงิน: จำลองเท่านั้น ไม่มี QR/บัญชีธนาคาร */}
+                <View style={[styles.card, styles.cardPadded, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>วิธีชำระเงิน</ThemedText>
+                  <View style={styles.paymentMethod}>
+                    <View style={styles.paymentBadge}>
+                      <ThemedText style={styles.paymentBadgeText}>DEMO</ThemedText>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <ThemedText style={styles.paymentMethodTitle}>ชำระเงินจำลองสำหรับต้นแบบ</ThemedText>
-                      <ThemedText style={[styles.paymentMethodSubtitle, { color: theme.textSecondary }]}>
+                      <ThemedText style={[styles.paymentTitle, { color: theme.text }]}>ชำระเงินจำลองสำหรับต้นแบบ</ThemedText>
+                      <ThemedText style={[styles.paymentSubtitle, { color: mutedText }]}>
                         ไม่มีการตัดเงินจริง ไม่มี QR หรือบัญชีธนาคารให้โอน
                       </ThemedText>
                     </View>
-                    <View style={styles.paymentCheckedCircle}>
-                      <ThemedText style={{ color: '#ffffff', fontSize: 12, fontWeight: '800' }}>✓</ThemedText>
+                    <View style={styles.paymentCheck}>
+                      <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                        <Path d="M5 13l4 4L19 7" stroke="#ffffff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
                     </View>
                   </View>
                 </View>
 
-                {/* 4. Price Summary Card */}
-                <View style={[styles.cardBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                  <ThemedText style={styles.sectionHeaderTitle}>สรุปยอด</ThemedText>
-                  <Row label="ราคาสินค้า" value={formatBaht(quote.itemPrice)} />
-                  <Row label="ค่าจัดส่ง" value={formatBaht(quote.shippingFee)} />
-                  <Row label="ค่าตรวจสอบสินค้า" value={formatBaht(quote.inspectionFee)} />
-                  <View style={styles.inspectionNoticeRow}>
-                    <View style={styles.infoBadge}>
-                      <ThemedText style={styles.infoBadgeText}>i</ThemedText>
+                {/* สรุปยอด: ตัวเลขจาก quote ของเซิร์ฟเวอร์ */}
+                <View style={[styles.card, styles.cardPadded, { backgroundColor: theme.surface, borderColor: theme.border, gap: 8 }]}>
+                  <ThemedText style={[styles.sectionTitle, { color: theme.text, marginBottom: 2 }]}>สรุปยอด</ThemedText>
+                  {[
+                    ['ราคาสินค้า', quote.itemPrice],
+                    ['ค่าจัดส่ง', quote.shippingFee],
+                    ['ค่าตรวจสอบสินค้า', quote.inspectionFee],
+                  ].map(([label, amount]) => (
+                    <View key={label} style={styles.summaryRow}>
+                      <ThemedText style={[styles.summaryLabel, { color: theme.textSecondary }]}>{label}</ThemedText>
+                      <ThemedText style={[styles.summaryValue, { color: theme.text }]}>{formatBaht(amount)}</ThemedText>
                     </View>
-                    <ThemedText style={[styles.inspectionNoticeText, { color: theme.textSecondary }]}>
+                  ))}
+                  <View style={styles.inspectionNote}>
+                    <View style={[styles.infoDot, { borderColor: mutedText }]}>
+                      <ThemedText style={[styles.infoDotText, { color: mutedText }]}>i</ThemedText>
+                    </View>
+                    <ThemedText style={[styles.inspectionNoteText, { color: mutedText }]}>
                       สินค้าจะถูกตรวจสภาพก่อนส่งถึงคุณ
                     </ThemedText>
                   </View>
-                  <View style={[styles.summaryDivider, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]} />
-                  <Row label="ยอดชำระทั้งหมด" value={formatBaht(quote.totalAmount)} bold />
+                  <View style={[styles.summaryRow, styles.summaryTotal]}>
+                    <ThemedText style={[styles.totalLabel, { color: theme.text }]}>ยอดชำระทั้งหมด</ThemedText>
+                    <ThemedText style={styles.totalValue}>{formatBaht(quote.totalAmount)}</ThemedText>
+                  </View>
                 </View>
               </>
             ) : null}
+          </ScrollView>
+        </KeyboardAvoidingView>
 
-            {/* Back action */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="กลับ"
-              onPress={() => router.back()}
-              disabled={busy}
-              style={styles.backButton}>
-              <ThemedText style={[styles.backButtonText, { color: theme.textSecondary }]}>กลับ</ThemedText>
-            </Pressable>
-          </SafeAreaView>
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* Sticky Bottom Bar matching prototype co-bar */}
-      {quote ? (
-        <View
-          style={[
-            styles.bottomStickyBar,
-            {
-              backgroundColor: theme.surface,
-              borderColor: theme.border,
-            },
-          ]}>
-          <View style={{ flex: 1 }}>
-            <ThemedText style={[styles.bottomBarLabel, { color: theme.textSecondary }]}>ยอดชำระ</ThemedText>
-            <ThemedText style={styles.bottomBarAmount}>{formatBaht(quote.totalAmount)}</ThemedText>
+        {/* แถบล่าง */}
+        {quote ? (
+          <View style={[styles.bottomBar, { backgroundColor: barColor, borderTopColor: theme.border }]}>
+            <View style={{ flex: 1 }}>
+              <ThemedText style={[styles.bottomLabel, { color: mutedText }]}>ยอดชำระ</ThemedText>
+              <ThemedText style={styles.bottomAmount}>{formatBaht(quote.totalAmount)}</ThemedText>
+            </View>
+            {state.existingOrderId !== null ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="ดูคำสั่งซื้อเดิม"
+                onPress={openExisting}
+                style={styles.payButton}>
+                <ThemedText style={styles.payButtonText}>ดูคำสั่งซื้อเดิม</ThemedText>
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="ชำระเงิน"
+                disabled={busy}
+                onPress={() => { void store.submit(values); }}
+                style={({ pressed }) => [
+                  styles.payButton,
+                  { backgroundColor: pressed ? '#10b981' : '#059669', opacity: busy ? 0.8 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] },
+                ]}>
+                {busy ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <ThemedText style={styles.payButtonText}>
+                    {state.uncertain ? 'ตรวจสอบและลองอีกครั้ง' : 'ชำระเงิน'}
+                  </ThemedText>
+                )}
+              </Pressable>
+            )}
           </View>
+        ) : null}
+      </SafeAreaView>
 
-          {state.existingOrderId !== null ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="ดูคำสั่งซื้อเดิม"
-              onPress={openExisting}
-              style={styles.payButton}>
-              <ThemedText style={styles.payButtonText}>ดูคำสั่งซื้อเดิม</ThemedText>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="ชำระเงิน"
-              disabled={busy}
-              onPress={() => { void store.submit(values); }}
-              style={({ pressed }) => [
-                styles.payButton,
-                { opacity: pressed || busy ? 0.8 : 1 },
-              ]}>
-              {busy ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <ThemedText style={styles.payButtonText}>
-                  {state.uncertain ? 'ตรวจสอบและลองอีกครั้ง' : 'ชำระเงิน'}
-                </ThemedText>
-              )}
-            </Pressable>
-          )}
-        </View>
-      ) : null}
-
-      {/* Simulated-payment panel: explicit simulated actions only, no payment QR or bank details. */}
+      {/* แผงชำระเงินจำลอง: มีแต่ปุ่มจำลองผลที่เรียก API จริง ไม่มี QR หรือข้อมูลธนาคาร */}
       <Modal visible={qrModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.qrPanel,
-              {
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-              },
-            ]}>
+          <View style={[styles.sheet, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
             <View style={styles.sheetHandle} />
+            <ThemedText style={[styles.sheetTitle, { color: theme.text }]}>ชำระเงินจำลอง</ThemedText>
+            <ThemedText style={styles.sheetAmount}>{quote ? formatBaht(quote.totalAmount) : ''}</ThemedText>
+            <View style={{ alignSelf: 'center', marginTop: 8 }}>
+              <SimulationLabel text="ชำระเงินจำลองสำหรับต้นแบบ" />
+            </View>
+            <ThemedText style={[styles.sheetText, { color: theme.textSecondary }]}>
+              เลือกผลการชำระจำลองด้านล่าง ระบบบันทึกการชำระและออกใบเสร็จเมื่อเซิร์ฟเวอร์ยืนยันเท่านั้น
+            </ThemedText>
+            <ThemedText style={[styles.sheetNote, { color: mutedText }]}>
+              ไม่มีการเชื่อมต่อธนาคารและไม่มีเงินจริงถูกตัด สถานะหมดอายุต้องยืนยันจากเซิร์ฟเวอร์
+            </ThemedText>
 
-            <View style={styles.qrMainContent}>
-                <ThemedText style={styles.qrTitle}>ชำระเงินจำลอง</ThemedText>
-                <ThemedText style={styles.qrAmount}>
-                  {quote ? formatBaht(quote.totalAmount) : ''}
+            {paymentMessage ? (
+              <View style={styles.failNotice}>
+                <ThemedText style={styles.failNoticeText} accessibilityLiveRegion="polite">
+                  {paymentMessage}
                 </ThemedText>
+              </View>
+            ) : null}
 
-                <View style={{ alignSelf: 'center' }}><SimulationLabel text="ชำระเงินจำลองสำหรับต้นแบบ" /></View>
-                <ThemedText style={[styles.qrInstructions, { color: theme.textSecondary }]}>
-                  เลือกผลการชำระจำลองด้านล่าง ระบบบันทึกการชำระและออกใบเสร็จเมื่อเซิร์ฟเวอร์ยืนยันเท่านั้น
-                </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="ชำระภายหลัง"
+              disabled={isSimulating}
+              onPress={handlePayLater}
+              style={[styles.payLaterButton, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText style={[styles.payLaterText, { color: theme.text }]}>ชำระภายหลัง</ThemedText>
+            </Pressable>
 
-                <ThemedText style={[styles.qrSubnote, { color: theme.textSecondary }]}>
-                  ไม่มีการเชื่อมต่อธนาคารและไม่มีเงินจริงถูกตัด สถานะหมดอายุต้องยืนยันจากเซิร์ฟเวอร์
-                </ThemedText>
-
-                {paymentMessage ? (
-                  <View style={styles.failNotice}>
-                    <ThemedText style={styles.failNoticeText} accessibilityLiveRegion="polite">
-                      {paymentMessage}
-                    </ThemedText>
-                  </View>
-                ) : null}
-
-                {/* Pay Later Action */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="ชำระภายหลัง"
-                  disabled={isSimulating}
-                  onPress={handlePayLater}
-                  style={[styles.payLaterBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#f1f5f9' }]}>
-                  <ThemedText style={styles.payLaterBtnText}>ชำระภายหลัง</ThemedText>
-                </Pressable>
-
-                {/* Demo controls call the real simulated-payment endpoint. */}
-                <View style={[styles.simToolbar, { borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
-                  <ThemedText style={[styles.simLabel, { color: theme.textSecondary }]}>ผลการสาธิต:</ThemedText>
-                  {detailState.owner === auth.session?.user.id
-                    && detailState.orderId === activeOrderId
-                    && detailState.uncertain ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="ตรวจสอบผลคำขอเดิม ใช้รหัสเดิม"
-                        disabled={isSimulating || detailState.paying !== null}
-                        onPress={() => { void runSimulation('SUCCESS'); }}
-                        style={styles.simBtnSuccess}>
-                        {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
-                          <ThemedText style={styles.simBtnSuccessText}>ตรวจสอบและลองคำขอเดิม</ThemedText>
-                        )}
-                      </Pressable>
-                    ) : (
-                      <>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="จำลองจ่ายสำเร็จ"
-                          disabled={isSimulating || detailState.paying !== null}
-                          onPress={() => { void runSimulation('SUCCESS'); }}
-                          style={styles.simBtnSuccess}>
-                          {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
-                            <ThemedText style={styles.simBtnSuccessText}>จำลองจ่ายสำเร็จ</ThemedText>
-                          )}
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="จำลองจ่ายล้มเหลว"
-                          disabled={isSimulating || detailState.paying !== null}
-                          onPress={() => { void runSimulation('FAILED'); }}
-                          style={styles.simBtnFail}>
-                          <ThemedText style={styles.simBtnFailText}>จำลองจ่ายล้มเหลว</ThemedText>
-                        </Pressable>
-                      </>
+            <View style={[styles.simToolbar, { borderTopColor: 'rgba(100, 116, 139, 0.3)' }]}>
+              <ThemedText style={[styles.simLabel, { color: mutedText }]}>ผลการสาธิต:</ThemedText>
+              {detailState.owner === auth.session?.user.id
+                && detailState.orderId === activeOrderId
+                && detailState.uncertain ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="ตรวจสอบผลคำขอเดิม ใช้รหัสเดิม"
+                    disabled={isSimulating || detailState.paying !== null}
+                    onPress={() => { void runSimulation('SUCCESS'); }}
+                    style={[styles.simButton, styles.simSuccess]}>
+                    {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
+                      <ThemedText style={[styles.simButtonText, { color: '#10b981' }]}>ตรวจสอบและลองคำขอเดิม</ThemedText>
                     )}
-                </View>
+                  </Pressable>
+                ) : (
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="จำลองจ่ายสำเร็จ"
+                      disabled={isSimulating || detailState.paying !== null}
+                      onPress={() => { void runSimulation('SUCCESS'); }}
+                      style={[styles.simButton, styles.simSuccess]}>
+                      {isSimulating ? <ActivityIndicator size="small" color="#10b981" /> : (
+                        <ThemedText style={[styles.simButtonText, { color: '#10b981' }]}>จำลองจ่ายสำเร็จ</ThemedText>
+                      )}
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="จำลองจ่ายล้มเหลว"
+                      disabled={isSimulating || detailState.paying !== null}
+                      onPress={() => { void runSimulation('FAILED'); }}
+                      style={[styles.simButton, styles.simFail]}>
+                      <ThemedText style={[styles.simButtonText, { color: '#f43f5e' }]}>จำลองจ่ายล้มเหลว</ThemedText>
+                    </Pressable>
+                  </>
+                )}
             </View>
           </View>
         </View>
@@ -578,370 +513,199 @@ function CheckoutContent({ productId }: { productId: number | null }) {
   );
 }
 
+function AddressField({
+  label, placeholder, value, error, numeric, full, editable, maxLength, onChangeText,
+}: {
+  label: string; placeholder: string; value: string; error?: string; numeric?: boolean; full?: boolean;
+  editable: boolean; maxLength?: number; onChangeText(text: string): void;
+}) {
+  const theme = useTheme();
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={[styles.field, full && styles.fieldFull]}>
+      <ThemedText style={[styles.fieldLabel, { color: theme.textSecondary }]}>{label}</ThemedText>
+      <TextInput
+        accessibilityLabel={label}
+        accessibilityHint={error}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textSecondary}
+        editable={editable}
+        maxLength={maxLength}
+        keyboardType={numeric ? 'number-pad' : 'default'}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={[
+          styles.fieldInput,
+          {
+            color: theme.text,
+            backgroundColor: theme.backgroundElement,
+            borderColor: error ? '#f43f5e' : focused ? '#10b981' : theme.border,
+          },
+        ]}
+      />
+      {error ? (
+        <ThemedText accessibilityRole="alert" style={styles.fieldError}>{error}</ThemedText>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 100,
+  page: { flex: 1, width: '100%', alignSelf: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
   },
+  headerBack: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    gap: 12,
-  },
-  cardBox: {
-    borderRadius: 16,
-    borderWidth: 1,
     padding: 16,
-    gap: 12,
-  },
-  sectionHeaderTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  productRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  productImageContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#fde68a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  productImage: {
+    paddingBottom: 24,
+    gap: 14,
     width: '100%',
-    height: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
   },
-  productInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  productName: {
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  productMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
-  },
-  conditionPill: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  conditionPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#10b981',
-  },
-  productSize: {
-    fontSize: 11,
-  },
-  productPrice: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  savedAddressBtn: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    borderRadius: 14,
+  card: { borderRadius: 16, borderWidth: 1 },
+  cardPadded: { padding: 16, gap: 12 },
+  sectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  stateButton: { marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: '#059669' },
+  stateButtonText: { fontSize: 12, fontWeight: '700', color: '#ffffff' },
+
+  productCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  productImage: { width: 56, height: 56, borderRadius: 12, overflow: 'hidden' },
+  productInfo: { flex: 1, minWidth: 0 },
+  productName: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  productMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  conditionBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  conditionBadgeText: { fontSize: 10, lineHeight: 14, fontWeight: '800' },
+  productSize: { fontSize: 11, lineHeight: 16 },
+  productPrice: { fontSize: 14, lineHeight: 20, fontWeight: '800' },
+
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 10 },
+  field: { flexBasis: '45%', flexGrow: 1, minWidth: 0 },
+  fieldFull: { flexBasis: '100%' },
+  fieldLabel: { fontSize: 11, lineHeight: 16, fontWeight: '600', marginBottom: 4 },
+  fieldInput: {
     borderWidth: 1,
-    padding: 12,
-  },
-  savedAddressTitle: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 12,
-    fontWeight: '700',
+    minHeight: 42,
   },
-  savedAddressTag: {
-    fontSize: 10,
-    color: '#10b981',
-    fontWeight: '700',
-  },
-  savedAddressDetail: {
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 2,
-  },
-  fieldsContainer: {
-    gap: 10,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxLabel: {
-    fontSize: 12,
-  },
-  noticeBox: {
+  fieldError: { fontSize: 10, lineHeight: 14, color: '#f43f5e', marginTop: 4 },
+  errorNotice: {
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.3)',
+    backgroundColor: 'rgba(244, 63, 94, 0.1)',
     gap: 4,
   },
-  paymentMethodCard: {
+  errorNoticeText: { fontSize: 11, lineHeight: 16, color: '#f43f5e' },
+  errorNoticeHint: { fontSize: 11, lineHeight: 16 },
+
+  paymentMethod: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 12,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 2,
+    borderColor: '#10b981',
   },
-  demoPaymentBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: '#0369a1',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  demoPaymentBadgeText: {
-    color: '#ffffff',
-    fontSize: 9,
-    fontWeight: '800',
-    textAlign: 'center',
-    lineHeight: 11,
-  },
-  paymentMethodTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  paymentMethodSubtitle: {
-    fontSize: 11,
-  },
-  paymentCheckedCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#10b981',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inspectionNoticeRow: {
+  paymentBadge: { width: 36, height: 36, borderRadius: 8, backgroundColor: '#0c4a6e', alignItems: 'center', justifyContent: 'center' },
+  paymentBadgeText: { color: '#ffffff', fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  paymentTitle: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  paymentSubtitle: { fontSize: 10, lineHeight: 14 },
+  paymentCheck: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#10b981', alignItems: 'center', justifyContent: 'center' },
+
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  summaryLabel: { fontSize: 12, lineHeight: 17 },
+  summaryValue: { fontSize: 12, lineHeight: 17 },
+  inspectionNote: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  infoDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  infoDotText: { fontSize: 8, lineHeight: 10, fontWeight: '700' },
+  inspectionNoteText: { fontSize: 10, lineHeight: 14 },
+  summaryTotal: { paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(100, 116, 139, 0.2)' },
+  totalLabel: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  totalValue: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: '#10b981' },
+
+  bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  infoBadge: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: '#94a3b8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  infoBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#94a3b8',
-  },
-  inspectionNoticeText: {
-    fontSize: 11,
-  },
-  summaryDivider: {
-    borderBottomWidth: 1,
-    marginVertical: 4,
-  },
-  bottomStickyBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
   },
-  bottomBarLabel: {
-    fontSize: 11,
-  },
-  bottomBarAmount: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#10b981',
-  },
+  bottomLabel: { fontSize: 10, lineHeight: 14 },
+  bottomAmount: { fontFamily: Fonts.extraBold, fontSize: 18, lineHeight: 24, fontWeight: '800', color: '#10b981' },
   payButton: {
     backgroundColor: '#059669',
-    borderRadius: 14,
-    paddingHorizontal: 28,
-    height: 48,
+    borderRadius: 12,
+    paddingHorizontal: 36,
+    paddingVertical: 12,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#064e3b',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 10,
     elevation: 4,
   },
-  payButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  primaryActionButton: {
-    backgroundColor: '#059669',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  primaryActionButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  outlineActionButton: {
-    borderWidth: 1,
-    borderColor: '#94a3b8',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  outlineActionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  backButton: {
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  backButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  payButtonText: { color: '#ffffff', fontSize: 14, lineHeight: 20, fontWeight: '700' },
 
-  /* Modal Sheet Styles */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  qrPanel: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.55)', justifyContent: 'flex-end' },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderTopWidth: 1,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 32,
+    paddingBottom: 24,
     alignItems: 'center',
   },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(148, 163, 184, 0.4)',
-    marginBottom: 16,
-  },
-  qrMainContent: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  qrTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  qrAmount: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#10b981',
-    marginTop: 4,
-  },
-  qrCodeWrapper: {
-    marginVertical: 14,
-  },
-  qrInstructions: {
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  qrSubnote: {
-    fontSize: 11,
-    marginTop: 4,
-  },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(100, 116, 139, 0.4)', marginBottom: 12 },
+  sheetTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  sheetAmount: { fontFamily: Fonts.extraBold, fontSize: 24, lineHeight: 32, fontWeight: '800', color: '#10b981', marginTop: 4 },
+  sheetText: { fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 12 },
+  sheetNote: { fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 4 },
   failNotice: {
-    marginTop: 10,
+    marginTop: 12,
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: 'rgba(244, 63, 94, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(244, 63, 94, 0.3)',
     width: '100%',
   },
-  failNoticeText: {
-    color: '#f43f5e',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  payLaterBtn: {
-    marginTop: 14,
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  payLaterBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  failNoticeText: { color: '#f43f5e', fontSize: 11, lineHeight: 16, textAlign: 'center' },
+  payLaterButton: { marginTop: 12, width: '100%', paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
+  payLaterText: { fontSize: 12, fontWeight: '600' },
   simToolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 14,
+    marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
     borderStyle: 'dashed',
     width: '100%',
   },
-  simLabel: {
-    fontSize: 10,
-  },
-  simBtnSuccess: {
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  simBtnSuccessText: {
-    color: '#10b981',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  simBtnFail: {
-    borderWidth: 1,
-    borderColor: 'rgba(244, 63, 94, 0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  simBtnFailText: {
-    color: '#f43f5e',
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  simLabel: { fontSize: 9, lineHeight: 12 },
+  simButton: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  simSuccess: { borderColor: 'rgba(16, 185, 129, 0.5)' },
+  simFail: { borderColor: 'rgba(244, 63, 94, 0.5)' },
+  simButtonText: { fontSize: 10, lineHeight: 14, fontWeight: '600' },
 });
