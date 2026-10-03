@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { useAuth } from '@/auth/auth-provider';
 import { useTheme } from '@/hooks/use-theme';
 import { Colors } from '@/constants/theme';
@@ -27,7 +27,6 @@ export function CatalogAccountButton() {
         ]}
       >
         <MarketplaceIcon name="orders" color="#10b981" size={19} />
-        <View style={styles.badgeDot} />
       </Pressable>
     );
   }
@@ -75,14 +74,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#f59e0b',
   },
 });

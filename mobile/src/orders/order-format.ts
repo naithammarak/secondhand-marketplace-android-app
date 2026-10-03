@@ -80,3 +80,21 @@ export function formatDateTime(value: string | null | undefined): string | null 
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleString('th-TH');
 }
+
+/** Remaining time "2 วัน 03:04:05" from a server deadline. Null when missing/invalid/passed. */
+export function formatLongRemaining(deadline: string | null | undefined, now: number): string | null {
+  if (!deadline) return null;
+  const at = new Date(deadline).getTime();
+  if (Number.isNaN(at)) return null;
+  const total = Math.ceil((at - now) / 1000);
+  if (total <= 0) return null;
+  const days = Math.floor(total / 86400);
+  const rest = total % 86400;
+  const clock = [Math.floor(rest / 3600), Math.floor((rest % 3600) / 60), rest % 60].map(part => String(part).padStart(2, '0')).join(':');
+  return days > 0 ? `${days} วัน ${clock}` : clock;
+}
+
+/** Count Unicode code points the same way the server's length checks do. */
+export function textLength(value: string): number {
+  return [...value.trim()].length;
+}

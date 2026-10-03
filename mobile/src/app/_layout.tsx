@@ -61,6 +61,16 @@ function AppLayout() {
                 <Stack.Screen name="orders/index" />
                 <Stack.Screen name="orders/[orderId]" />
                 <Stack.Screen name="receipt/[orderId]" />
+                <Stack.Screen name="orders/[orderId]/inspection" />
+                <Stack.Screen name="orders/[orderId]/ship-to-center" />
+                <Stack.Screen name="orders/[orderId]/review" />
+                <Stack.Screen name="certificates/[token]" />
+                {/* Staff route names supplied to UI2; screens and guards live in UI2 modules. */}
+                <Stack.Screen name="inspections/index" />
+                <Stack.Screen name="inspections/[inspectionId]" />
+                <Stack.Screen name="admin-deliveries" />
+                <Stack.Screen name="admin-certificates/index" />
+                <Stack.Screen name="admin-certificates/[certificateId]" />
               </Stack>
               {!splashFinished ? (
                 <SplashScreenView onFinish={() => setSplashFinished(true)} />
