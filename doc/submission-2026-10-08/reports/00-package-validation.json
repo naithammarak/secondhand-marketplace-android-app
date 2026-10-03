@@ -1,12 +1,12 @@
 {
-  "checked_at_utc": "2026-10-02T16:55:52.588466+00:00",
+  "checked_at_utc": "2026-10-03T13:13:12.127492+00:00",
   "scope_prepared_on": "2026-10-01",
   "scope": "documentation validation only; no application acceptance",
   "task_files": 14,
   "dependency_graph": "acyclic",
   "requirements": 59,
   "qa_cases": 28,
-  "local_links_checked": 269,
+  "local_links_checked": 299,
   "errors": [],
   "result": "PASS"
 }

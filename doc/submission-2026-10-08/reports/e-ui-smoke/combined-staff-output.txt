@@ -1,0 +1,96 @@
+PASS  Inspector: actual center receipt without provider/courier event, private evidence, positive result issues certificate before Buyer decision
+PASS  Inspector outbound: carrier/tracking only, server leg, replay vs changed payload, Admin TO_BUYER event is not receipt, Buyer report before deadline
+PASS  Admin non-receipt: list → audited review → issued refs → REFUND full 1350, no Seller payout; invented ref 422; second resolution 409
+PASS  Admin non-receipt RELEASE: one settlement, Seller 1140 / commission 60, no Buyer refund
+PASS  Negative result: no certificate/decision, outbound TO_SELLER; Admin event on return does not refund; audited Admin return exception commits actual return then full refund
+PASS  D certificate: public JSON has 4 fields/no PII; Admin revoke with reason + replay; REVOKED publicly; result and settlement history unchanged
+PASS  Wrong role/account: Buyer/Seller/Inspector blocked from Admin and staff actions; other Buyer cannot read delivery
+{
+  "api": "http://127.0.0.1:8091",
+  "passed": 7,
+  "total": 7,
+  "results": [
+    {
+      "name": "Inspector: actual center receipt without provider/courier event, private evidence, positive result issues certificate before Buyer decision",
+      "result": "PASS"
+    },
+    {
+      "name": "Inspector outbound: carrier/tracking only, server leg, replay vs changed payload, Admin TO_BUYER event is not receipt, Buyer report before deadline",
+      "result": "PASS"
+    },
+    {
+      "name": "Admin non-receipt: list → audited review → issued refs → REFUND full 1350, no Seller payout; invented ref 422; second resolution 409",
+      "result": "PASS"
+    },
+    {
+      "name": "Admin non-receipt RELEASE: one settlement, Seller 1140 / commission 60, no Buyer refund",
+      "result": "PASS"
+    },
+    {
+      "name": "Negative result: no certificate/decision, outbound TO_SELLER; Admin event on return does not refund; audited Admin return exception commits actual return then full refund",
+      "result": "PASS"
+    },
+    {
+      "name": "D certificate: public JSON has 4 fields/no PII; Admin revoke with reason + replay; REVOKED publicly; result and settlement history unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "Wrong role/account: Buyer/Seller/Inspector blocked from Admin and staff actions; other Buyer cannot read delivery",
+      "result": "PASS"
+    }
+  ],
+  "evidence": {
+    "positive": {
+      "orderId": 8,
+      "workId": 3,
+      "certificate": "CERT-220B18F155D548F99C06AABF",
+      "publicUrl": "https://cert.example.test/certificates/0go26hGh9hU4zgAP1vNiCWCXg9_kFj6fEbWwD77cWgc"
+    },
+    "disputedRefund": 8,
+    "refund": {
+      "buyer": {
+        "id": 3,
+        "kind": "REFUND",
+        "source": "ADMIN_RESOLUTION",
+        "reason": "DELIVERY_REVIEW_REFUND",
+        "currency": "THB",
+        "settled_at": "2026-10-03T13:08:12.684676+00:00",
+        "simulated": true,
+        "fulfillment_policy": "EXTERNAL_V2",
+        "held_amount": "1350.00",
+        "buyer_refund": "1350.00",
+        "retained_inspection_amount": "0.00",
+        "retained_shipping_amount": "0.00"
+      },
+      "seller": {
+        "id": 3,
+        "kind": "REFUND",
+        "source": "ADMIN_RESOLUTION",
+        "reason": "DELIVERY_REVIEW_REFUND",
+        "currency": "THB",
+        "settled_at": "2026-10-03T13:08:12.684676+00:00",
+        "simulated": true,
+        "fulfillment_policy": "EXTERNAL_V2",
+        "seller_payout": "0.00",
+        "commission_amount": "0.00"
+      }
+    },
+    "release": {
+      "id": 4,
+      "kind": "RELEASE",
+      "source": "ADMIN_RESOLUTION",
+      "reason": "DELIVERY_REVIEW_RELEASE",
+      "currency": "THB",
+      "settled_at": "2026-10-03T13:08:13.162304+00:00",
+      "simulated": true,
+      "fulfillment_policy": "EXTERNAL_V2",
+      "seller_payout": "1140.00",
+      "commission_amount": "60.00"
+    },
+    "adminReturn": {
+      "status": "REFUNDED",
+      "pending": false,
+      "refund": "1350.00"
+    }
+  }
+}

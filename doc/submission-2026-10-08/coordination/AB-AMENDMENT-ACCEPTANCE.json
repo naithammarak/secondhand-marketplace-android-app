@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "status": "ACCEPTED_AB_AMENDMENT_LOCAL_CODE_API",
+  "acceptedAtUtc": "2026-10-03T06:11:36.785820+00:00",
+  "acceptedBy": "planner overall / 01a0cec4-e5e6-7ca0-8a94-7bd520ede95a",
+  "scope": [
+    "R1 contract/schema and active documentation",
+    "R2 external-shipping/recipient receipt and scoped audited demo APIs",
+    "R3 cause/policy-aware settlement/refund",
+    "R4 six lifecycle jobs and deadline/retry guards"
+  ],
+  "pr": {
+    "number": 130,
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/130",
+    "state": "OPEN",
+    "draft": true,
+    "head": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "base": "b531bd1372c0d26b8492fa28ff29ab20a85d7578",
+    "headBranch": "codex/ab-external-shipping-2026-10-02",
+    "baseBranch": "codex/bcd-integration-2026-10-02",
+    "remoteMatchesReviewedHead": true,
+    "githubApprovalOrMergeClaimed": false
+  },
+  "review": {
+    "status": "PASS_AB_AMENDMENT_LOCAL_CODE_API",
+    "threadId": "01a0f870-e988-7c91-871e-91f776debde4",
+    "model": "gpt-6.1-sol",
+    "reasoning": "xhigh",
+    "reviewedHead": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "report": "/home/tmk/.codex/worktrees/ab-amendment-review-20261002/secondhand-marketplace-android-app/doc/submission-2026-10-08/reports/AB-AMENDMENT-REVIEW-PR130-0ffff2d.md",
+    "results": "/home/tmk/.codex/worktrees/ab-amendment-review-20261002/secondhand-marketplace-android-app/review-evidence/results-current.json",
+    "finalVerification": "/home/tmk/.codex/worktrees/ab-amendment-review-20261002/secondhand-marketplace-android-app/review-evidence/final-verification.json",
+    "originalRequestChangesPreserved": true,
+    "resolvedFinding": "AB-RF01"
+  },
+  "plannerVerification": {
+    "report": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app/doc/submission-2026-10-08/reports/AB-AMENDMENT-PLANNER-VERIFICATION.json",
+    "result": "PASS",
+    "matchedEvidenceArtifactHashes": 23,
+    "matchedPublishedBackendHashes": 25,
+    "matchedHistoricalRecordHashes": 8,
+    "junitCountsChecked": true,
+    "sourceAncestryAndTrackedPreservationChecked": true,
+    "newAppTestSuiteRerunByPlanner": false
+  },
+  "migration": {
+    "head": "r01e20261002",
+    "predecessor": "c08f20261002",
+    "observedAlembicHeads": "r01e20261002 (head)",
+    "singleHead": true
+  },
+  "checks": {
+    "independentFocusedPostgreSQLPassed": 183,
+    "focusedFailed": 0,
+    "focusedSkipped": 0,
+    "defaultPassed": 627,
+    "defaultSkipped": 406,
+    "defaultFailed": 0,
+    "foundationReviewSchemaFixtureQualification": "71 cases include synthetic terminal schema fixtures; actual journeys proven separately by54 external +45 legacy +4 composed API cases.",
+    "mobileChanged": false,
+    "mobileChecksRerun": false
+  },
+  "acceptanceCriteria": [
+    {
+      "id": "AB-01",
+      "result": "PASS",
+      "evidence": "Remote exact0ffff2d/baseb531, ancestry, clean tracked-source hashes and published diff check; mobile diff empty; isolated reviewer checkout/owned PostgreSQL only."
+    },
+    {
+      "id": "AB-02",
+      "result": "PASS",
+      "evidence": "3 current migration tests with exact old PR129 API histories and full historical snapshots, safe downgrade/re-upgrade, new-policy refusal; current54-case fresh migrations/invalid guards/RLS/actual partial-refund unsafe downgrade."
+    },
+    {
+      "id": "AB-03",
+      "result": "PASS",
+      "evidence": "54 normal new-policy cases exercise no-Courier/no-photo inbound/center/Buyer/Seller paths, correct assigned/owning actors, destinations/replay/wrong roles;45 legacy cases preserve original proof rules."
+    },
+    {
+      "id": "AB-04",
+      "result": "PASS",
+      "evidence": "Current54-case trusted configured Admin demo events, server timestamps/dedup/source/tuple constraints, wrong leg/actor/terminal denial; center event and return event cannot substitute actual recipient receipt; scoped Admin return evidence."
+    },
+    {
+      "id": "AB-05",
+      "result": "PASS",
+      "evidence": "Actual new reject/timeout1200 refund retained100+50, negative/no-ship/Admin full1350, salecommission60/payout1140, original receipt equality, one settlement, refund review denial;45+4 actual legacy/API regressions plus71 schema/review cases."
+    },
+    {
+      "id": "AB-06",
+      "result": "PASS",
+      "evidence": "54 cases cover eligible positive atomic window, negative direct returns, just-before/at/after cutoff, fresh wallclock after real PostgreSQL waits, both opposing winners, SYSTEM timeout without Buyer impersonation/dispatch/refund. Independent6 include missing/71h/73h first-window fault rejection, full rollback and same-key healthy retry."
+    },
+    {
+      "id": "AB-07",
+      "result": "PASS",
+      "evidence": "Current54 cases cover trusted event72h receipt window, manual receipt with late status, tracking/no-event noAUTO, report-before-event and strict receipt/report/AUTO boundaries/races; legacy/inspection durations preserved."
+    },
+    {
+      "id": "AB-08",
+      "result": "PASS",
+      "evidence": "Current54 actual durable-return settlement failure/conserving-invalid-allocation rejection and eventual exactly-once retry, opposing decisions/receipt/report/two runners; source retains one locked settlement service and immutable policy/cause."
+    },
+    {
+      "id": "AB-09",
+      "result": "PASS",
+      "evidence": "Independent6 prove fresh-process failed-first/skip-locked progress then healthy successor/wrap recovery, full table+sequence dry-run purity, process advisory ownership/idempotent restart.54 job tests and45 legacy runner tests; six-job CLI dry-run exits0. JobIDs1-4/5 preserved; new result job6; no result HTTP endpoint or scheduler activation."
+    },
+    {
+      "id": "AB-10",
+      "result": "PASS_WITH_PLANNER_PACKET_QUALIFICATION",
+      "evidence": "Active DOC-01/SRS/requirements/QA/tasks/diagram sources/API mapping align; C/D normal new and legacy journeys/role-redacted reads. Package14tasks/59requirements/28QA/269links passes after explicit current planner-state overlay; Git-only clone has one absent planning-state link. No new UI/native/document visual acceptance claimed."
+    }
+  ],
+  "documentQualification": "Published active API/spec documents are accepted with the current planner packet. A Git-only clone omits the live coordination/EXTERNAL-SHIPPING-STATE.json planning link; copy that nonsecret current file as a separate docs overlay, without overwriting published active specs. No application correction was requested.",
+  "downstream": {
+    "EBackendBasePr": 130,
+    "EBackendBaseHead": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "singleMigrationHead": "r01e20261002",
+    "apiMapping": "/home/tmk/.codex/worktrees/ab-amendment-20261002/secondhand-marketplace-android-app/doc/submission-2026-10-08/reports/EXTERNAL-SHIPPING-API-MAPPING.md",
+    "handoff": "coordination/E-NEXT-HANDOFF.md",
+    "latestESourceStillRequired": true,
+    "plannerHandoff": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app/doc/submission-2026-10-08/coordination/E-NEXT-HANDOFF.md"
+  },
+  "remainingFullReleaseGates": [
+    "E/R5 latest UI integrated and independently reviewed against accepted backend",
+    "R6/F frozen combined source, authorized HTTPS/Auth/private Storage/shared migration and scheduler rollout",
+    "Final APK and real Android/Google/account-switch/camera/HTTPS QR and business journey evidence",
+    "Final aligned submission documents/test report/demo data/slides/backup recording/rehearsal and teacher scope disposition"
+  ],
+  "sharedDatabaseTouched": false,
+  "liveServersChanged": false,
+  "migrationAppliedToSharedDatabase": false,
+  "schedulerActivated": false,
+  "fullReleaseReady": false,
+  "plannerPacketValidation": {
+    "scope": "documentation only",
+    "report": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app/doc/submission-2026-10-08/reports/00-package-validation.json",
+    "result": "PASS",
+    "taskFiles": 14,
+    "requirements": 59,
+    "qaCases": 28,
+    "localLinksChecked": 185
+  }
+}

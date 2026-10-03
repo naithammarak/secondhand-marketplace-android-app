@@ -1,0 +1,8 @@
+PASS component-tests/order-detail-screen.test.tsx
+PASS component-tests/fulfillment-binding.test.tsx
+
+Test Suites: 2 passed, 2 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        3.349 s
+Ran all test suites matching /component-tests\/fulfillment-binding.test.tsx|component-tests\/order-detail-screen.test.tsx/i.
