@@ -1,2 +1,2 @@
-import { InspectionScreen } from '@/components/inspection/connected-screens';
-export default function ConnectedScreen() { return <InspectionScreen kind="admin" />; }
+import { AdminDeliveryScreen } from '@/components/staff/admin-delivery';
+export default function AdminDeliveriesRoute() { return <AdminDeliveryScreen />; }

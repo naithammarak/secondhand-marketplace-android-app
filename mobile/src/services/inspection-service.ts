@@ -1,6 +1,7 @@
 /** INSPECT-02/03 API client. Private image URLs require a Bearer token. */
 
 import type { OrderStatus } from './order-service';
+import type { FulfillmentPolicy, ShipmentLeg } from '../fulfillment/contract';
 
 export type InspectionResult = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export type EvidenceFile = { uri: string; name: string; type: string; size?: number; file?: unknown };
@@ -27,9 +28,28 @@ export type WorkDetail = {
   summary: string | null; inspected_at: string | null;
   evidence: Evidence[]; certificate: Certificate | null;
   next_action: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | 'SHIP_TO_BUYER' | null;
+} & ResultWindow & {
+  /** Inspector projection (PR130). Optional so older fixtures stay valid. */
+  inspection_overdue_escalated_at?: string | null;
+  buyer_decision?: { decision: BuyerDecision; decided_at: string } | null;
+  fulfillment?: { id: number; leg: ShipmentLeg; status: string } | null;
+  can_create_fulfillment?: boolean;
 };
-export type BuyerResult = Pick<WorkDetail, 'order_id' | 'order_status' | 'result' | 'summary' | 'inspected_at' | 'evidence' | 'certificate' | 'next_action'> & {
+/**
+ * Positive result window (EXTERNAL_V2): availability + 72h, server clock. Null for
+ * negative/legacy. At the deadline `can_decide` turns false before a worker records
+ * `result_timed_out_at`; never fabricate a timeout or decision locally.
+ */
+export type ResultWindow = {
+  fulfillment_policy?: FulfillmentPolicy;
+  result_available_at?: string | null;
+  result_decision_deadline_at?: string | null;
+  result_timed_out_at?: string | null;
+};
+export type BuyerResult = Pick<WorkDetail, 'order_id' | 'order_status' | 'result' | 'summary' | 'inspected_at' | 'evidence' | 'certificate' | 'next_action'> & ResultWindow & {
   decision: BuyerDecisionRecord | null; can_decide: boolean;
+  /** Server clock at read time; use only to correct an informative countdown. */
+  server_time?: string;
 };
 
 export type CourierShipment = { id: number; order_id: number; status: string; courier_delivered_at: string | null; proofs: Evidence[] };
@@ -143,7 +163,8 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
     list: (token: string, offset = 0, status?: OrderStatus) => request<{ items: WorkDetail[]; total: number; limit: number; offset: number }>(
       token, `/inspections?limit=20&offset=${offset}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
     detail: (token: string, id: number) => request<WorkDetail>(token, `/inspections/${id}`),
-    receive: (token: string, id: number, note: string | null, key: string) => request<WorkDetail>(token, `/inspections/${id}/receive`, json({ note }, key)),
+    receive: (token: string, id: number, note: string | null, key: string) =>
+      request<WorkDetail>(token, `/inspections/${id}/receive`, json(note?.trim() ? { note: note.trim() } : {}, key)),
     start: (token: string, id: number, key: string) => request<WorkDetail>(token, `/inspections/${id}/start`, json({}, key)),
     upload: (token: string, id: number, file: EvidenceFile, key: string) => {
       const form = new FormData();
