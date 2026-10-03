@@ -15,22 +15,22 @@ test('revoked certificate sheet retains public lookup but never shows a valid se
 test('revoked certificate does not offer a new decision even with stale capability flags', () => {
   render(<BuyerResultView {...props} outcome="PASS" certificate={{ ...cert, status: 'REVOKED' }} onDecision={jest.fn()} />);
   expect(screen.getByText('ใบรับรองนี้ถูกเพิกถอน')).toBeTruthy();
-  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('ยอมรับผลการตรวจ')).toBeNull();
 });
 test.each(['NOT_AS_DESCRIBED','FAKE'] as InspectionOutcome[])('%s never offers certificate or decisions, even with malformed positive flags', outcome => {
   const decide = jest.fn(); render(<BuyerResultView {...props} outcome={outcome} onDecision={decide} />);
   expect(screen.queryByText('ดูใบรับรองผลการตรวจ')).toBeNull();
-  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('ยอมรับผลการตรวจ')).toBeNull();
   expect(decide).not.toHaveBeenCalled();
 });
 test('a decision requires all server capabilities and a separate confirmation', () => {
   const decide = jest.fn(); const view = render(<BuyerResultView {...props} outcome="PASS" canDecide={false} onDecision={decide} />);
-  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('ยอมรับผลการตรวจ')).toBeNull();
   view.rerender(<BuyerResultView {...props} outcome="PASS" onDecision={decide} />);
-  fireEvent.press(screen.getByText('ยอมรับผลตรวจ'));
+  fireEvent.press(screen.getByText('ยอมรับผลการตรวจ'));
   expect(decide).not.toHaveBeenCalled();
   expect(screen.getAllByText(/ไม่ใช่การยืนยันรับสินค้า/).length).toBeGreaterThan(0);
-  fireEvent.press(screen.getByText('ยืนยันยอมรับผลตรวจ'));
+  fireEvent.press(screen.getByText('ยืนยันยอมรับผลการตรวจ'));
   expect(decide).toHaveBeenCalledWith('CONFIRM');
 });
 test('public certificate capability is independent and no QR is invented', () => {
@@ -65,12 +65,12 @@ test('inspection finalization uses only currently available selected evidence an
 
 test('reject reason is optional, trimmed, bounded, and requires confirmation', () => {
   const decide = jest.fn(); render(<BuyerResultView {...props} outcome="PASS" onDecision={decide} />);
-  fireEvent.press(screen.getByText('ไม่ยอมรับผลตรวจ'));
-  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)'), 'ก'.repeat(501));
-  fireEvent.press(screen.getByText('ยืนยันไม่ยอมรับผลตรวจ'));
+  fireEvent.press(screen.getByText('ปฏิเสธผลการตรวจและส่งคืน'));
+  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ปฏิเสธ (ไม่บังคับ)'), 'ก'.repeat(501));
+  fireEvent.press(screen.getByText('ยืนยันปฏิเสธผลการตรวจและส่งคืน'));
   expect(decide).not.toHaveBeenCalled();
-  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)'), '  สภาพไม่ตรงที่คาด  ');
-  fireEvent.press(screen.getByText('ยืนยันไม่ยอมรับผลตรวจ'));
+  fireEvent.changeText(screen.getByLabelText('เหตุผลที่ปฏิเสธ (ไม่บังคับ)'), '  สภาพไม่ตรงที่คาด  ');
+  fireEvent.press(screen.getByText('ยืนยันปฏิเสธผลการตรวจและส่งคืน'));
   expect(decide).toHaveBeenCalledWith('REJECT', 'สภาพไม่ตรงที่คาด');
 });
 test('shipping accepts the contract boundary of one character after trimming', () => {
@@ -83,16 +83,16 @@ test('shipping accepts the contract boundary of one character after trimming', (
 
 test('positive decision fails closed when its certificate is absent', () => {
   render(<BuyerResultView {...props} outcome="PASS" certificate={null} onDecision={jest.fn()} />);
-  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('ยอมรับผลการตรวจ')).toBeNull();
 });
 
 test('a saved rejection shows its recorded reason and return next step without decision controls', () => {
   render(<BuyerResultView {...props} outcome="PASS" canDecide={false} nextAction="RETURN_TO_SELLER"
     recordedDecision={{ decision: 'REJECT', reason: 'สภาพไม่ตรง', decidedAt: '2026-09-29T00:00:00Z' }} onDecision={jest.fn()} />);
-  expect(screen.getByText('บันทึกคำตัดสิน: ไม่ยอมรับผลตรวจ')).toBeTruthy();
+  expect(screen.getByText('บันทึกคำตัดสิน: ปฏิเสธผลการตรวจและส่งคืน')).toBeTruthy();
   expect(screen.getByText('เหตุผล: สภาพไม่ตรง')).toBeTruthy();
   expect(screen.getByText(/ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย/)).toBeTruthy();
-  expect(screen.queryByText('ยอมรับผลตรวจ')).toBeNull();
+  expect(screen.queryByText('ยอมรับผลการตรวจ')).toBeNull();
   expect(screen.queryByText('การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้')).toBeNull();
 });
 
@@ -102,6 +102,6 @@ test.each(['NOT_AS_DESCRIBED', 'FAKE'] as const)('negative result %s cannot subm
   expect(screen.queryByText('ยอมรับตามสภาพจริง')).toBeNull();
   expect(screen.queryByText('ปฏิเสธ · คืนเงิน')).toBeNull();
   expect(screen.queryByText(/72 ชม/)).toBeNull();
-  expect(screen.getByText(/รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน/)).toBeTruthy();
+  expect(screen.getByText(/ไม่มีใบรับรองและไม่เปิดให้ยอมรับผลตรวจ/)).toBeTruthy();
   expect(decide).not.toHaveBeenCalled();
 });

@@ -78,11 +78,11 @@ test('buyer result submits a confirmed decision and displays the saved decision 
   mockParams = { orderId: '42' };
   render(<InspectionScreen kind="result" />);
   await screen.findByText('ผลตรวจตรงตามรายการ');
-  fireEvent.press(screen.getByText('ยอมรับผลตรวจ'));
-  fireEvent.press(screen.getByText('ยืนยันยอมรับผลตรวจ'));
+  fireEvent.press(screen.getByText('ยอมรับผลการตรวจ'));
+  fireEvent.press(screen.getByText('ยืนยันยอมรับผลการตรวจ'));
   await waitFor(() => expect(mockService.decideBuyerInspection).toHaveBeenCalledWith('current', 42, { decision: 'CONFIRM' }));
   await waitFor(() => expect(mockService.getBuyerResult).toHaveBeenCalledTimes(2));
-  expect(await screen.findByText('บันทึกคำตัดสิน: ยอมรับผลตรวจ')).toBeTruthy();
+  expect(await screen.findByText('บันทึกคำตัดสิน: ยอมรับผลการตรวจ')).toBeTruthy();
   expect(screen.getByText(/ขั้นตอนถัดไปคือจัดส่งสินค้าไปยังผู้ซื้อ/)).toBeTruthy();
   expect(screen.getByText(/ยังไม่ใช่การยืนยันว่าได้รับสินค้าแล้ว/)).toBeTruthy();
   expect(screen.queryByText('การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้')).toBeNull();

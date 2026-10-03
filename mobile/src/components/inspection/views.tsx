@@ -2,13 +2,14 @@
  * Integration must supply owner-authorized data and idempotent mutation callbacks.
  */
 import { useState, type ReactNode } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Linking, Pressable, Share, View } from 'react-native';
 import { Image, type ImageSource } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
 import { Button, Card, Loading, Row } from '../order-ui';
 import { ThemedText } from '../themed-text';
 import { WondeeMascot, type MascotVariant } from '../wondee/brand';
 import { ConfirmationSheet, EmptyState, ImageViewer, TextField } from '../wondee/primitives';
+import { ServerDeadline } from '../wondee/status';
 
 export type InspectionOutcome = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export const outcomes: Record<InspectionOutcome, { label: string; variant: MascotVariant; tone: 'success' | 'warning' | 'info' | 'danger' }> = {
@@ -23,8 +24,8 @@ export type BuyerDecisionData = { decision: 'CONFIRM' | 'REJECT'; reason: string
 export function UnavailableInspection({ title = 'บริการตรวจสินค้ายังไม่พร้อมใช้งาน' }: { title?: string }) {
   return <Card><EmptyState title={title} detail="คุณยังดูสถานะคำสั่งซื้อและใบเสร็จที่มีอยู่ได้ กรุณากลับมาตรวจสอบบริการนี้อีกครั้ง" /></Card>;
 }
-export function SellerShipView({ orderId, productName, deadline, busy = false, error, onSubmit }: {
-  orderId: number; productName: string; deadline?: string | null; busy?: boolean; error?: string | null;
+export function SellerShipView({ orderId, productName, paidAt, busy = false, error, onSubmit, children }: {
+  orderId: number; productName: string; paidAt?: string | null; busy?: boolean; error?: string | null; children?: ReactNode;
   onSubmit?: (data: { carrier: string; tracking_number: string }) => void;
 }) {
   const theme = useTheme();
@@ -58,18 +59,15 @@ export function SellerShipView({ orderId, productName, deadline, busy = false, e
       }}>
         <View style={{ flex: 1 }}>
           <ThemedText type="smallBold">ต้องส่งสินค้าภายใน</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">ภายใน 3 วันหลังผู้ซื้อชำระเงิน</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">72 ชั่วโมงหลังผู้ซื้อชำระเงิน{paidAt ? ` (ชำระเมื่อ ${new Date(paidAt).toLocaleString('th-TH')})` : ''} ถ้าไม่ส่งตามกำหนด ระบบจะคืนเงินผู้ซื้อเต็มจำนวน</ThemedText>
         </View>
-        <ThemedText style={{ fontSize: 16, fontWeight: '800', color: theme.warning }}>
-          {deadline ? new Date(deadline).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '3 วัน'}
-        </ThemedText>
       </View>
 
       {/* Inspection center address */}
       <Card>
         <ThemedText type="subtitle">ส่งไปที่</ThemedText>
         <ThemedText type="small" themeColor="textSecondary" style={{ lineHeight: 20 }}>
-          ศูนย์ตรวจสอบ 2NDHAND · 99/9 อาคารตรวจสอบ ชั้น 2 ถ.รัชดาภิเษก แขวงดินแดง เขตดินแดง กรุงเทพมหานคร 10400 · โทร 02-000-0000
+          ศูนย์ตรวจสอบ 2NDHAND ตามที่อยู่ที่ผู้ดูแลเดโมแจ้ง (ระบบยังไม่มีข้อมูลที่อยู่ศูนย์ให้แสดงในแอป)
         </ThemedText>
       </Card>
 
@@ -81,6 +79,8 @@ export function SellerShipView({ orderId, productName, deadline, busy = false, e
         <ThemedText type="small" themeColor="textSecondary">🚫 อย่าใส่ของอื่นที่ไม่ได้ลงประกาศ</ThemedText>
       </Card>
 
+      {children}
+
       {/* Carrier and tracking form */}
       <Card>
         <ThemedText type="subtitle">ระบุข้อมูลการจัดส่ง</ThemedText>
@@ -88,7 +88,7 @@ export function SellerShipView({ orderId, productName, deadline, busy = false, e
           label="ผู้ให้บริการขนส่ง"
           value={carrier}
           onChangeText={setCarrier}
-          placeholder="เช่น ไปรษณีย์ไทย, Flash Express, Kerry"
+          placeholder="ชื่อบริการขนส่งที่ใช้จริง (ระบุได้ทุกบริการ)"
           editable={!busy}
           error={attempted && !valid ? 'ทั้งสองช่องต้องมี 1–100 ตัวอักษร' : undefined}
         />
@@ -108,10 +108,11 @@ export function SellerShipView({ orderId, productName, deadline, busy = false, e
           busy={busy}
           onPress={() => {
             setAttempted(true);
+            // Server accepts any carrier/tracking text trimmed to 1–100 characters; no format normalization.
             if (valid) onSubmit?.({ carrier: carrier.trim(), tracking_number: tracking.trim() });
           }}
         />
-        {!onSubmit && <ThemedText type="small" themeColor="textSecondary">บริการแจ้งส่งยังไม่พร้อมใช้งาน</ThemedText>}
+        {!onSubmit && <ThemedText type="small" themeColor="textSecondary">บันทึกที่อยู่รับคืนก่อน จึงแจ้งส่งสินค้าเข้าศูนย์ได้</ThemedText>}
       </Card>
 
       {/* Escrow protection note */}
@@ -175,7 +176,6 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
   certificate: CertificateData | null; outcome: InspectionOutcome; enabled: boolean; visible: boolean; onClose(): void;
 }) {
   const theme = useTheme();
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const eligible = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
   const publicReady = enabled && certificate && (() => {
     try {
@@ -184,17 +184,8 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
     } catch { return false; }
   })();
 
-  const handleSavePhoto = () => {
-    setToastMessage('บันทึกรูปใบรับรองลงเครื่องแล้ว');
-    setTimeout(() => setToastMessage(null), 2500);
-  };
-
   const handleShare = () => {
-    if (certificate?.publicUrl) {
-      void Linking.openURL(certificate.publicUrl).catch(() => undefined);
-    }
-    setToastMessage(`คัดลอกลิงก์ 2ndhand.app/c/${certificate?.number ?? ''} แล้ว`);
-    setTimeout(() => setToastMessage(null), 2500);
+    if (certificate?.publicUrl) void Share.share({ message: certificate.publicUrl, url: certificate.publicUrl }).catch(() => undefined);
   };
 
   return <ConfirmationSheet visible={visible} title="ใบรับรองผลการตรวจ" onClose={onClose}>
@@ -263,65 +254,21 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
           </ThemedText>
         </View>
 
-        {/* QR Section */}
         {publicReady ? (
           <View style={{ alignItems: 'center', gap: 8 }}>
             {certificate.qrSource ? (
               <Image source={certificate.qrSource} style={{ width: 160, height: 160, alignSelf: 'center' }} contentFit="contain" accessibilityLabel="QR เปิดใบรับรองสาธารณะ" />
-            ) : (
-              <View accessibilityLabel="QR เปิดใบรับรองสาธารณะ" style={{ width: 140, height: 140, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}>
-                <ThemedText style={{ fontSize: 48 }}>📱</ThemedText>
-              </View>
-            )}
+            ) : null}
+            <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }} selectable>{certificate.publicUrl}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-              สแกนเพื่อตรวจสอบใบรับรองนี้ได้ทุกที่ ไม่ต้องเข้าสู่ระบบ
+              เปิดลิงก์นี้เพื่อตรวจสอบใบรับรองได้โดยไม่ต้องเข้าสู่ระบบ
             </ThemedText>
             <Button label="เปิดใบรับรองสาธารณะ" onPress={() => { void Linking.openURL(certificate.publicUrl); }} />
+            <Button label="แชร์ลิงก์ใบรับรอง" onPress={handleShare} />
           </View>
         ) : (
-          <ThemedText style={{ textAlign: 'center' }}>หน้าใบรับรองสาธารณะและ QR ยังไม่พร้อมใช้งาน</ThemedText>
+          <ThemedText style={{ textAlign: 'center' }}>หน้าใบรับรองสาธารณะยังไม่พร้อมใช้งาน</ThemedText>
         )}
-
-        {/* Action Buttons: Save Photo & Share */}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="บันทึกรูป"
-            onPress={handleSavePhoto}
-            style={{
-              flex: 1,
-              paddingVertical: 12,
-              borderRadius: 12,
-              backgroundColor: theme.backgroundElement,
-              borderWidth: 1,
-              borderColor: theme.border,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            <ThemedText style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>⬇ บันทึกรูป</ThemedText>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="แชร์ลิงก์"
-            onPress={handleShare}
-            style={{
-              flex: 1,
-              paddingVertical: 12,
-              borderRadius: 12,
-              backgroundColor: '#059669',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-            <ThemedText style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>🔗 แชร์ลิงก์</ThemedText>
-          </Pressable>
-        </View>
-
-        {toastMessage ? (
-          <View style={{ padding: 10, borderRadius: 10, backgroundColor: '#059669', alignItems: 'center' }}>
-            <ThemedText style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>{toastMessage}</ThemedText>
-          </View>
-        ) : null}
       </View>
     ) : (
       <ThemedText>ไม่มีใบรับรองสำหรับผลการตรวจนี้</ThemedText>
@@ -329,12 +276,16 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
   </ConfirmationSheet>;
 }
 export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], certificate = null, nextAction, recordedDecision = null,
-  certificatePublicHtml = false, certificateDecision = false, canDecide = false, busy, error, onDecision }: {
+  certificatePublicHtml = false, certificateDecision = false, canDecide = false, busy, error, onDecision,
+  decisionDeadline = null, serverTime = null, timedOutAt = null, policy = null, onDeadlineReached, errorAction }: {
   outcome: InspectionOutcome; summary: string; inspectedAt: string; photos?: InspectionPhoto[];
   certificate?: CertificateData | null; nextAction: 'WAIT_BUYER_DECISION' | 'RETURN_TO_SELLER' | 'SHIP_TO_BUYER' | null;
   recordedDecision?: BuyerDecisionData | null;
   certificatePublicHtml?: boolean; certificateDecision?: boolean; canDecide?: boolean; busy?: boolean; error?: string;
   onDecision?(decision: 'CONFIRM' | 'REJECT', reason?: string | null): void;
+  /** Server result window (EXTERNAL_V2). Informative countdown only; the server decides eligibility. */
+  decisionDeadline?: string | null; serverTime?: string | null; timedOutAt?: string | null;
+  policy?: 'EXTERNAL_V2' | 'LEGACY_V1' | null; onDeadlineReached?(): void; errorAction?: ReactNode;
 }) {
   const theme = useTheme();
   const info = outcomes[outcome];
@@ -345,14 +296,16 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
   const validReason = [...reason.trim()].length <= 500;
   const positive = outcome === 'PASS' || outcome === 'MINOR_ISSUE';
   const allowed = positive && !!certificate && certificate.status !== 'REVOKED' && certificateDecision && canDecide && nextAction === 'WAIT_BUYER_DECISION' && !!onDecision;
-  const nextActionLabel = nextAction === 'RETURN_TO_SELLER'
-    ? 'ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย ติดตามความคืบหน้าจากคำสั่งซื้อ'
+  const nextActionLabel = timedOutAt
+    ? 'หมดเวลาตัดสินใจ ระบบจะดำเนินการส่งคืนผู้ขาย ไม่มีการยอมรับผลตรวจแทนคุณ'
+    : nextAction === 'RETURN_TO_SELLER'
+    ? (positive ? 'ขั้นตอนถัดไปคือส่งสินค้าคืนผู้ขาย ติดตามความคืบหน้าจากคำสั่งซื้อ' : 'ผลตรวจไม่ผ่าน สินค้าจะถูกส่งคืนผู้ขาย และคืนเงินเต็มจำนวนตามนโยบายหลังผู้ขายรับคืนจริง')
     : nextAction === 'SHIP_TO_BUYER'
       ? 'ขั้นตอนถัดไปคือจัดส่งสินค้าไปยังผู้ซื้อ การยอมรับผลตรวจยังไม่ใช่การยืนยันว่าได้รับสินค้าแล้ว'
       : nextAction === 'WAIT_BUYER_DECISION'
-        ? (positive
-          ? 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ'
-          : 'ผลตรวจไม่ผ่านเกณฑ์ โปรดเลือกว่าจะขอคืนเงินหรือรับสินค้าตามสภาพจริง')
+        ? (decisionDeadline
+          ? 'โปรดยอมรับหรือปฏิเสธผลตรวจภายในเวลาที่แสดง หากไม่ตอบ ระบบจะเปลี่ยนเป็นขั้นตอนส่งคืนผู้ขาย'
+          : 'โปรดอ่านรายงานและหลักฐานก่อนตัดสินใจเกี่ยวกับผลตรวจ')
         : 'ยังไม่มีข้อมูลขั้นตอนถัดไปจากระบบ';
   return <View style={{ gap: 16 }}>
     <Card>
@@ -364,33 +317,6 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
         <ThemedText type="small" themeColor="textSecondary">
           ตรวจเมื่อ {new Date(inspectedAt).toLocaleString('th-TH')} · ศูนย์ตรวจสอบ 2NDHAND
         </ThemedText>
-      </View>
-    </Card>
-
-    {/* 3 Inspection Checklist Items matching prototype brChecks */}
-    <Card>
-      <ThemedText type="subtitle">หัวข้อการตรวจสอบ</ThemedText>
-      <View style={{ gap: 8, marginTop: 4 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
-          <ThemedText type="small" themeColor="textSecondary">ความแท้ของสินค้า</ThemedText>
-          <ThemedText type="smallBold" style={{ color: outcome !== 'FAKE' ? '#059669' : '#DC2626' }}>
-            {outcome !== 'FAKE' ? '✓ ของแท้' : '✗ ไม่แท้'}
-          </ThemedText>
-        </View>
-        <View style={{ height: 1, backgroundColor: theme.border }} />
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
-          <ThemedText type="small" themeColor="textSecondary">สภาพสินค้า</ThemedText>
-          <ThemedText type="smallBold" style={{ color: outcome === 'PASS' ? '#059669' : outcome === 'MINOR_ISSUE' ? '#D97706' : '#DC2626' }}>
-            {outcome === 'PASS' ? '✓ ตรงตามที่ประกาศ' : outcome === 'MINOR_ISSUE' ? '⚠️ มีตำหนิเล็กน้อย' : '✗ ต่ำกว่าที่ประกาศ'}
-          </ThemedText>
-        </View>
-        <View style={{ height: 1, backgroundColor: theme.border }} />
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 }}>
-          <ThemedText type="small" themeColor="textSecondary">ตรงกับรายละเอียดในประกาศ</ThemedText>
-          <ThemedText type="smallBold" style={{ color: outcome !== 'NOT_AS_DESCRIBED' ? '#059669' : '#D97706' }}>
-            {outcome !== 'NOT_AS_DESCRIBED' ? '✓ ตรง' : '✗ ไม่ตรง'}
-          </ThemedText>
-        </View>
       </View>
     </Card>
 
@@ -413,11 +339,15 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       </Card>
     )}
 
-    {nextAction === 'WAIT_BUYER_DECISION' && positive && (
-      <Card><ThemedText>กรุณาเลือกยอมรับหรือปฏิเสธผลตรวจ การยอมรับผลตรวจยังไม่ใช่การยืนยันรับสินค้า</ThemedText></Card>
+    {nextAction === 'WAIT_BUYER_DECISION' && positive && !timedOutAt && (
+      <Card>
+        <ThemedText>กรุณาเลือกยอมรับหรือปฏิเสธผลตรวจ การยอมรับผลตรวจยังไม่ใช่การยืนยันรับสินค้า</ThemedText>
+        {decisionDeadline ? <ServerDeadline label="เวลาตัดสินผลตรวจ" deadline={decisionDeadline} serverTime={serverTime}
+          passedText="หมดเวลาตัดสินใจ ระบบจะดำเนินการส่งคืนผู้ขาย" onReached={onDeadlineReached} /> : null}
+      </Card>
     )}
     {!positive && (
-      <Card><ThemedText>สินค้าต้องส่งคืนผู้ขายตามผลตรวจ รอหลักฐานส่งคืนก่อนดำเนินการคืนเงิน</ThemedText></Card>
+      <Card testID="negative-result-return"><ThemedText>ผลตรวจนี้ไม่มีใบรับรองและไม่เปิดให้ยอมรับผลตรวจ สินค้าจะถูกส่งคืนผู้ขาย และคืนเงินเต็มจำนวนตามนโยบายหลังผู้ขายรับคืนจริง</ThemedText></Card>
     )}
 
     {/* Status feedback card when rejected or accepted */}
@@ -431,19 +361,15 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
         gap: 6,
       }}>
         <ThemedText type="smallBold" style={{ fontSize: 14, color: recordedDecision.decision === 'REJECT' ? '#DC2626' : '#059669' }}>
-          {recordedDecision.decision === 'CONFIRM'
-            ? (!positive ? 'คุณยอมรับสินค้าตามสภาพจริงแล้ว' : 'บันทึกคำตัดสิน: ยอมรับผลตรวจ')
-            : 'บันทึกคำตัดสิน: ไม่ยอมรับผลตรวจ'}
+          {recordedDecision.decision === 'CONFIRM' ? 'บันทึกคำตัดสิน: ยอมรับผลการตรวจ' : 'บันทึกคำตัดสิน: ปฏิเสธผลการตรวจและส่งคืน'}
         </ThemedText>
         {recordedDecision.decision === 'REJECT' ? (
           <ThemedText type="small" themeColor="textSecondary">
-            กำลังส่งคืนผู้ขาย · ศูนย์จะส่งสินค้าคืนผู้ขาย แล้วคืนเงินค่าสินค้าให้คุณ · ไม่คืนค่าจัดส่ง ฿50 และค่าตรวจสอบ ฿100
+            ศูนย์จะส่งสินค้าคืนผู้ขาย การคืนเงินเริ่มหลังผู้ขายยืนยันรับคืนจริง ยอดคืนดูได้ในคำสั่งซื้อ
           </ThemedText>
-        ) : !positive ? (
-          <ThemedText type="small" themeColor="textSecondary">
-            ศูนย์กำลังส่งสินค้าถึงคุณ · <ThemedText style={{ fontWeight: '700' }}>ไม่ออกใบรับรอง</ThemedText> เพราะผลตรวจไม่ผ่าน
-          </ThemedText>
-        ) : null}
+        ) : (
+          <ThemedText type="small" themeColor="textSecondary">ศูนย์จะจัดส่งสินค้าถึงคุณ การยอมรับผลตรวจยังไม่ใช่การยืนยันว่าได้รับสินค้า</ThemedText>
+        )}
         {recordedDecision.decision === 'REJECT' && recordedDecision.reason && (
           <ThemedText type="small" themeColor="textSecondary">
             เหตุผล: {recordedDecision.reason}
@@ -460,13 +386,14 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       <ThemedText>{nextActionLabel}</ThemedText>
       {allowed ? (
         <View style={{ gap: 8, marginTop: 4 }}>
-          <Button label="ยอมรับผลตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} />
-          <Button label="ไม่ยอมรับผลตรวจ" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} />
+          <Button label="ยอมรับผลการตรวจ" variant="primary" busy={busy} onPress={() => setDecision('CONFIRM')} />
+          <Button label="ปฏิเสธผลการตรวจและส่งคืน" busy={busy} onPress={() => { setReason(''); setDecision('REJECT'); }} />
         </View>
-      ) : positive && !recordedDecision && (
-        <ThemedText type="small">การตัดสินผลตรวจยังไม่พร้อมใช้งานสำหรับรายการนี้</ThemedText>
+      ) : positive && !recordedDecision && !timedOutAt && (
+        <ThemedText type="small">ระบบไม่เปิดให้ตัดสินผลตรวจสำหรับรายการนี้แล้ว โหลดสถานะล่าสุดเพื่อดูขั้นตอนถัดไป</ThemedText>
       )}
-      {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      {!!error && <ThemedText accessibilityRole="alert" style={{ color: theme.danger }}>{error}</ThemedText>}
+      {errorAction}
     </Card>
 
     <CertificateSheet certificate={positive ? certificate : null} outcome={outcome} enabled={certificatePublicHtml} visible={showCertificate && positive} onClose={() => setCertificate(false)} />
@@ -477,16 +404,18 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
       <ThemedText>การตัดสินใจนี้เกี่ยวกับผลตรวจเท่านั้น ไม่ใช่การยืนยันรับสินค้า</ThemedText>
       {decision === 'CONFIRM' && (
         <ThemedText type="small" themeColor="textSecondary">
-          ใบรับรองเป็นบันทึกผลตรวจ ศูนย์จะจัดส่งสินค้าหลังบันทึกการยอมรับผลตรวจ · ยอมรับแล้วเปลี่ยนใจไม่ได้
+          ศูนย์จะจัดส่งสินค้าถึงคุณหลังบันทึกการยอมรับ · ยอมรับแล้วเปลี่ยนใจไม่ได้
         </ThemedText>
       )}
       {decision === 'REJECT' && (
         <View style={{ gap: 8 }}>
           <ThemedText type="small" style={{ color: theme.danger }}>
-            สินค้าจะถูกส่งคืนผู้ขาย รอหลักฐานส่งคืนก่อนคืนยอดเงินที่พักไว้ทั้งหมดในระบบจำลอง · ปฏิเสธแล้วเปลี่ยนใจไม่ได้
+            {policy === 'EXTERNAL_V2'
+              ? 'สินค้าจะถูกส่งคืนผู้ขาย หลังผู้ขายรับคืนจริงจะคืนเฉพาะค่าสินค้า ไม่คืนค่าตรวจและค่าจัดส่ง · ปฏิเสธแล้วเปลี่ยนใจไม่ได้'
+              : 'สินค้าจะถูกส่งคืนผู้ขาย การคืนเงินเป็นไปตามนโยบายเดิมของคำสั่งซื้อนี้ · ปฏิเสธแล้วเปลี่ยนใจไม่ได้'}
           </ThemedText>
           <TextField
-            label="เหตุผลที่ไม่ยอมรับ (ไม่บังคับ)"
+            label="เหตุผลที่ปฏิเสธ (ไม่บังคับ)"
             value={reason}
             onChangeText={setReason}
             multiline
@@ -496,7 +425,7 @@ export function BuyerResultView({ outcome, summary, inspectedAt, photos = [], ce
         </View>
       )}
       <Button
-        label={decision === 'CONFIRM' ? 'ยืนยันยอมรับผลตรวจ' : 'ยืนยันไม่ยอมรับผลตรวจ'}
+        label={decision === 'CONFIRM' ? 'ยืนยันยอมรับผลการตรวจ' : 'ยืนยันปฏิเสธผลการตรวจและส่งคืน'}
         variant="primary"
         disabled={decision === 'REJECT' && !validReason}
         busy={busy}

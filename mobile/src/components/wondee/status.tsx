@@ -6,12 +6,12 @@ import { useEffect, useState, type PropsWithChildren, type ReactNode } from 'rea
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { formatBaht, formatDateTime, formatLongRemaining, textLength } from '@/orders/order-format';
-
-export { formatLongRemaining, textLength };
 import type { ActionFailure } from '@/orders/action-errors';
 import { Button } from '../order-ui';
 import { ThemedText } from '../themed-text';
 import { TextField } from './primitives';
+
+export { formatLongRemaining, textLength };
 
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 

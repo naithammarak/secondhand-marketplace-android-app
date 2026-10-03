@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type PropsWithChildren } from 'react';
+import { useCallback, useRef, useState, type PropsWithChildren, type ReactNode } from 'react';
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -14,6 +14,13 @@ import { MarketplaceHeader } from '../marketplace-header';
 import { Button, Card, Loading, Row, Screen, styles } from '../order-ui';
 import { ThemedText } from '../themed-text';
 import { EmptyState } from '../wondee/primitives';
+import { describeActionError, type ActionFailure } from '@/orders/action-errors';
+import { useFulfillmentPort } from '@/orders/fulfillment-binding';
+import { parseResultWindow, parseReturnAddress } from '@/orders/order-journey';
+import { useJourneyCommand } from '@/orders/use-order-journey';
+import { routes } from '@/navigation/routes';
+import { JourneyUnavailable } from '../order-journey-sections';
+import { ReturnAddressForm } from '../return-address-form';
 import { BuyerResultView, InspectorQueueView, InspectorWorkView, SellerShipView } from './views';
 
 type Kind = 'ship' | 'result' | 'queue' | 'work' | 'courier' | 'admin';
@@ -66,16 +73,30 @@ function Connected({ kind, id }: { kind: Kind; id: number }) {
 
 function Ship({ id }: { id: number }) {
   const api = useInspectionApi();
+  const port = useFulfillmentPort();
   const orders = useRef(createOrderService({ baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL })).current;
   const resource = useResource(useCallback(() => api.call(token => orders.getOrder(token, id)), [api, orders, id]));
-  const action = useInspectionMutation();
+  const address = useResource(useCallback(async () => port ? parseReturnAddress(await port.getReturnAddress(id)) : null, [port, id]));
+  const command = useJourneyCommand(useCallback(async () => { await address.reload(); }, [address]));
+  const ship = useInspectionMutation();
   const order = resource.data;
-  return <><Status {...resource} />{order && (order.viewerRole === 'seller' && order.status === 'WAITING_SELLER_SHIP' ?
-    <SellerShipView orderId={id} productName={order.product.name} busy={action.busy} error={action.error} onSubmit={input => {
-      void action.mutate(`ship:${id}:${JSON.stringify(input)}`, key => api.call(token => api.service.ship(token, id, input, key))).then(ok => {
-        if (ok) router.replace({ pathname: '/orders/[orderId]', params: { orderId: id } });
+  const view = address.data ?? null;
+  const ready = !!view?.address && !!view.savedAt;
+  if (resource.loading || resource.error || !order) return <Status {...resource} />;
+  if (order.viewerRole !== 'seller' || order.status !== 'WAITING_SELLER_SHIP') {
+    return <Card><ThemedText>{orderStatusLabel(order.status)}</ThemedText><ThemedText>แจ้งส่งได้เฉพาะผู้ขายของรายการที่ชำระแล้วและรอจัดส่ง</ThemedText>
+      <Button label="กลับไปที่คำสั่งซื้อ" onPress={() => router.replace(routes.order(id))} /></Card>;
+  }
+  return <SellerShipView orderId={id} productName={order.product.name} paidAt={order.paidAt} busy={ship.busy} error={ship.error}
+    onSubmit={ready ? input => {
+      void ship.mutate(`ship:${id}:${JSON.stringify(input)}`, key => api.call(token => api.service.ship(token, id, input, key))).then(ok => {
+        if (ok) router.replace(routes.order(id));
       });
-    }} /> : <Card><ThemedText>{orderStatusLabel(order.status)}</ThemedText><ThemedText>แจ้งส่งได้เฉพาะผู้ขายของรายการที่ชำระแล้วและรอจัดส่ง</ThemedText></Card>)}</>;
+    } : undefined}>
+    {!port ? <JourneyUnavailable /> : <><Status {...address} />
+      {view ? <ReturnAddressForm view={view} busy={command.busy} failure={command.failure}
+        onSave={saved => command.run(`return-address:${id}:${JSON.stringify(saved)}`, (bound, key) => bound.saveReturnAddress(id, saved, key))} /> : null}</>}
+  </SellerShipView>;
 }
 
 function Queue() {
@@ -137,21 +158,36 @@ function Work({ id }: { id: number }) {
 function Result({ id }: { id: number }) {
   const api = useInspectionApi();
   const resource = useResource(useCallback(() => api.call(token => api.service.getBuyerResult(token, id)), [api, id]));
-  const action = useInspectionMutation();
-  const decide = (decision: BuyerDecision, reason?: string | null) => {
-    const identity = `buyer-decision:${id}:${decision}:${reason ?? ''}`;
-    void action.mutate(identity, () => api.call(token => api.service.decideBuyerInspection(token, id,
-      reason === undefined ? { decision } : { decision, reason }))).then(ok => { if (ok) void resource.reload(); });
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ActionFailure | null>(null);
+  const decide = async (decision: BuyerDecision, reason?: string | null) => {
+    if (busy) return;
+    setBusy(true); setFailure(null);
+    try {
+      // The decision endpoint replays identical content; a retry resends the same body.
+      await api.call(token => api.service.decideBuyerInspection(token, id, reason === undefined ? { decision } : { decision, reason }));
+    } catch (error) {
+      setFailure(describeActionError(error));
+    } finally {
+      // Always show committed server state, including after 409 deadline/duplicate.
+      await resource.reload();
+      setBusy(false);
+    }
   };
-  return <><Status {...resource} />{resource.data && <ResultData result={resource.data} busy={action.busy} error={action.error} onDecision={decide} />}</>;
+  return <><Status {...resource} />{resource.data && <ResultData result={resource.data} busy={busy} error={failure?.message}
+    onDeadlineReached={() => { void resource.reload(); }}
+    onDecision={(decision, reason) => { void decide(decision, reason); }} />}
+    <Button label="กลับไปที่คำสั่งซื้อ" onPress={() => router.replace(routes.order(id))} /></>;
 }
 
-function ResultData({ result, busy = false, error, onDecision }: {
+function ResultData({ result, busy = false, error, onDecision, onDeadlineReached, errorAction }: {
   result: BuyerResult | WorkDetail; busy?: boolean; error?: string; onDecision?(decision: BuyerDecision, reason?: string | null): void;
+  onDeadlineReached?(): void; errorAction?: ReactNode;
 }) {
   const api = useInspectionApi();
   if (!result.result || !result.inspected_at) return <EmptyState title="ยังไม่มีผลการตรวจ" />;
   const buyerCanDecide = 'can_decide' in result;
+  const resultWindow = buyerCanDecide ? parseResultWindow(result) : null;
   return <BuyerResultView outcome={result.result} summary={result.summary ?? ''} inspectedAt={result.inspected_at}
     photos={result.evidence.map(photo => ({ id: photo.id, label: `หลักฐาน ${photo.id}`, source: api.service.privateImageSource(api.token, photo) }))}
     certificate={result.certificate ? { number: result.certificate.certificate_no, publicUrl: result.certificate.public_url, issuedAt: result.certificate.issued_at, status: result.certificate.status } : null}
@@ -159,6 +195,8 @@ function ResultData({ result, busy = false, error, onDecision }: {
       decision: result.decision.decision, reason: result.decision.reason, decidedAt: result.decision.decided_at,
     } : null}
     nextAction={result.next_action} certificatePublicHtml certificateDecision={buyerCanDecide} canDecide={buyerCanDecide && result.can_decide}
+    decisionDeadline={resultWindow?.deadlineAt} serverTime={resultWindow?.serverTime} timedOutAt={resultWindow?.timedOutAt} policy={resultWindow?.policy}
+    onDeadlineReached={onDeadlineReached} errorAction={errorAction}
     busy={busy} error={error} onDecision={onDecision} />;
 }
 

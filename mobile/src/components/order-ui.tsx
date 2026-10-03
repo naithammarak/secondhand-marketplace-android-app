@@ -75,9 +75,9 @@ export function Screen({ children }: PropsWithChildren) {
   );
 }
 
-export function Card({ children }: PropsWithChildren) {
+export function Card({ children, testID }: PropsWithChildren<{ testID?: string }>) {
   const theme = useTheme();
-  return <ThemedView style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</ThemedView>;
+  return <ThemedView testID={testID} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</ThemedView>;
 }
 
 export function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
