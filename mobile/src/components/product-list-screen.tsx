@@ -188,7 +188,7 @@ function HomeBrandBanner() {
         </View>
         <View style={styles.bannerInspectBadge}>
           <ThemedText style={styles.bannerInspectCheck}>✓</ThemedText>
-          <ThemedText style={styles.bannerInspectText}>ตรวจแล้ว</ThemedText>
+          <ThemedText style={styles.bannerInspectText}>ตรวจก่อนส่ง</ThemedText>
         </View>
       </View>
 
@@ -418,7 +418,7 @@ export function ProductListScreen() {
                 <ThemedText style={[styles.sectionTitle, { color: theme.text }]}>
                   {state.query.trim() ? `ผลการค้นหา "${state.query}"` : 'สินค้าล่าสุด'}
                 </ThemedText>
-                <ThemedText style={styles.sectionNotice}>ของแท้ตรวจแล้ว</ThemedText>
+                <ThemedText style={styles.sectionNotice}>ตรวจหลังสั่งซื้อก่อนส่งถึงมือ</ThemedText>
               </View>
 
               {Platform.OS === 'web' && isManualRefresh && state.refreshing ? (

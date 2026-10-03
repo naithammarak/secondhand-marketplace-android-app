@@ -12,7 +12,8 @@ import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
 import { Button, Loading, Screen } from './order-ui';
 import { ThemedText } from './themed-text';
-import { WondeeMascot, type MascotVariant } from './wondee/brand';
+import { WondeeMascot } from './wondee/brand';
+import { staffWorkspaceFor } from '@/navigation/routes';
 import { WondeeLoader } from './wondee/loader';
 import { useProfile } from '@/profile/use-profile';
 import { ProfileDetails } from './profile-details';
@@ -24,14 +25,6 @@ const statusLabels = {
   REJECTED: 'แก้ไขคำขอเปิดร้าน',
 };
 
-const MASCOT_OPTIONS: { variant: MascotVariant; name: string }[] = [
-  { variant: 'neutral', name: 'น้องวนดี' },
-  { variant: 'inspector', name: 'พี่วนดีตรวจตรา' },
-  { variant: 'courier', name: 'วนดีสายส่ง' },
-  { variant: 'pass', name: 'วนดีรับรองแล้ว' },
-  { variant: 'minor', name: 'วนดีตาเหยี่ยว' },
-];
-
 export function ProfileScreen() {
   const auth = useAuth();
   const profileModel = useProfile();
@@ -41,7 +34,6 @@ export function ProfileScreen() {
   const { state, store } = useVerification();
   const [logoutError, setLogoutError] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [mascotIdx, setMascotIdx] = useState(0);
 
   const owner = auth.session?.user.id;
 
@@ -72,10 +64,6 @@ export function ProfileScreen() {
     customer && account?.role === 'SELLER' && record?.status === 'APPROVED' && !state.loadError && !auth.accountChecking;
   const waitingSellerAccess = account?.role === 'BUYER' && record?.status === 'APPROVED';
 
-  const currentMascot = MASCOT_OPTIONS[mascotIdx];
-  const handleCycleMascot = () => {
-    setMascotIdx(prev => (prev + 1) % MASCOT_OPTIONS.length);
-  };
 
   const displayName = auth.session
     ? profileModel.profile?.full_name ?? 'กำลังโหลดข้อมูลบัญชี'
@@ -162,15 +150,8 @@ export function ProfileScreen() {
                   },
                 ]}>
                 <View style={styles.identityRow}>
-                  {/* Mascot Avatar with Cycle Button */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="สลับรูปมาสคอต"
-                    onPress={handleCycleMascot}
-                    style={({ pressed }) => [
-                      styles.avatarWrapper,
-                      { opacity: pressed ? 0.85 : 1 },
-                    ]}>
+                  {/* Static mascot; avatar upload/picker is out of release scope. */}
+                  <View style={styles.avatarWrapper}>
                     <View
                       style={[
                         styles.avatarCircle,
@@ -179,16 +160,9 @@ export function ProfileScreen() {
                           borderColor: '#10B981',
                         },
                       ]}>
-                      <WondeeMascot
-                        size={46}
-                        variant={currentMascot.variant}
-                        animate={focused}
-                      />
+                      <WondeeMascot size={46} variant="neutral" animate={focused} />
                     </View>
-                    <View style={styles.switchBadge}>
-                      <ThemedText style={styles.switchBadgeText}>สลับ ↺</ThemedText>
-                    </View>
-                  </Pressable>
+                  </View>
 
                   {/* User Details */}
                   <View style={styles.identityInfo}>
@@ -426,19 +400,9 @@ export function ProfileScreen() {
                   <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
                     เมนูผู้ดูแลระบบ (Admin)
                   </ThemedText>
-                  <Button
-                    label="ตรวจคำขอยืนยันตัวตน"
-                    onPress={() => router.push('/admin-verifications')}
-                  />
-                  <Button
-                    label="มอบหมายผู้ขนส่ง"
-                    onPress={() => router.push('/admin-deliveries')}
-                  />
-                  <Button
-                    label="จัดการใบรับรอง"
-                    disabled={auth.accountChecking}
-                    onPress={() => router.push('/admin-certificates')}
-                  />
+                  {staffWorkspaceFor('ADMIN').map(item => (
+                    <Button key={item.label} label={item.label} disabled={auth.accountChecking} onPress={() => router.push(item.href)} />
+                  ))}
                 </View>
               )}
               {account?.role === 'COURIER' && (
@@ -472,7 +436,9 @@ export function ProfileScreen() {
                   <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
                     เมนูเจ้าหน้าที่ตรวจสอบ (Inspector)
                   </ThemedText>
-                  <Button label="งานตรวจสินค้า" onPress={() => router.push('/inspections')} />
+                  {staffWorkspaceFor('INSPECTOR').map(item => (
+                    <Button key={item.label} label={item.label} onPress={() => router.push(item.href)} />
+                  ))}
                 </View>
               )}
 
@@ -632,25 +598,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-  },
-  switchBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -4,
-    backgroundColor: '#8b5cf6',
-    borderRadius: 12,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    elevation: 3,
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  switchBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   identityInfo: {
     flex: 1,

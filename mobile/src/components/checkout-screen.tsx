@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Rect, G } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 import { useAuth } from '@/auth/auth-provider';
 import { MarketplaceHeader } from './marketplace-header';
@@ -20,6 +20,7 @@ import { MarketplaceLoginRequired } from '@/components/marketplace-login-require
 import { ThemedText } from '@/components/themed-text';
 import { Card, errorText, Loading, Row, Screen } from '@/components/order-ui';
 import { TextField } from './wondee/primitives';
+import { SimulationLabel } from './wondee/status';
 import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
 import { useProductImage } from '@/hooks/use-product-image';
@@ -50,83 +51,6 @@ const CO_SAVED: AddressFormValues = {
   postalCode: '10110',
 };
 
-/** Decorative QR illustration, intentionally not a valid payment QR. */
-function DecorativeQrIllustration({ size = 160 }: { size?: number }) {
-  return (
-    <View style={[qrStyles.box, { width: size, height: size }]}>
-      <Svg width={size - 24} height={size - 24} viewBox="0 0 100 100">
-        {/* Top-left position pattern */}
-        <Rect x="5" y="5" width="28" height="28" rx="4" fill="#0f172a" />
-        <Rect x="9" y="9" width="20" height="20" rx="2" fill="#ffffff" />
-        <Rect x="13" y="13" width="12" height="12" rx="1.5" fill="#0f172a" />
-
-        {/* Top-right position pattern */}
-        <Rect x="67" y="5" width="28" height="28" rx="4" fill="#0f172a" />
-        <Rect x="71" y="9" width="20" height="20" rx="2" fill="#ffffff" />
-        <Rect x="75" y="13" width="12" height="12" rx="1.5" fill="#0f172a" />
-
-        {/* Bottom-left position pattern */}
-        <Rect x="5" y="67" width="28" height="28" rx="4" fill="#0f172a" />
-        <Rect x="9" y="71" width="20" height="20" rx="2" fill="#ffffff" />
-        <Rect x="13" y="75" width="12" height="12" rx="1.5" fill="#0f172a" />
-
-        {/* QR Data Grid simulation */}
-        <G fill="#0f172a">
-          {/* Alignment & timing marks */}
-          <Rect x="38" y="7" width="4" height="4" />
-          <Rect x="46" y="7" width="4" height="4" />
-          <Rect x="54" y="7" width="4" height="4" />
-          <Rect x="7" y="38" width="4" height="4" />
-          <Rect x="7" y="46" width="4" height="4" />
-          <Rect x="7" y="54" width="4" height="4" />
-
-          {/* Random QR Module Matrix */}
-          <Rect x="38" y="18" width="4" height="4" />
-          <Rect x="46" y="22" width="4" height="4" />
-          <Rect x="54" y="18" width="4" height="4" />
-          <Rect x="38" y="30" width="8" height="4" />
-          <Rect x="50" y="30" width="4" height="4" />
-
-          {/* Center clusters */}
-          <Rect x="20" y="38" width="4" height="4" />
-          <Rect x="28" y="38" width="4" height="8" />
-          <Rect x="36" y="38" width="8" height="8" />
-          <Rect x="48" y="42" width="4" height="4" />
-          <Rect x="56" y="38" width="8" height="4" />
-          <Rect x="68" y="38" width="4" height="8" />
-          <Rect x="76" y="38" width="8" height="4" />
-          <Rect x="88" y="38" width="4" height="4" />
-
-          <Rect x="20" y="50" width="8" height="4" />
-          <Rect x="32" y="50" width="4" height="4" />
-          <Rect x="40" y="50" width="8" height="8" />
-          <Rect x="52" y="50" width="4" height="4" />
-          <Rect x="60" y="50" width="8" height="4" />
-          <Rect x="72" y="50" width="4" height="8" />
-          <Rect x="80" y="50" width="8" height="4" />
-
-          {/* Bottom right patterns */}
-          <Rect x="38" y="66" width="4" height="4" />
-          <Rect x="46" y="66" width="8" height="4" />
-          <Rect x="58" y="66" width="4" height="8" />
-          <Rect x="66" y="66" width="8" height="4" />
-          <Rect x="78" y="66" width="4" height="4" />
-          <Rect x="86" y="66" width="8" height="8" />
-
-          <Rect x="38" y="78" width="8" height="4" />
-          <Rect x="50" y="74" width="4" height="8" />
-          <Rect x="66" y="74" width="4" height="4" />
-          <Rect x="74" y="78" width="8" height="8" />
-          <Rect x="42" y="86" width="4" height="8" />
-          <Rect x="50" y="86" width="8" height="4" />
-          <Rect x="62" y="86" width="8" height="4" />
-          <Rect x="86" y="86" width="8" height="8" />
-        </G>
-      </Svg>
-    </View>
-  );
-}
-
 function paymentStateMessage(state: OrderDetailState): string {
   if (state.loadError) return errorText(state.loadError);
   if (state.order?.status === 'CANCELLED') {
@@ -141,20 +65,6 @@ function paymentStateMessage(state: OrderDetailState): string {
   if (state.order?.paymentStatus === 'UNPAID') return 'เซิร์ฟเวอร์ยังไม่ยืนยันว่าคำสั่งซื้อนี้ชำระเงินแล้ว';
   return 'ยังยืนยันผลการชำระเงินไม่ได้ กรุณาตรวจสอบสถานะคำสั่งซื้อ';
 }
-
-const qrStyles = StyleSheet.create({
-  box: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-});
 
 export function CheckoutScreen({ productId }: { productId: number | null }) {
   const auth = useAuth();
@@ -486,9 +396,9 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                       <ThemedText style={styles.demoPaymentBadgeText}>DEMO</ThemedText>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <ThemedText style={styles.paymentMethodTitle}>QR สำหรับการสาธิต</ThemedText>
+                      <ThemedText style={styles.paymentMethodTitle}>ชำระเงินจำลองสำหรับต้นแบบ</ThemedText>
                       <ThemedText style={[styles.paymentMethodSubtitle, { color: theme.textSecondary }]}>
-                        การชำระเงินในแอปนี้เป็นการจำลอง
+                        ไม่มีการตัดเงินจริง ไม่มี QR หรือบัญชีธนาคารให้โอน
                       </ThemedText>
                     </View>
                     <View style={styles.paymentCheckedCircle}>
@@ -575,7 +485,7 @@ function CheckoutContent({ productId }: { productId: number | null }) {
         </View>
       ) : null}
 
-      {/* Simulated-payment panel. The decorative QR is not a payment credential. */}
+      {/* Simulated-payment panel: explicit simulated actions only, no payment QR or bank details. */}
       <Modal visible={qrModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View
@@ -594,13 +504,9 @@ function CheckoutContent({ productId }: { productId: number | null }) {
                   {quote ? formatBaht(quote.totalAmount) : ''}
                 </ThemedText>
 
-                {/* QR Code Visual */}
-                <View style={styles.qrCodeWrapper}>
-                  <DecorativeQrIllustration size={160} />
-                </View>
-
+                <View style={{ alignSelf: 'center' }}><SimulationLabel text="ชำระเงินจำลองสำหรับต้นแบบ" /></View>
                 <ThemedText style={[styles.qrInstructions, { color: theme.textSecondary }]}>
-                  ภาพ QR นี้เป็นภาพประกอบเท่านั้นและสแกนไม่ได้
+                  เลือกผลการชำระจำลองด้านล่าง ระบบบันทึกการชำระและออกใบเสร็จเมื่อเซิร์ฟเวอร์ยืนยันเท่านั้น
                 </ThemedText>
 
                 <ThemedText style={[styles.qrSubnote, { color: theme.textSecondary }]}>

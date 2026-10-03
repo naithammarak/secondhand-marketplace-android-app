@@ -106,7 +106,7 @@ export function ReceiptScreen({ orderId }: { orderId: number | null }) {
                   <Row label="เลขที่ใบเสร็จ" value={receipt.receiptNo} bold />
                   <Row label="คำสั่งซื้อ" value={`#${receipt.orderId}`} />
                   {issuedAt ? <Row label="วันเวลา" value={issuedAt} /> : null}
-                  <Row label="วิธีชำระ" value={receipt.paymentMethod || 'พร้อมเพย์'} />
+                  <Row label="วิธีชำระ" value={receipt.paymentMethod === 'SIMULATED' || !receipt.paymentMethod ? 'ชำระเงินจำลอง' : receipt.paymentMethod} />
                 </View>
 
                 {/* Dashed line */}

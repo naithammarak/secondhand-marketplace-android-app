@@ -47,9 +47,9 @@ export function staffWorkspaceFor(role: string | null | undefined): { label: str
   if (role === 'INSPECTOR') return [{ label: 'งานตรวจสินค้า', href: staffRoutes.inspectorQueue }];
   if (role === 'ADMIN') {
     return [
-      { label: 'คำขอเปิดร้าน', href: staffRoutes.adminVerifications },
+      { label: 'ตรวจคำขอยืนยันตัวตน', href: staffRoutes.adminVerifications },
       { label: 'เคสจัดส่งและรับคืน', href: staffRoutes.adminDeliveries },
-      { label: 'ใบรับรองผลตรวจ', href: staffRoutes.adminCertificates },
+      { label: 'จัดการใบรับรอง', href: staffRoutes.adminCertificates },
     ];
   }
   return [];

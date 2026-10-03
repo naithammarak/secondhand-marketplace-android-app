@@ -31,7 +31,7 @@ test('result notification does not claim that every result has a certificate', (
   mockState.items[0].status = 'RESULT_NOTIFIED';
   mockState.items[0].paymentStatus = 'PAID';
   render(<OrdersListScreen />);
-  expect(screen.getByText('แจ้งผลการตรวจแล้ว')).toBeTruthy();
+  expect(screen.getByText(/แจ้งผลตรวจแล้ว เปิดเพื่อดูผล/)).toBeTruthy();
   expect(screen.queryByText(/ออกใบรับรอง/)).toBeNull();
 });
 test.each(['CANCELLED', 'UNKNOWN'])('%s unpaid orders open details without offering payment', (status) => {
@@ -78,7 +78,7 @@ test('displays expired text when WAITING_PAYMENT order deadline has passed', () 
   const pastDeadline = new Date(Date.now() - 5000).toISOString();
   mockState.items[0].expiresAt = pastDeadline;
   render(<OrdersListScreen />);
-  expect(screen.getByText('⏱ หมดเวลาชำระเงิน')).toBeTruthy();
+  expect(screen.getByText('⏱ หมดเวลาชำระเงิน กำลังตรวจสถานะล่าสุด')).toBeTruthy();
 });
 
 test('displays seller countdown label for seller WAITING_PAYMENT order', () => {
@@ -89,34 +89,23 @@ test('displays seller countdown label for seller WAITING_PAYMENT order', () => {
   expect(screen.getByText(/⏱ ผู้ซื้อต้องชำระภายใน 19:\d\d|⏱ ผู้ซื้อต้องชำระภายใน 20:00/)).toBeTruthy();
 });
 
-test('RESULT_NOTIFIED with failed inspection displays failed badge and action to choose', () => {
-  mockState.items[0].id = 37;
+test('RESULT_NOTIFIED shows a neutral server status label, never a guessed pass/fail badge', () => {
   mockState.items[0].status = 'RESULT_NOTIFIED';
-  mockState.items[0].inspectionResult = 'NOT_AS_DESCRIBED';
+  mockState.items[0].inspectionResult = 'NOT_AS_DESCRIBED'; // unknown field must be ignored
   render(<OrdersListScreen />);
-  expect(screen.getByText('🟠 ไม่ตรงตามประกาศ')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'ดูผลตรวจและเลือก' })).toBeTruthy();
+  expect(screen.getByText('แจ้งผลตรวจแล้ว')).toBeTruthy();
+  expect(screen.queryByText('🟠 ไม่ตรงตามประกาศ')).toBeNull();
+  expect(screen.queryByText('🛡️ ตรวจรับรองแล้ว (PASS)')).toBeNull();
 });
 
-test('RETURNING_TO_SELLER and REFUNDED display return badges and seller relist action', () => {
-  mockState.items[0].status = 'RETURNING_TO_SELLER';
-  const view = render(<OrdersListScreen />);
-  expect(screen.getByText('กำลังส่งคืนผู้ขาย')).toBeTruthy();
-
-  mockState.items[0].status = 'REFUNDED';
+test('REFUNDED and RETURNED_TO_SELLER use server status labels without a relist action', () => {
+  mockState.items[0].status = 'RETURNED_TO_SELLER';
   mockState.items[0].viewerRole = 'seller';
-  mockState.items[0].product.name = 'แจ็คเก็ตหนัง Zara';
+  const view = render(<OrdersListScreen />);
+  expect(screen.getByText('รับคืนแล้ว กำลังดำเนินการคืนเงินให้ผู้ซื้อ')).toBeTruthy();
+  mockState.items[0].status = 'REFUNDED';
   view.rerender(<OrdersListScreen />);
   expect(screen.getByText('คืนเงินแล้ว')).toBeTruthy();
-  const relistBtn = screen.getByRole('button', { name: 'ลงขายอีกครั้ง' });
-  expect(relistBtn).toBeTruthy();
-  fireEvent.press(relistBtn);
-  expect(mockPush).toHaveBeenCalledWith({
-    pathname: '/product/new',
-    params: {
-      relistOrderId: '42',
-      relistName: 'แจ็คเก็ตหนัง Zara',
-      relistReason: 'fail',
-    },
-  });
+  expect(screen.queryByRole('button', { name: 'ลงขายอีกครั้ง' })).toBeNull();
+  expect(mockPush).not.toHaveBeenCalled();
 });

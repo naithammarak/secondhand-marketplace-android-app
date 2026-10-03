@@ -130,7 +130,7 @@ test('renders checkout with simulation language, product, address, and price sum
   expect(screen.getByText('ขนาด M')).toBeTruthy();
   expect(screen.getByText('ที่อยู่จัดส่ง')).toBeTruthy();
   expect(screen.getByText('ใช้ที่อยู่ล่าสุด')).toBeTruthy();
-  expect(screen.getByText('QR สำหรับการสาธิต')).toBeTruthy();
+  expect(screen.getByText('ชำระเงินจำลองสำหรับต้นแบบ')).toBeTruthy();
   expect(screen.queryByText('สแกนจ่ายด้วยแอปธนาคารใดก็ได้')).toBeNull();
   expect(screen.getByText('สรุปยอด')).toBeTruthy();
   expect(screen.getByText('สินค้าจะถูกตรวจสภาพก่อนส่งถึงคุณ')).toBeTruthy();
@@ -161,7 +161,7 @@ test('submitting order invokes store.submit with form values', () => {
 test('pay later button navigates to the order detail screen', () => {
   mockCheckoutState.createdOrderId = 42;
   render(<CheckoutScreen productId={7} />);
-  expect(screen.getByText('ภาพ QR นี้เป็นภาพประกอบเท่านั้นและสแกนไม่ได้')).toBeTruthy();
+  expect(screen.getByText(/ระบบบันทึกการชำระและออกใบเสร็จเมื่อเซิร์ฟเวอร์ยืนยันเท่านั้น/)).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: 'ชำระภายหลัง' }));
   expect(mockReplace).toHaveBeenCalledWith({ pathname: '/orders/[orderId]', params: { orderId: '42' } });
 });

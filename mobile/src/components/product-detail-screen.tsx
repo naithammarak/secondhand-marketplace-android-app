@@ -480,13 +480,14 @@ export function ProductDetailScreen() {
                       )}
                     </View>
                     <ThemedText style={styles.sellerSubText}>
-                      ผู้ขายยืนยันตัวตนแล้ว • ตอบกลับเร็วมาก
+                      {product.seller.verified ? 'ผู้ขายผ่านการยืนยันตัวตน' : 'ผู้ขาย'}
                     </ThemedText>
                   </View>
 
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="ดูร้านค้า"
+                    accessibilityLabel="เปิดรีวิวผู้ขาย"
+                    onPress={() => setShowSellerReviews(true)}
                     style={({ pressed }) => [
                       styles.viewShopButton,
                       {
@@ -497,7 +498,7 @@ export function ProductDetailScreen() {
                     ]}
                   >
                     <ThemedText style={[styles.viewShopButtonText, { color: theme.text }]}>
-                      ดูร้านค้า
+                      รีวิว
                     </ThemedText>
                   </Pressable>
                 </View>

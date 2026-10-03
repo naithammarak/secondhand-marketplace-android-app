@@ -22,7 +22,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useProductImage } from '@/hooks/use-product-image';
 import { MarketplaceNav } from './marketplace-nav';
 import { CONDITION_LABELS } from '@/services/product-service';
-import { formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
+import { cancelReasonLabels, formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
 import type { OrderListItem, OrderStatus } from '@/services/order-service';
 
@@ -83,111 +83,24 @@ function matchesFilter(item: OrderListItem, filterKey: StatusFilterTab): boolean
   return group ? group.includes(item.status) : (item.status as string) === filterKey;
 }
 
-function formatTimeAgo(dateStr: string | null | undefined): string {
-  if (!dateStr) return '15 นาทีที่แล้ว';
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return '15 นาทีที่แล้ว';
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'เมื่อสักครู่';
-  if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} ชั่วโมงที่แล้ว`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays < 7) return `${diffDays} วันที่แล้ว`;
-  return date.toLocaleDateString('th-TH');
-}
-
-function OrderCardBadge({ status, item }: { status: OrderStatus | string; item?: OrderListItem }) {
-  const isWaitingPayment = status === 'WAITING_PAYMENT';
-  const isShipped = status === 'SHIPPED';
-  const isWaitingSellerShip = status === 'WAITING_SELLER_SHIP';
-  const isInspecting =
-    status === 'INSPECTING' || status === 'SHIPPING_TO_CENTER' || status === 'RECEIVED_AT_CENTER';
-  const isFailed =
-    (item as any)?.inspectionResult === 'NOT_AS_DESCRIBED' ||
-    (item as any)?.inspectionResult === 'FAKE' ||
-    item?.id === 37;
-  const isInspectedFail = status === 'RESULT_NOTIFIED' && isFailed;
-  const isInspectedPass = status === 'RESULT_NOTIFIED' && !isFailed;
-  const isReturning = status === 'RETURNING_TO_SELLER';
-  const isRefunded = status === 'REFUNDED';
-  const isReturned = status === 'RETURNED';
-  const isCompleted = status === 'COMPLETED';
-  const isCancelled = status === 'CANCELLED';
-
-  let badgeBg = '#F1F5F9';
-  let badgeBorder = '#E2E8F0';
-  let badgeText = '#64748B';
-  let label = orderStatusLabel(status);
-
-  if (isWaitingPayment) {
-    badgeBg = '#FEF3C7';
-    badgeBorder = '#FDE68A';
-    badgeText = '#D97706';
-    label = 'รอชำระเงิน';
-  } else if (isShipped) {
-    badgeBg = '#D1FAE5';
-    badgeBorder = '#A7F3D0';
-    badgeText = '#059669';
-    label = 'จัดส่งแล้ว (EMS)';
-  } else if (isInspectedFail) {
-    badgeBg = '#FEF3C7';
-    badgeBorder = '#FDE68A';
-    badgeText = '#D97706';
-    label = (item as any)?.inspectionResult === 'FAKE' ? '🔴 สินค้าปลอม' : '🟠 ไม่ตรงตามประกาศ';
-  } else if (isInspectedPass) {
-    badgeBg = '#D1FAE5';
-    badgeBorder = '#A7F3D0';
-    badgeText = '#059669';
-    label = '🛡️ ตรวจรับรองแล้ว (PASS)';
-  } else if (isWaitingSellerShip) {
-    badgeBg = '#E0F2FE';
-    badgeBorder = '#BAE6FD';
-    badgeText = '#0284C7';
-    label = 'ชำระแล้ว รอผู้ขายจัดส่ง';
-  } else if (isInspecting) {
-    badgeBg = '#EDE9FE';
-    badgeBorder = '#DDD6FE';
-    badgeText = '#7C3AED';
-    label = 'กำลังตรวจสินค้า';
-  } else if (isReturning) {
-    badgeBg = '#FEF3C7';
-    badgeBorder = '#FDE68A';
-    badgeText = '#D97706';
-    label = 'กำลังส่งคืนผู้ขาย';
-  } else if (isRefunded) {
-    badgeBg = '#F1F5F9';
-    badgeBorder = '#E2E8F0';
-    badgeText = '#64748B';
-    label = 'คืนเงินแล้ว';
-  } else if (isReturned) {
-    badgeBg = '#F1F5F9';
-    badgeBorder = '#E2E8F0';
-    badgeText = '#64748B';
-    label = 'ส่งคืนแล้ว';
-  } else if (isCompleted) {
-    badgeBg = '#D1FAE5';
-    badgeBorder = '#A7F3D0';
-    badgeText = '#059669';
-    label = 'สำเร็จ';
-  } else if (isCancelled) {
-    badgeBg = '#F1F5F9';
-    badgeBorder = '#E2E8F0';
-    badgeText = '#64748B';
-    label = 'ยกเลิกแล้ว';
-  }
-
+/** List items carry only status; labels come from status, never from guessed results. */
+function OrderCardBadge({ status }: { status: OrderStatus | string }) {
+  const theme = useTheme();
+  const tone = status === 'WAITING_PAYMENT' || status === 'DELIVERED_PENDING_BUYER' || status === 'DELIVERY_DISPUTED' ? 'warning'
+    : status === 'COMPLETED' || status === 'WAITING_SELLER_SHIP' ? 'success'
+      : status === 'CANCELLED' || status === 'REFUNDED' || status === 'UNKNOWN' ? 'neutral' : 'info';
+  const fg = tone === 'neutral' ? theme.textSecondary : theme[tone];
+  const bg = tone === 'neutral' ? theme.backgroundElement : theme[`${tone}Soft`];
   return (
-    <View style={[styles.statusBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
-      <ThemedText style={[styles.statusBadgeText, { color: badgeText }]} accessibilityLiveRegion="polite">
-        {label}
+    <View style={[styles.statusBadge, { backgroundColor: bg, borderColor: fg }]}>
+      <ThemedText style={[styles.statusBadgeText, { color: fg }]} accessibilityLiveRegion="polite">
+        {orderStatusLabel(status)}
       </ThemedText>
     </View>
   );
 }
 
-function useOrderCountdown(expiresAt: string | null | undefined, createdAt: string | null | undefined) {
+function useOrderCountdown(expiresAt: string | null | undefined) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -200,15 +113,11 @@ function useOrderCountdown(expiresAt: string | null | undefined, createdAt: stri
       const ms = new Date(expiresAt).getTime();
       if (!Number.isNaN(ms)) return ms;
     }
-    if (createdAt) {
-      const ms = new Date(createdAt).getTime();
-      if (!Number.isNaN(ms)) return ms + 30 * 60 * 1000;
-    }
     return null;
-  }, [expiresAt, createdAt]);
+  }, [expiresAt]);
 
   if (!deadline) {
-    return { formatted: '24:13', isExpired: false };
+    return { formatted: null, isExpired: false };
   }
 
   const diffMs = deadline - now;
@@ -228,16 +137,10 @@ function useOrderCountdown(expiresAt: string | null | undefined, createdAt: stri
 
 function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const theme = useTheme();
-  const router = useRouter();
-  const countdown = useOrderCountdown(item.expiresAt, item.createdAt);
+  const countdown = useOrderCountdown(item.expiresAt);
   const canPay =
     item.viewerRole === 'buyer' && item.status === 'WAITING_PAYMENT' && item.paymentStatus === 'UNPAID';
   const amount = item.viewerRole === 'buyer' ? item.totalAmount : item.sellerPayout;
-
-  const isFailed =
-    (item as any)?.inspectionResult === 'NOT_AS_DESCRIBED' ||
-    (item as any)?.inspectionResult === 'FAKE' ||
-    item.id === 37;
 
   const rawImage =
     item.product.imageUrl ??
@@ -250,26 +153,19 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
   const rawCondition = CONDITION_LABELS[item.product.condition] ?? item.product.condition ?? '';
   const conditionText = rawCondition ? (rawCondition.startsWith('สภาพ') ? rawCondition : `สภาพ${rawCondition}`) : '';
 
-  let footerNote = 'คำสั่งซื้อล่าสุด';
-  if (item.status === 'RESULT_NOTIFIED') {
-    footerNote = isFailed ? 'ผลตรวจไม่ตรงตามประกาศ · รอคุณเลือก' : 'แจ้งผลการตรวจแล้ว';
-  } else if (item.status === 'RETURNING_TO_SELLER') {
-    footerNote = item.viewerRole === 'buyer' ? 'คุณปฏิเสธผลตรวจ · กำลังส่งคืนผู้ขาย' : 'กำลังส่งคืนคุณ';
-  } else if (item.status === 'REFUNDED') {
-    footerNote = item.viewerRole === 'buyer' ? 'คืนเงินค่าสินค้าแล้ว' : 'ส่งคืนถึงคุณแล้ว · ไม่มีการโอนเงิน';
-  } else if (item.status === 'RETURNED') {
-    footerNote = item.viewerRole === 'buyer' ? 'ส่งคืนสินค้าแล้ว' : 'สินค้าส่งคืนถึงคุณแล้ว · ลงขายอีกครั้งได้';
-  } else if ((item.status as string) === 'SHIPPED' || item.status === 'SHIPPING_TO_BUYER') {
-    footerNote = 'ตรวจสินค้าผ่านแล้ว • TH01928374';
-  } else if (item.status === 'COMPLETED') {
-    footerNote = item.viewerRole === 'buyer' ? 'ได้รับสินค้าแล้ว · สำเร็จ' : 'โอนเงินให้คุณแล้ว';
-  } else if (item.status === 'WAITING_PAYMENT') {
-    footerNote = item.createdAt ? `สั่งเมื่อ ${formatTimeAgo(item.createdAt)}` : 'สั่งเมื่อ 15 นาทีที่แล้ว';
-  } else if (item.createdAt) {
-    const formatted = formatDateTime(item.createdAt);
-    footerNote = formatted ? `สั่งซื้อเมื่อ ${formatted}` : 'คำสั่งซื้อล่าสุด';
-  }
-
+  const buyer = item.viewerRole === 'buyer';
+  const footerByStatus: Record<string, string> = {
+    WAITING_SELLER_SHIP: buyer ? 'รอผู้ขายส่งเข้าศูนย์ตรวจ' : 'บันทึกที่อยู่รับคืนแล้วแจ้งส่งเข้าศูนย์',
+    RESULT_NOTIFIED: buyer ? 'แจ้งผลตรวจแล้ว เปิดเพื่อดูผลและขั้นตอนถัดไป' : 'แจ้งผลตรวจแล้ว เปิดเพื่อดูขั้นตอนถัดไป',
+    SHIPPING_TO_BUYER: buyer ? 'ศูนย์ส่งสินค้าแล้ว ยืนยันรับเมื่อได้รับจริง' : 'ศูนย์ส่งถึงผู้ซื้อแล้ว',
+    DELIVERED_PENDING_BUYER: buyer ? 'สถานะขนส่งแจ้งส่งถึงแล้ว โปรดยืนยันรับหรือแจ้งไม่ได้รับ' : 'รอผู้ซื้อยืนยันรับ',
+    DELIVERY_DISPUTED: 'ผู้ดูแลกำลังตรวจสอบกรณีไม่ได้รับสินค้า',
+    RETURNED_TO_SELLER: buyer ? 'ผู้ขายรับคืนแล้ว กำลังดำเนินการคืนเงิน' : 'รับคืนแล้ว กำลังดำเนินการคืนเงินให้ผู้ซื้อ',
+    REFUNDED: buyer ? 'คืนเงินจำลองแล้ว เปิดเพื่อดูยอดและเลขอ้างอิง' : 'คืนเงินให้ผู้ซื้อแล้ว ไม่มีการจ่ายเงินให้ผู้ขาย',
+    COMPLETED: buyer ? 'สำเร็จ' : 'ขายสำเร็จ เปิดเพื่อดูยอดที่บันทึก',
+  };
+  const createdText = formatDateTime(item.createdAt);
+  const footerNote = footerByStatus[item.status] ?? (createdText ? `สั่งซื้อเมื่อ ${createdText}` : 'เปิดเพื่อดูรายละเอียด');
   const isCancelled = item.status === 'CANCELLED';
 
   return (
@@ -286,7 +182,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
       {/* Top Header of Card */}
       <View style={styles.cardHeaderRow}>
         <ThemedText style={styles.orderIdText}>#ORD - {item.id}</ThemedText>
-        <OrderCardBadge status={item.status} item={item} />
+        <OrderCardBadge status={item.status} />
       </View>
 
       {/* Divider */}
@@ -359,7 +255,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
 
         <View style={styles.productPriceCol}>
           <ThemedText style={styles.amountLabelText}>
-            {item.viewerRole === 'seller' ? 'คุณจะได้รับ' : 'ยอดชำระ'}
+            {item.viewerRole === 'seller' ? (item.status === 'COMPLETED' ? 'ยอดที่บันทึก' : 'ประมาณการรับ') : 'ยอดชำระ'}
           </ThemedText>
           <ThemedText
             style={[
@@ -376,14 +272,12 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
         {item.status === 'WAITING_PAYMENT' ? (
           <ThemedText style={styles.waitingPaymentDeadline}>
             {countdown.isExpired
-              ? '⏱ หมดเวลาชำระเงิน'
-              : `⏱ ${item.viewerRole === 'seller' ? 'ผู้ซื้อต้องชำระภายใน ' : 'เหลือเวลาชำระ '}${countdown.formatted}`}
+              ? '⏱ หมดเวลาชำระเงิน กำลังตรวจสถานะล่าสุด'
+              : countdown.formatted ? `⏱ ${item.viewerRole === 'seller' ? 'ผู้ซื้อต้องชำระภายใน ' : 'เหลือเวลาชำระ '}${countdown.formatted}` : 'เปิดเพื่อดูเวลาชำระจากระบบ'}
           </ThemedText>
         ) : isCancelled ? (
           <ThemedText style={styles.infoMutedText}>
-            {item.viewerRole === 'seller'
-              ? 'ผู้ซื้อยกเลิกคำสั่งซื้อนี้'
-              : 'หมดเวลาชำระเงิน ระบบยกเลิกให้อัตโนมัติ'}
+            {item.cancelReason ? cancelReasonLabels[item.cancelReason] : 'คำสั่งซื้อนี้ถูกยกเลิก'}
           </ThemedText>
         ) : (
           <ThemedText style={styles.infoMutedText}>{footerNote}</ThemedText>
@@ -399,47 +293,13 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           style={({ pressed }) => [styles.fullPayButton, { opacity: pressed ? 0.85 : 1 }]}>
           <ThemedText style={styles.fullPayButtonText}>ชำระเงิน</ThemedText>
         </Pressable>
-      ) : item.viewerRole === 'buyer' && item.status === 'RESULT_NOTIFIED' && isFailed ? (
+      ) : item.viewerRole === 'buyer' && item.status === 'COMPLETED' ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="ดูผลตรวจและเลือก"
+          accessibilityLabel="ดูรายละเอียดและรีวิวผู้ขาย"
           onPress={onPress}
-          style={({ pressed }) => [
-            styles.fullPayButton,
-            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
-          ]}>
-          <ThemedText style={styles.fullPayButtonText}>ดูผลตรวจและเลือก</ThemedText>
-        </Pressable>
-      ) : item.viewerRole === 'seller' && (item.status === 'REFUNDED' || item.status === 'RETURNED') ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="ลงขายอีกครั้ง"
-          onPress={() =>
-            router.push({
-              pathname: '/product/new',
-              params: {
-                relistOrderId: String(item.id),
-                relistName: item.product.name,
-                relistReason: 'fail',
-              },
-            })
-          }
-          style={({ pressed }) => [
-            styles.fullPayButton,
-            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
-          ]}>
-          <ThemedText style={styles.fullPayButtonText}>ลงขายอีกครั้ง</ThemedText>
-        </Pressable>
-      ) : item.viewerRole === 'buyer' && item.status === 'COMPLETED' && !(item as any).reviewed ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="⭐ ให้คะแนนและรีวิว"
-          onPress={() => router.push(`/orders/${item.id}/review`)}
-          style={({ pressed }) => [
-            styles.fullPayButton,
-            { opacity: pressed ? 0.85 : 1, backgroundColor: '#059669' },
-          ]}>
-          <ThemedText style={styles.fullPayButtonText}>⭐ ให้คะแนนและรีวิว</ThemedText>
+          style={({ pressed }) => [styles.fullPayButton, { opacity: pressed ? 0.85 : 1, backgroundColor: theme.primary }]}>
+          <ThemedText style={styles.fullPayButtonText}>ดูรายละเอียดและรีวิวผู้ขาย</ThemedText>
         </Pressable>
       ) : (
         <Pressable
@@ -457,7 +317,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
           <ThemedText style={[styles.fullDetailButtonText, { color: theme.text }]}>
             {item.viewerRole === 'seller' && item.status === 'WAITING_SELLER_SHIP'
               ? 'จัดส่งสินค้า'
-              : (item.status as string) === 'SHIPPED' || item.status === 'SHIPPING_TO_BUYER'
+              : item.status === 'SHIPPING_TO_BUYER' || item.status === 'DELIVERED_PENDING_BUYER'
                 ? 'ดูสถานะจัดส่ง'
                 : 'ดูรายละเอียด'}
           </ThemedText>

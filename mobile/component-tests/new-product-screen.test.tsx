@@ -80,13 +80,10 @@ test('a second timeout requires a new inventory check before the draft can be su
   expect(screen.getByText('draft-ready')).toBeTruthy();
 });
 
-test('relisting renders relist title and banner and passes pre-filled values', () => {
-  mockParams = {
-    relistOrderId: '37',
-    relistName: 'แจ็คเก็ตหนัง Zara ไซซ์ L',
-    relistReason: 'fail',
-  };
+test('relist params from old links are ignored; no relist workflow or invented result banner', () => {
+  mockParams = { relistOrderId: '37', relistName: 'แจ็คเก็ตหนัง Zara ไซซ์ L', relistReason: 'fail' };
   render(<NewProductScreen />);
-  expect(screen.getByText('ลงขายอีกครั้ง')).toBeTruthy();
-  expect(screen.getByText(/ผลตรวจ: ไม่ตรงตามประกาศ — กรุณาแก้สภาพและรายละเอียดให้ตรงกับของจริงก่อนลงขายอีกครั้ง/)).toBeTruthy();
+  expect(screen.getByText('ลงขายสินค้า')).toBeTruthy();
+  expect(screen.queryByText('ลงขายอีกครั้ง')).toBeNull();
+  expect(screen.queryByText(/ผลตรวจ: ไม่ตรงตามประกาศ/)).toBeNull();
 });
