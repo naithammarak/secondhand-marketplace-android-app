@@ -22,6 +22,7 @@ import { BuyerResultView, CertificateSheet, InspectorQueueView, InspectorWorkVie
 import { WondeeMascot, type MascotVariant } from '../../src/components/wondee/brand';
 import { EmptyState, ErrorState, Skeleton } from '../../src/components/wondee/primitives';
 import { Card } from '../../src/components/order-ui';
+import { JOURNEY_SCENES, JourneyScene } from './journey-scenes';
 const cert = { number: 'QA-CERT-0042', publicUrl: '', issuedAt: '2026-09-27T06:00:00Z' };
 const proof = photos.slice(0,2).map((uri,i) => ({ id: i+1, source: { uri }, label: `หลักฐานตัวอย่าง ${i+1}` }));
 const noop = () => {};
@@ -39,7 +40,8 @@ function Fixture({ scene }: { scene: string }) {
   if (scene === 'admin') return <AdminVerificationScreen />;
   if (scene === 'mine') return <MyProductsScreen />;
   let content;
-  if (scene === 'ship') content = <SellerShipView orderId={42} productName={product.productName} />;
+  if (JOURNEY_SCENES.includes(scene)) content = <JourneyScene scene={scene} />;
+  else if (scene === 'ship') content = <SellerShipView orderId={42} productName={product.productName} />;
   else if (scene === 'inspector-queue') content = <InspectorQueueView items={[{ id: 1, orderId: 42, productName: product.productName, statusLabel: 'รอรับสินค้าเข้าศูนย์' }]} total={1} filter="all" onFilter={noop} />;
   else if (scene.startsWith('inspector-work')) content = <InspectorWorkView productName={product.productName} step={scene.endsWith('1') ? 1 : scene.endsWith('3') ? 3 : 2} photos={proof} error={scene.endsWith('3') ? 'บริการบันทึกผลยังไม่พร้อมใช้งาน' : undefined} />;
   else if (scene.startsWith('result-')) content = <BuyerResultView outcome={scene === 'result-decision' ? 'PASS' : scene.slice(7) as InspectionOutcome} certificateDecision={scene === 'result-decision'} canDecide={scene === 'result-decision'} onDecision={scene === 'result-decision' ? noop : undefined} summary="ตรวจพบสภาพตามรายละเอียดที่บันทึกไว้ ผิวผ้าและตะเข็บอยู่ในสภาพดี มีรอยใช้งานบริเวณชายเสื้อเล็กน้อย โปรดพิจารณาภาพหลักฐานประกอบก่อนตัดสินใจ" inspectedAt={cert.issuedAt} photos={proof} certificate={cert} nextAction={['result-FAKE','result-NOT_AS_DESCRIBED'].includes(scene) ? 'RETURN_TO_SELLER' : 'WAIT_BUYER_DECISION'} />;
