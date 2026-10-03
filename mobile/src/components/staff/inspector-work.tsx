@@ -13,6 +13,7 @@ import { orderStatusLabel } from '@/orders/order-format';
 import { parseRouteId } from '@/orders/route-params';
 import type { EvidenceFile, InspectionResult, WorkDetail } from '@/services/inspection-service';
 import { Button } from '../order-ui';
+import { CertificateQr } from '../certificate-qr';
 import { ThemedText } from '../themed-text';
 import { ConfirmationSheet, EmptyState, ImageViewer, TextField } from '../wondee/primitives';
 import { Chips, Field, LoadState, Notice, SimLabel, StaffScreen, codePoints, remaining, useStaffResource, when } from './staff-ui';
@@ -133,6 +134,7 @@ export function InspectorWorkView({ work, actions }: { work: WorkDetail; actions
         {work.certificate ? <>
           <Field label="เลขที่" value={work.certificate.certificate_no} mono />
           <Field label="สถานะ" value={work.certificate.status === 'REVOKED' ? 'ถูกเพิกถอน (REVOKED)' : 'ออกแล้ว (ISSUED)'} />
+          {work.certificate.status === 'ISSUED' ? <CertificateQr url={work.certificate.public_url} size={140} /> : null}
           <Button label="เปิดหน้าใบรับรองสาธารณะ" onPress={() => { void Linking.openURL(work.certificate!.public_url).catch(() => undefined); }} />
         </> : <ThemedText type="small" style={{ color: theme.danger }}>ไม่พบใบรับรองของผลนี้ กรุณาโหลดข้อมูลล่าสุด</ThemedText>}
       </Notice> : <Notice tone="neutral" title="ไม่ออกใบรับรองสำหรับผลนี้" detail="ไม่มีการตัดสินผลตรวจจากผู้ซื้อ สินค้าส่งคืนผู้ขาย" />}

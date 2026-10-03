@@ -10,6 +10,7 @@ import { ThemedText } from '../themed-text';
 import { WondeeMascot, type MascotVariant } from '../wondee/brand';
 import { ConfirmationSheet, EmptyState, ImageViewer, TextField } from '../wondee/primitives';
 import { ServerDeadline } from '../wondee/status';
+import { CertificateQr } from '../certificate-qr';
 
 export type InspectionOutcome = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export const outcomes: Record<InspectionOutcome, { label: string; variant: MascotVariant; tone: 'success' | 'warning' | 'info' | 'danger' }> = {
@@ -258,10 +259,10 @@ export function CertificateSheet({ certificate, outcome, enabled, visible, onClo
           <View style={{ alignItems: 'center', gap: 8 }}>
             {certificate.qrSource ? (
               <Image source={certificate.qrSource} style={{ width: 160, height: 160, alignSelf: 'center' }} contentFit="contain" accessibilityLabel="QR เปิดใบรับรองสาธารณะ" />
-            ) : null}
+            ) : <CertificateQr url={certificate.publicUrl} />}
             <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }} selectable>{certificate.publicUrl}</ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={{ textAlign: 'center' }}>
-              เปิดลิงก์นี้เพื่อตรวจสอบใบรับรองได้โดยไม่ต้องเข้าสู่ระบบ
+              สแกน QR หรือเปิดลิงก์นี้เพื่อตรวจสอบใบรับรองได้โดยไม่ต้องเข้าสู่ระบบ
             </ThemedText>
             <Button label="เปิดใบรับรองสาธารณะ" onPress={() => { void Linking.openURL(certificate.publicUrl); }} />
             <Button label="แชร์ลิงก์ใบรับรอง" onPress={handleShare} />
