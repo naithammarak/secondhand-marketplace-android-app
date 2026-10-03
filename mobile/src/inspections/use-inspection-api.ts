@@ -34,6 +34,7 @@ const messages: Record<string, string> = {
   result_locked: 'บันทึกผลตรวจแล้วหรือยังไม่ได้เริ่มตรวจ',
   idempotency_key_reused: 'คำขอนี้ไม่ตรงกับคำขอเดิม ระบบแสดงสถานะล่าสุดให้',
   invalid_state: 'สถานะรายการเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด',
+  certificate_not_found: 'ไม่พบใบรับรองนี้ ลิงก์อาจไม่ถูกต้องหรือหมดอายุ',
 };
 export function inspectionError(error: unknown): string {
   if (!(error instanceof InspectionServiceError) && !(error instanceof FulfillmentServiceError)) return 'โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่';
