@@ -591,7 +591,9 @@ export function createProductCatalogService(options: ProductCatalogServiceOption
       if (mode === 'mock') return mockGetProduct(id);
 
       const body = obj(await request(`/products/${encodeURIComponent(id)}`, { method: 'GET' }, signal));
-      return toDetail(body.data);
+      const detail = toDetail(body.data);
+      // GET /products/{id} returns the public seller beside `data`, not inside it.
+      return detail.seller ? detail : { ...detail, seller: toSeller(body.seller) };
     },
   };
 }

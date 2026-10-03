@@ -329,3 +329,10 @@ test('caller abort rejects without waiting for the timeout', async () => {
   ]);
   assert.equal(outcome, 'aborted');
 });
+
+test('getProduct reads the public seller returned beside data (PR130 detail shape)', async () => {
+  const { fetch } = recorder(() => json(200, { data: detail(), seller: { id: 4, display_name: 'ร้านค้าที่ได้รับอนุมัติ', verified: true } }));
+  const service = createProductCatalogService({ mode: 'api', baseUrl: 'https://api.test', fetch });
+  const product = await service.getProduct(101);
+  assert.deepEqual(product.seller, { id: 4, displayName: 'ร้านค้าที่ได้รับอนุมัติ', verified: true });
+});
