@@ -4,7 +4,12 @@
   "branch": "codex/e-ui-integration-2026-10-03",
   "workspace": "/home/tmk/project/market-place-mobile-app/worktrees/e-ui-integration",
   "verifiedCodeHead": "7233f1e79764b3855480ff126d6462ae83d9fcc8",
-  "pr": null,
+  "pr": {
+    "number": 133,
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/133",
+    "base": "codex/ab-external-shipping-2026-10-02",
+    "publishedHeadBeforeDeliveryRecord": "8b56ed52b569094a6f3ccfb928be1fcaa44cdbd6"
+  },
   "sources": {
     "UI1": {
       "pr": 131,
@@ -76,5 +81,6 @@
     "Provide existing EAS project/account or local Android SDK/adb/signing for APK",
     "Build standalone APK, install/cold-start and run native QA",
     "Finalize documents, actual deck, backup recording, rehearsal and teacher scope acknowledgement"
-  ]
+  ],
+  "reports": "reports/E-UI-INTEGRATION-2026-10-03.md"
 }

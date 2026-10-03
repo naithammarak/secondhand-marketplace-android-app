@@ -2,6 +2,8 @@
 
 **Decision: CONDITIONAL_PASS_COMPOSED_LOCAL_CODE_API.** UI1/PR131 and UI2/PR132 are composed with production API binding and integration fixes. Independent review and runtime/device/release gates remain open. This Lead session implemented the fixes, so this is not independent approval.
 
+Combined candidate: [PR133](https://github.com/naithammarak/secondhand-marketplace-android-app/pull/133), Draft, based on PR130.
+
 ## Source
 
 - Backend PR130: `0ffff2de66d321ab37a0a725d4427716cbfecba3`; migration `r01e20261002` after `c08f20261002`.
