@@ -20,7 +20,7 @@ export function TextField({ label, error, style, ...props }: TextInputProps & { 
     {!!error && <ThemedText type="small" style={{ color: theme.danger }} accessibilityRole="alert">{error}</ThemedText>}
   </View>;
 }
-export type StateIconName = 'bag' | 'search' | 'offline' | 'alert';
+export type StateIconName = 'bag' | 'search' | 'offline' | 'alert' | 'receipt';
 // ไอคอนเส้นในวงกลมตาม design (emptyBlock) แทน mascot
 function StateIcon({ name, color }: { name: StateIconName; color: string }) {
   const stroke = { stroke: color, strokeWidth: 2, fill: 'none' as const, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -28,6 +28,7 @@ function StateIcon({ name, color }: { name: StateIconName; color: string }) {
     {name === 'bag' && <Path {...stroke} d="M16 11V7a4 4 0 0 0-8 0v4M5 9h14l1 12H4L5 9z" />}
     {name === 'search' && <><Circle {...stroke} cx={11} cy={11} r={7} /><Path {...stroke} d="m20 20-4-4" /></>}
     {name === 'offline' && <Path {...stroke} d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.2-2.8M19 13a10 10 0 0 0-2.3-1.7M2 8.8a15 15 0 0 1 4.2-2.7M22 8.8a15 15 0 0 0-11.2-3.7M12 20h.01" />}
+    {name === 'receipt' && <Path {...stroke} d="M7 3h10a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1zM9 8h6M9 12h6" />}
     {name === 'alert' && <><Circle {...stroke} cx={12} cy={12} r={9} /><Path {...stroke} d="M12 8v4M12 16h.01" /></>}
   </Svg>;
 }
