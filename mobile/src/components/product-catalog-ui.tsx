@@ -2,7 +2,26 @@ import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, View, type DimensionValue } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
+import type { ProductCondition } from '@/services/product-catalog-service';
 import { MarketplaceIcon } from './marketplace-icon';
+
+/** สีป้ายสภาพสินค้าตาม design (.cond-*) ใช้ร่วมกันทั้งการ์ดในรายการและหน้ารายละเอียด */
+export const conditionBadgeTheme: Record<ProductCondition, { bg: string; text: string }> = {
+  NEW: { bg: '#059669', text: '#ffffff' },
+  LIKE_NEW: { bg: '#0D9488', text: '#ffffff' },
+  GOOD: { bg: '#0284C7', text: '#ffffff' },
+  FAIR: { bg: '#D97706', text: '#ffffff' },
+  UNKNOWN: { bg: '#64748B', text: '#ffffff' },
+};
+
+/** คำสั้นบนป้ายตาม design; ใช้ conditionLabels (คำเต็ม) เป็น accessibilityLabel */
+export const cardConditionLabels: Record<ProductCondition, string> = {
+  NEW: 'ใหม่',
+  LIKE_NEW: 'เหมือนใหม่',
+  GOOD: 'ดี',
+  FAIR: 'พอใช้',
+  UNKNOWN: 'ไม่ระบุสภาพ',
+};
 
 type ProductImageProps = {
   uri: string | null | undefined;

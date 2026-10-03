@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import { ProductDetailScreen } from '@/components/product-detail-screen';
+import { ProductDetailScreen, formatListedAgo, sellerInitial } from '@/components/product-detail-screen';
 import { ProductCatalogError, type ProductDetail } from '@/services/product-catalog-service';
 
 const mockPush = jest.fn();
@@ -20,6 +20,14 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: mockRouteId }),
 }));
 
+let mockAuth: unknown = null;
+jest.mock('@/auth/auth-provider', () => ({ useOptionalAuth: () => mockAuth }));
+let mockReviews: { page: unknown; busy: boolean; error: boolean; load: jest.Mock } = {
+  page: null, busy: false, error: false, load: jest.fn(),
+};
+jest.mock('@/reviews/use-seller-reviews', () => ({ useSellerReviews: () => mockReviews }));
+let mockCategories: { id: number; categoryName: string; parentCategoryId: number | null }[] = [];
+
 const mockGetProduct = jest.fn();
 const mockRefresh = jest.fn().mockResolvedValue(undefined);
 
@@ -29,6 +37,7 @@ jest.mock('@/products/product-catalog-instance', () => ({
   },
   productCatalogStore: {
     refresh: () => mockRefresh(),
+    getSnapshot: () => ({ categories: mockCategories }),
   },
 }));
 
@@ -73,6 +82,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockCanGoBack = true;
   mockRouteId = '101';
+  mockAuth = null;
+  mockCategories = [];
+  mockReviews = { page: null, busy: false, error: false, load: jest.fn() };
   mockGetProduct.mockReset();
   mockRefresh.mockReset();
   mockRefresh.mockResolvedValue(undefined);
@@ -84,7 +96,7 @@ describe('ProductDetailScreen', () => {
     mockGetProduct.mockReturnValue(new Promise(resolve => { resolvePending = resolve; }));
 
     render(<ProductDetailScreen />);
-    expect(screen.getByText('กำลังโหลดข้อมูลสินค้า')).toBeTruthy();
+    expect(screen.getByLabelText('กำลังโหลดข้อมูลสินค้า')).toBeTruthy();
 
     await act(async () => {
       resolvePending?.(sampleProduct);
@@ -98,15 +110,16 @@ describe('ProductDetailScreen', () => {
 
     expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
     expect(mockGetProduct).toHaveBeenCalledWith(101, undefined);
-    expect(screen.getByText('฿1,290.00')).toBeTruthy();
+    // ราคาแสดงทั้งหัวข้อและแถบล่างตาม design
+    expect(screen.getAllByText('฿1,290.00')).toHaveLength(2);
     expect(screen.getByText('หมวดหมู่')).toBeTruthy();
     expect(screen.getByText('เสื้อผ้า')).toBeTruthy();
     expect(screen.getByText('แบรนด์')).toBeTruthy();
     expect(screen.getByText('ไม่ระบุแบรนด์')).toBeTruthy();
     expect(screen.getByText('ขนาด')).toBeTruthy();
     expect(screen.getByText('M')).toBeTruthy();
-    expect(screen.getByText('สภาพ')).toBeTruthy();
-    expect(screen.getAllByText('สภาพดี')).toBeTruthy();
+    expect(screen.getByLabelText('สภาพดี')).toBeTruthy();
+    expect(screen.getByText('ดี')).toBeTruthy();
     expect(screen.getByText('เสื้อเชิ้ตมือสองสภาพดี ใส่ไม่กี่ครั้ง')).toBeTruthy();
 
     // Verify out-of-scope elements are absent
@@ -196,7 +209,8 @@ describe('ProductDetailScreen', () => {
 
     render(<ProductDetailScreen />);
 
-    expect(await screen.findByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
+    expect(await screen.findByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')).toBeTruthy();
+    expect(screen.getByText('กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
     const retryBtn = screen.getByText('ลองใหม่อีกครั้ง');
 
     await act(async () => {
@@ -216,5 +230,106 @@ describe('ProductDetailScreen', () => {
     const backBtn = screen.getByRole('button', { name: 'กลับ' });
     fireEvent.press(backBtn);
     expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows only API values: no invented size, category or listing time', async () => {
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      size: '',
+      category: { id: 1, categoryName: '', parentCategoryId: null },
+      createdAt: null,
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+    expect(screen.queryByText('ขนาด')).toBeNull();
+    expect(screen.queryByText('Free Size')).toBeNull();
+    expect(screen.queryByText('หมวดหมู่')).toBeNull();
+    expect(screen.queryByText(/ลงขายเมื่อ/)).toBeNull();
+  });
+
+  test('shows the parent category path when the parent is known', async () => {
+    mockCategories = [{ id: 9, categoryName: 'กระเป๋า', parentCategoryId: null }];
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      category: { id: 1, categoryName: 'กระเป๋าสะพายข้าง', parentCategoryId: 9 },
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('กระเป๋า › กระเป๋าสะพายข้าง')).toBeTruthy();
+  });
+
+  test('has no wishlist control without a backend for it', async () => {
+    mockGetProduct.mockResolvedValue(sampleProduct);
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'บันทึกในรายการโปรด' })).toBeNull();
+  });
+
+  test('seller card shows real review summary and verification', async () => {
+    mockReviews = {
+      page: { summary: { average_rating: 4.75, count: 12, distribution: {} }, items: [], offset: 0, limit: 20, total: 12 },
+      busy: false, error: false, load: jest.fn(),
+    };
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      seller: { id: 4, displayName: 'ร้านลุงได', verified: true },
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('ร้านลุงได')).toBeTruthy();
+    expect(screen.getByText('ล')).toBeTruthy();
+    expect(screen.getByText('(12 รีวิว) ›')).toBeTruthy();
+    expect(screen.getByText('ผู้ขายยืนยันตัวตนแล้ว')).toBeTruthy();
+  });
+
+  test('the seller sees an edit action instead of buy on their own product', async () => {
+    mockAuth = { session: { user: { id: 'uuid-x' } }, account: { fullName: 'ลุงได', role: 'SELLER', source: 'backend', userId: 4 } };
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      seller: { id: 4, displayName: 'ร้านลุงได', verified: true },
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByText('สินค้าของคุณ')).toBeTruthy();
+    expect(screen.getByText('กำลังลงขาย · ฿1,290.00')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'ซื้อสินค้า' })).toBeNull();
+    fireEvent.press(screen.getByRole('button', { name: 'แก้ไขสินค้า' }));
+    expect(mockPush).toHaveBeenCalledWith({ pathname: '/product/[id]/edit', params: { id: '101' } });
+  });
+
+  test('another signed-in account can buy the product', async () => {
+    mockAuth = { session: { user: { id: 'uuid-y' } }, account: { fullName: 'ผู้ซื้อ', role: 'BUYER', source: 'backend', userId: 7 } };
+    mockGetProduct.mockResolvedValue({
+      ...sampleProduct,
+      seller: { id: 4, displayName: 'ร้านลุงได', verified: true },
+    });
+
+    render(<ProductDetailScreen />);
+
+    expect(await screen.findByRole('button', { name: 'ซื้อสินค้า' })).toBeTruthy();
+    expect(screen.queryByText('สินค้าของคุณ')).toBeNull();
+  });
+
+  test('seller initial skips the shop prefix', () => {
+    expect(sellerInitial('ร้านลุงได')).toBe('ล');
+    expect(sellerInitial('ร้าน Leonidas Vintage')).toBe('L');
+    expect(sellerInitial('มายด์ มือสอง')).toBe('ม');
+    expect(sellerInitial('ร้าน')).toBe('ร');
+  });
+
+  test('listing time is derived only from created_at', () => {
+    const now = new Date('2026-10-04T12:00:00Z');
+    expect(formatListedAgo(null, now)).toBeNull();
+    expect(formatListedAgo('not-a-date', now)).toBeNull();
+    expect(formatListedAgo('2026-10-04T11:30:00Z', now)).toBe('ลงขายเมื่อไม่นานมานี้');
+    expect(formatListedAgo('2026-10-04T07:00:00Z', now)).toBe('ลงขายเมื่อ 5 ชั่วโมงที่แล้ว');
+    expect(formatListedAgo('2026-09-20T12:00:00Z', now)).toBe('ลงขายเมื่อ 14 วันที่แล้ว');
   });
 });

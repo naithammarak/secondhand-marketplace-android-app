@@ -22,7 +22,7 @@ import { useThemePreference } from '@/theme/theme-provider';
 import { MarketplaceNav } from './marketplace-nav';
 import { MarketplaceIcon } from './marketplace-icon';
 import { CatalogAccountButton } from './catalog-account-button';
-import { ProductImage } from '@/components/product-catalog-ui';
+import { ProductImage, cardConditionLabels, conditionBadgeTheme } from '@/components/product-catalog-ui';
 import { Button, Card, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { ThemedText } from '@/components/themed-text';
 import { EmptyState, ErrorState, Skeleton } from './wondee/primitives';
@@ -33,7 +33,6 @@ import { productCatalogStore } from '@/products/product-catalog-instance';
 import {
   conditionLabels,
   type ProductListItem,
-  type ProductCondition,
 } from '@/services/product-catalog-service';
 
 const catalogErrorMessages: Record<string, string> = {
@@ -43,23 +42,6 @@ const catalogErrorMessages: Record<string, string> = {
   unavailable: 'บริการยังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง',
   'not-found': 'ไม่พบข้อมูล',
   'validation-error': 'คำขอไม่ถูกต้อง',
-};
-
-const conditionBadgeTheme: Record<ProductCondition, { bg: string; text: string }> = {
-  NEW: { bg: '#059669', text: '#ffffff' },        // สภาพใหม่ (เขียวมรกต)
-  LIKE_NEW: { bg: '#0D9488', text: '#ffffff' },   // สภาพเหมือนใหม่ (เขียวมินต์/ทีล)
-  GOOD: { bg: '#0284C7', text: '#ffffff' },       // สภาพดี (ฟ้าคลาสสิก)
-  FAIR: { bg: '#D97706', text: '#ffffff' },       // สภาพพอใช้ (อำพัน)
-  UNKNOWN: { bg: '#64748B', text: '#ffffff' },    // เทา
-};
-
-// ป้ายบนการ์ดใช้คำสั้นตาม design (หน้า detail ยังใช้ conditionLabels เต็ม)
-const cardConditionLabels: Record<ProductCondition, string> = {
-  NEW: 'ใหม่',
-  LIKE_NEW: 'เหมือนใหม่',
-  GOOD: 'ดี',
-  FAIR: 'พอใช้',
-  UNKNOWN: 'ไม่ระบุสภาพ',
 };
 
 function CheckmarkMini() {
