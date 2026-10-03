@@ -34,6 +34,9 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_PRODUCT_CATALOG_ENV": "preview",
         "EXPO_PUBLIC_PRODUCT_CATALOG_MODE": "api",

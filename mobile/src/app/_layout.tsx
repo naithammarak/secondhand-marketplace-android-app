@@ -8,6 +8,7 @@ import { AuthProvider } from '@/auth/auth-provider';
 import { ReviewProvider } from '@/admin/review-provider';
 import { Colors } from '@/constants/theme';
 import { OrdersProvider } from '@/orders/orders-provider';
+import { BoundFulfillmentPortProvider } from '@/orders/fulfillment-binding';
 import { VerificationProvider } from '@/verification/verification-provider';
 import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
 import { SplashScreenView } from '@/components/wondee/splash-screen';
@@ -35,6 +36,7 @@ function AppLayout() {
   return (
     <ThemeProvider value={{ ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme), colors: { ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme).colors, primary: theme.primary, background: theme.background, card: theme.surface, text: theme.text, border: theme.border } }}>
       <AuthProvider>
+        <BoundFulfillmentPortProvider>
         <VerificationProvider>
           <ReviewProvider>
             <OrdersProvider>
@@ -69,6 +71,7 @@ function AppLayout() {
                 <Stack.Screen name="inspections/index" />
                 <Stack.Screen name="inspections/[inspectionId]" />
                 <Stack.Screen name="admin-deliveries" />
+                <Stack.Screen name="admin-legacy-couriers" />
                 <Stack.Screen name="admin-certificates/index" />
                 <Stack.Screen name="admin-certificates/[certificateId]" />
               </Stack>
@@ -78,6 +81,7 @@ function AppLayout() {
             </OrdersProvider>
           </ReviewProvider>
         </VerificationProvider>
+        </BoundFulfillmentPortProvider>
       </AuthProvider>
     </ThemeProvider>
   );

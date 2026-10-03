@@ -34,8 +34,9 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
   const port = useFulfillmentPort();
   const inspection = useInspectionApi();
   const owner = auth.session?.user.id ?? null;
-  const [state, setState] = useState<Omit<JourneyData, 'reload' | 'unavailable'>>({ delivery: null, history: null, result: null, rawResult: null, loading: false, failure: null });
+  const [state, setState] = useState<Omit<JourneyData, 'reload' | 'unavailable'> & { scope: string | null }>({ scope: null, delivery: null, history: null, result: null, rawResult: null, loading: false, failure: null });
   const generation = useRef(0);
+  const invalidate = useCallback(() => { generation.current++; }, []);
   const scope = order && owner ? `${owner}:${order.id}` : null;
   const lastScope = useRef<string | null>(null);
   const status = order?.status ?? null;
@@ -62,6 +63,7 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
       ]);
       if (generation.current !== current) return;
       setState({
+        scope,
         delivery: deliveryRaw ? parseDelivery(deliveryRaw) : null,
         history: historyRaw ? parseHistory(historyRaw) : null,
         result: resultRaw ? parseResultWindow(resultRaw) : null,
@@ -72,19 +74,22 @@ export function useOrderJourney(order: OrderDetail | null): JourneyData {
       if (generation.current !== current) return;
       setState(previous => ({ ...previous, loading: false, failure: describeActionError(error) }));
     }
-  }, [orderId, status, owner, port, inspection.call, inspection.service, buyer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orderId, status, owner, port, inspection, buyer, scope]);
 
   useEffect(() => {
     if (scope !== lastScope.current) {
       // New account or order: forget everything from the previous scope before loading.
       lastScope.current = scope;
       generation.current++;
-      setState({ delivery: null, history: null, result: null, rawResult: null, loading: false, failure: null });
+      setState({ scope, delivery: null, history: null, result: null, rawResult: null, loading: false, failure: null });
     }
     void reload();
-  }, [scope, reload]);
+    return invalidate;
+  }, [scope, reload, invalidate]);
 
-  return { ...state, unavailable: !port, reload };
+  // Effects run after render: never expose the preceding account/order in that gap.
+  const visible = state.scope === scope ? state : { delivery: null, history: null, result: null, rawResult: null, loading: !!scope, failure: null };
+  return { ...visible, unavailable: !port, reload };
 }
 
 export type JourneyCommand = {

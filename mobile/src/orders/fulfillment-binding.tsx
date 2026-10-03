@@ -1,12 +1,12 @@
 /**
  * Single binding point between UI1 screens and UI2's shipping client.
  *
- * UI2 owns `services/fulfillment-service.ts` (createFulfillmentService). Until Lead
- * composes E_BASE with that client, no port is bound and the delivery/return sections
- * show an "unavailable" state instead of a private HTTP copy. After E_BASE, bind it in
- * `useBoundFulfillmentPort` only — screens do not change.
+ * The root provider binds UI2's client using its current-account authorization guard.
+ * Fixture providers can override it locally without starting a second HTTP client.
  */
-import { createContext, useContext, type PropsWithChildren } from 'react';
+import { createContext, useContext, useMemo, type PropsWithChildren } from 'react';
+import { useFulfillmentApi } from '@/inspections/use-inspection-api';
+import { createFulfillmentPort } from './fulfillment-port';
 import type { FulfillmentPort } from './order-journey';
 
 const Override = createContext<FulfillmentPort | null | undefined>(undefined);
@@ -16,14 +16,12 @@ export function FulfillmentPortProvider({ port, children }: PropsWithChildren<{ 
   return <Override.Provider value={port}>{children}</Override.Provider>;
 }
 
-function useBoundFulfillmentPort(): FulfillmentPort | null {
-  // E_BASE: return an adapter over UI2's createFulfillmentService here, injecting the
-  // current account token through useInspectionApi().call and passing idempotency keys through.
-  return null;
+export function BoundFulfillmentPortProvider({ children }: PropsWithChildren) {
+  const { service, call } = useFulfillmentApi();
+  const port = useMemo(() => createFulfillmentPort(service, call), [service, call]);
+  return <FulfillmentPortProvider port={port}>{children}</FulfillmentPortProvider>;
 }
 
 export function useFulfillmentPort(): FulfillmentPort | null {
-  const override = useContext(Override);
-  const bound = useBoundFulfillmentPort();
-  return override === undefined ? bound : override;
+  return useContext(Override) ?? null;
 }
