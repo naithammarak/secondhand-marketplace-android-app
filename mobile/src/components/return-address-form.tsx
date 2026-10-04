@@ -42,7 +42,7 @@ export function ReturnAddressForm({ view, busy, failure, onSave }: {
   const remote = failure ? serverFieldErrors(failure.fields) : {};
   if (view.frozen || (view.address && !editing)) {
     const address = view.address;
-    return <SectionCard title="ที่อยู่รับสินค้าคืน" testID={view.frozen ? 'return-address-frozen' : 'return-address-saved'}>
+    return <SectionCard title={view.frozen ? 'ที่อยู่รับสินค้าคืน' : '2. ที่อยู่รับสินค้าคืน'} testID={view.frozen ? 'return-address-frozen' : 'return-address-saved'}>
       {address ? <View style={{ gap: 2 }}>
         <ThemedText type="small">{address.recipient_name} · {address.phone}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">{address.address_line} {address.subdistrict} {address.district} {address.province} {address.postal_code}</ThemedText>
@@ -52,7 +52,7 @@ export function ReturnAddressForm({ view, busy, failure, onSave }: {
       {!view.frozen ? <Button label="แก้ไขที่อยู่รับคืน" onPress={() => setEditing(true)} /> : null}
     </SectionCard>;
   }
-  return <SectionCard title="ที่อยู่รับสินค้าคืน" testID="return-address-form">
+  return <SectionCard title="2. ที่อยู่รับสินค้าคืน" testID="return-address-form">
     <ThemedText type="small" themeColor="textSecondary">ถ้าผลตรวจไม่ผ่านหรือผู้ซื้อปฏิเสธ ศูนย์จะส่งสินค้าคืนที่อยู่นี้ ต้องบันทึกก่อนแจ้งส่งเข้าศูนย์ และแก้ไม่ได้หลังเริ่มจัดส่ง</ThemedText>
     {LABELS.map(([key, label]) => <TextField key={key} label={label} value={values[key]} editable={!busy}
       keyboardType={key === 'phone' || key === 'postalCode' ? 'number-pad' : 'default'}

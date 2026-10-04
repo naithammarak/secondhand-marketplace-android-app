@@ -2,7 +2,7 @@
  * Integration must supply owner-authorized data and idempotent mutation callbacks.
  */
 import { useState, type ReactNode } from 'react';
-import { Linking, Platform, Pressable, Share, StyleSheet, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { Image, type ImageSource } from 'expo-image';
 import { useTheme } from '@/hooks/use-theme';
@@ -10,6 +10,7 @@ import { Button, Card, Loading, Row } from '../order-ui';
 import { ThemedText } from '../themed-text';
 import { WondeeMascot, type MascotVariant } from '../wondee/brand';
 import { BrandIcon } from '../wondee/brand-logo';
+import { ProductImage } from '../product-catalog-ui';
 import { ConfirmationSheet, EmptyState, ImageViewer, TextField } from '../wondee/primitives';
 import { ServerDeadline } from '../wondee/status';
 import { CertificateQr } from '../certificate-qr';
@@ -27,112 +28,154 @@ export type BuyerDecisionData = { decision: 'CONFIRM' | 'REJECT'; reason: string
 export function UnavailableInspection({ title = 'บริการตรวจสินค้ายังไม่พร้อมใช้งาน' }: { title?: string }) {
   return <Card><EmptyState title={title} detail="คุณยังดูสถานะคำสั่งซื้อและใบเสร็จที่มีอยู่ได้ กรุณากลับมาตรวจสอบบริการนี้อีกครั้ง" /></Card>;
 }
-export function SellerShipView({ orderId, productName, paidAt, busy = false, error, onSubmit, children }: {
+const COMMON_CARRIERS = ['ไปรษณีย์ไทย', 'Flash Express', 'Kerry Express', 'J&T Express', 'SPX Express'];
+
+function ShipIcon({ name, color, size = 14 }: { name: 'box' | 'tag' | 'ban' | 'lock' | 'info'; color: string; size?: number }) {
+  const s = { stroke: color, strokeWidth: 2, fill: 'none' as const, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  return <Svg width={size} height={size} viewBox="0 0 24 24">
+    {name === 'box' ? <><Path {...s} d="M21 8 12 3 3 8v8l9 5 9-5z" /><Path {...s} d="M3 8l9 5 9-5M12 13v8" /></>
+      : name === 'tag' ? <><Path {...s} d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" /><Circle {...s} cx={7.5} cy={7.5} r={1.3} /></>
+        : name === 'ban' ? <><Circle {...s} cx={12} cy={12} r={9} /><Path {...s} d="m5.6 5.6 12.8 12.8" /></>
+          : name === 'lock' ? <><Rect {...s} x={5} y={11} width={14} height={10} rx={2} /><Path {...s} d="M8 11V7a4 4 0 0 1 8 0v4" /></>
+            : <><Circle {...s} cx={12} cy={12} r={9} /><Path {...s} d="M12 11v5M12 8h.01" /></>}
+  </Svg>;
+}
+
+/** ผู้ขายแจ้งส่งสินค้าเข้าศูนย์ตาม design: ขนส่ง+เลขพัสดุ → ที่อยู่รับคืน (children) → ยืนยัน (ปุ่มติดล่างจอ) */
+export function SellerShipView({ orderId, productName, paidAt, busy = false, error, onSubmit, children, product, statusLabel }: {
   orderId: number; productName: string; paidAt?: string | null; busy?: boolean; error?: string | null; children?: ReactNode;
   onSubmit?: (data: { carrier: string; tracking_number: string }) => void;
+  product?: { condition?: string | null; size?: string | null; imageUrl?: string | null };
+  statusLabel?: string;
 }) {
   const theme = useTheme();
+  const muted = theme.background === '#0c0e14' ? '#64748b' : '#94a3b8';
   const [carrier, setCarrier] = useState('');
   const [tracking, setTracking] = useState('');
   const [attempted, setAttempted] = useState(false);
-  const valid = [...carrier.trim()].length >= 1 && [...carrier.trim()].length <= 100 && [...tracking.trim()].length >= 1 && [...tracking.trim()].length <= 100;
+  const [confirming, setConfirming] = useState(false);
+  const len = (value: string) => [...value.trim()].length;
+  const carrierOk = len(carrier) >= 1 && len(carrier) <= 100;
+  const trackingOk = len(tracking) >= 1 && len(tracking) <= 100;
+  const valid = carrierOk && trackingOk;
+  const card = [shipStyles.card, { backgroundColor: theme.surface, borderColor: theme.border }];
   return (
-    <View style={{ gap: 16 }}>
-      <Card>
-        <View style={{ alignItems: 'center', gap: 12 }}>
-          <WondeeMascot size={96} variant="courier" />
-          <ThemedText type="title">ส่งสินค้าเข้าศูนย์ตรวจ</ThemedText>
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={shipStyles.scroll} keyboardShouldPersistTaps="handled">
+        {/* สินค้าในคำสั่งซื้อ */}
+        <View style={[card, shipStyles.productRow]}>
+          <View style={shipStyles.thumb}>
+            <ProductImage uri={product?.imageUrl ?? null} width={48} height={48} borderRadius={12} accessibilityLabel={`รูปสินค้า ${productName}`} />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <ThemedText numberOfLines={1} style={[shipStyles.productName, { color: theme.text }]}>{productName}</ThemedText>
+            <ThemedText style={[shipStyles.muted, { color: muted }]}>คำสั่งซื้อ #{orderId}{product?.size?.trim() ? ` · ขนาด ${product.size}` : ''}</ThemedText>
+          </View>
+          {statusLabel ? <View style={shipStyles.statusPill}><ThemedText style={shipStyles.statusPillText}>{statusLabel}</ThemedText></View> : null}
         </View>
-        <ThemedText>คำสั่งซื้อ #{orderId} · {productName}</ThemedText>
-        <ThemedText themeColor="textSecondary">
-          แพ็กสินค้าให้เหมาะสมและเก็บหลักฐานการจัดส่ง ระบุผู้ขนส่งและเลขติดตามจากพัสดุจริง
-        </ThemedText>
-      </Card>
 
-      {/* 3-day countdown banner */}
-      <View style={{
-        padding: 16,
-        borderRadius: 16,
-        backgroundColor: theme.warningSoft ?? '#fef3c7',
-        borderWidth: 1,
-        borderColor: theme.warning,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
-        <View style={{ flex: 1 }}>
-          <ThemedText type="smallBold">ต้องส่งสินค้าภายใน</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">72 ชั่วโมงหลังผู้ซื้อชำระเงิน{paidAt ? ` (ชำระเมื่อ ${new Date(paidAt).toLocaleString('th-TH')})` : ''} ถ้าไม่ส่งตามกำหนด ระบบจะคืนเงินผู้ซื้อเต็มจำนวน</ThemedText>
+        {/* กำหนดส่ง (ตามนโยบาย ไม่นับถอยหลังเอง) */}
+        <View style={shipStyles.deadline}>
+          <ThemedText style={[shipStyles.deadlineTitle, { color: theme.text }]}>ต้องส่งสินค้าภายใน 72 ชั่วโมงหลังผู้ซื้อชำระเงิน</ThemedText>
+          <ThemedText style={[shipStyles.deadlineText, { color: theme.textSecondary }]}>
+            {paidAt ? `ผู้ซื้อชำระเมื่อ ${new Date(paidAt).toLocaleString('th-TH')} · ` : ''}ถ้าไม่ส่งตามกำหนด ระบบจะคืนเงินผู้ซื้อเต็มจำนวน
+          </ThemedText>
         </View>
+
+        <View style={card}>
+          <ThemedText style={[shipStyles.title, { color: theme.text }]}>ส่งไปที่</ThemedText>
+          <ThemedText style={[shipStyles.body, { color: theme.textSecondary }]}>
+            ศูนย์ตรวจสอบ 2NDHAND ตามที่อยู่ที่ผู้ดูแลเดโมแจ้ง (ระบบยังไม่มีข้อมูลที่อยู่ศูนย์ให้แสดงในแอป)
+          </ThemedText>
+        </View>
+
+        <View style={card}>
+          <ThemedText style={[shipStyles.title, { color: theme.text }]}>วิธีแพ็กสินค้า</ThemedText>
+          <View style={shipStyles.line}><ShipIcon name="box" color={theme.textSecondary} /><ThemedText style={[shipStyles.body, { color: theme.textSecondary }]}>ใส่กล่องแข็ง กันกระแทกรอบด้าน</ThemedText></View>
+          <View style={shipStyles.line}><ShipIcon name="tag" color={theme.textSecondary} /><ThemedText style={[shipStyles.body, { color: theme.textSecondary }]}>เขียนเลขคำสั่งซื้อ <ThemedText style={[shipStyles.body, { color: theme.text, fontWeight: '700' }]}>#{orderId}</ThemedText> ข้างกล่อง</ThemedText></View>
+          <View style={shipStyles.line}><ShipIcon name="ban" color={theme.textSecondary} /><ThemedText style={[shipStyles.body, { color: theme.textSecondary }]}>อย่าใส่ของอื่นที่ไม่ได้ลงประกาศ</ThemedText></View>
+        </View>
+
+        {/* 1. ขนส่ง + เลขพัสดุ: เลือกบริษัทยอดนิยมหรือพิมพ์เอง รับได้ทุกบริการ 1–100 ตัวอักษร ไม่แปลงรูปแบบ */}
+        <View style={card}>
+          <ThemedText style={[shipStyles.title, { color: theme.text }]}>1. บริษัทขนส่งที่ใช้ส่ง</ThemedText>
+          <ThemedText style={[shipStyles.muted, { color: muted }]}>ส่งที่สาขาขนส่งเอง แล้วกรอกเลขพัสดุจากใบเสร็จ · ค่าส่งเข้าศูนย์ผู้ขายจ่ายเอง</ThemedText>
+          <View style={shipStyles.chips}>
+            {COMMON_CARRIERS.map(name => {
+              const on = carrier.trim() === name;
+              return <Pressable key={name} accessibilityRole="button" accessibilityLabel={`เลือก ${name}`} accessibilityState={{ selected: on }}
+                disabled={busy} onPress={() => setCarrier(name)}
+                style={[shipStyles.chip, { borderColor: on ? '#10b981' : theme.border, backgroundColor: on ? 'rgba(16, 185, 129, 0.12)' : 'transparent' }]}>
+                <ThemedText style={[shipStyles.chipText, { color: on ? '#10b981' : theme.text, fontWeight: on ? '700' : '500' }]}>{name}</ThemedText>
+              </Pressable>;
+            })}
+          </View>
+          <TextField label="ผู้ให้บริการขนส่ง" value={carrier} onChangeText={setCarrier} editable={!busy}
+            placeholder="เลือกด้านบน หรือพิมพ์ชื่อบริการอื่นที่ใช้จริง"
+            error={attempted && !carrierOk ? 'ระบุผู้ให้บริการขนส่ง 1–100 ตัวอักษร' : undefined} />
+          <TextField label="เลขติดตามพัสดุ" value={tracking} onChangeText={setTracking} editable={!busy}
+            placeholder="เลขจากใบรับพัสดุ" autoCapitalize="characters"
+            style={{ fontFamily: 'monospace', letterSpacing: 0.5 }}
+            error={attempted && !trackingOk ? 'ระบุเลขพัสดุ 1–100 ตัวอักษร' : undefined} />
+        </View>
+
+        {/* 2. ที่อยู่รับคืน (ฟอร์มจาก API) */}
+        {children}
+
+        <View style={[shipStyles.note, { backgroundColor: theme.backgroundElement }]}>
+          <ShipIcon name="info" color={theme.textSecondary} />
+          <ThemedText style={[shipStyles.muted, { flex: 1, color: theme.textSecondary }]}>
+            ศูนย์จะตรวจความแท้ สภาพ และความตรงกับประกาศ ก่อนส่งต่อให้ผู้ซื้อ · เงินของผู้ซื้อพักไว้ที่ระบบจนกว่าผู้ซื้อจะได้รับสินค้า
+          </ThemedText>
+        </View>
+        {!!error && <ThemedText accessibilityRole="alert" style={{ color: theme.danger, fontSize: 12 }}>{error}</ThemedText>}
+      </ScrollView>
+
+      <View style={[shipStyles.dock, { backgroundColor: theme.background === '#0c0e14' ? '#121622' : '#ffffff', borderTopColor: theme.border }]}>
+        {!onSubmit ? <ThemedText style={[shipStyles.muted, { color: '#f59e0b', textAlign: 'center' }]}>บันทึกที่อยู่รับคืนก่อน จึงแจ้งส่งสินค้าเข้าศูนย์ได้</ThemedText> : null}
+        <Button label="ยืนยันการจัดส่งเข้าศูนย์" variant="primary" disabled={!onSubmit} busy={busy}
+          onPress={() => { setAttempted(true); if (valid) setConfirming(true); }} />
       </View>
 
-      {/* Inspection center address */}
-      <Card>
-        <ThemedText type="subtitle">ส่งไปที่</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={{ lineHeight: 20 }}>
-          ศูนย์ตรวจสอบ 2NDHAND ตามที่อยู่ที่ผู้ดูแลเดโมแจ้ง (ระบบยังไม่มีข้อมูลที่อยู่ศูนย์ให้แสดงในแอป)
-        </ThemedText>
-      </Card>
-
-      {/* Packaging instructions */}
-      <Card>
-        <ThemedText type="subtitle">วิธีแพ็กสินค้า</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">📦 ใส่กล่องแข็ง กันกระแทกรอบด้าน</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">🏷️ เขียนเลขคำสั่งซื้อ <ThemedText type="smallBold">#{orderId}</ThemedText> ข้างกล่อง</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">🚫 อย่าใส่ของอื่นที่ไม่ได้ลงประกาศ</ThemedText>
-      </Card>
-
-      {children}
-
-      {/* Carrier and tracking form */}
-      <Card>
-        <ThemedText type="subtitle">ระบุข้อมูลการจัดส่ง</ThemedText>
-        <TextField
-          label="ผู้ให้บริการขนส่ง"
-          value={carrier}
-          onChangeText={setCarrier}
-          placeholder="ชื่อบริการขนส่งที่ใช้จริง (ระบุได้ทุกบริการ)"
-          editable={!busy}
-          error={attempted && !valid ? 'ทั้งสองช่องต้องมี 1–100 ตัวอักษร' : undefined}
-        />
-        <TextField
-          label="เลขติดตามพัสดุ"
-          value={tracking}
-          onChangeText={setTracking}
-          placeholder="เลขจากใบรับพัสดุ"
-          editable={!busy}
-          error={attempted && !valid ? 'กรุณาตรวจสอบข้อมูล ทั้งสองช่องต้องมี 1–100 ตัวอักษร' : undefined}
-        />
-        {!!error && <ThemedText accessibilityRole="alert" style={{ color: theme.danger }}>{error}</ThemedText>}
-        <Button
-          label="ยืนยันการจัดส่งเข้าศูนย์"
-          variant="primary"
-          disabled={!onSubmit}
-          busy={busy}
-          onPress={() => {
-            setAttempted(true);
-            // Server accepts any carrier/tracking text trimmed to 1–100 characters; no format normalization.
-            if (valid) onSubmit?.({ carrier: carrier.trim(), tracking_number: tracking.trim() });
-          }}
-        />
-        {!onSubmit && <ThemedText type="small" themeColor="textSecondary">บันทึกที่อยู่รับคืนก่อน จึงแจ้งส่งสินค้าเข้าศูนย์ได้</ThemedText>}
-      </Card>
-
-      {/* Escrow protection note */}
-      <View style={{
-        padding: 12,
-        borderRadius: 14,
-        backgroundColor: theme.backgroundElement,
-        borderWidth: 1,
-        borderColor: theme.border,
-      }}>
-        <ThemedText type="small" themeColor="textSecondary" style={{ lineHeight: 18 }}>
-          ℹ️ ศูนย์จะตรวจความแท้ สภาพ และความตรงกับประกาศ ก่อนส่งต่อให้ผู้ซื้อ · เงินของผู้ซื้อพักไว้ที่ระบบจนกว่าผู้ซื้อจะได้รับสินค้า
-        </ThemedText>
-      </View>
+      <ConfirmationSheet visible={confirming && valid && !!onSubmit} title="ยืนยันว่าส่งสินค้าแล้ว?" onClose={() => setConfirming(false)}>
+        <View style={[shipStyles.summary, { backgroundColor: theme.backgroundElement }]}>
+          <Row label="บริษัทขนส่ง" value={carrier.trim()} />
+          <Row label="เลขพัสดุ" value={tracking.trim()} />
+        </View>
+        <View style={shipStyles.line}><ShipIcon name="lock" color="#f59e0b" />
+          <ThemedText style={[shipStyles.muted, { flex: 1, color: '#f59e0b', fontWeight: '600' }]}>ที่อยู่รับคืนจะถูกล็อก · เลขพัสดุส่งให้ผู้ซื้อและศูนย์ทันที</ThemedText>
+        </View>
+        <Button label="ยืนยันส่งเข้าศูนย์" variant="primary" busy={busy}
+          // Server accepts any carrier/tracking text trimmed to 1–100 characters; no format normalization.
+          onPress={() => { setConfirming(false); onSubmit?.({ carrier: carrier.trim(), tracking_number: tracking.trim() }); }} />
+      </ConfirmationSheet>
     </View>
   );
 }
+
+const shipStyles = StyleSheet.create({
+  scroll: { padding: 16, gap: 12, paddingBottom: 24, width: '100%', maxWidth: 800, alignSelf: 'center' },
+  card: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8 },
+  productRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  thumb: { width: 48, height: 48, borderRadius: 12, overflow: 'hidden' },
+  productName: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  statusPill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: 'rgba(14, 165, 233, 0.15)' },
+  statusPillText: { fontSize: 10, lineHeight: 15, fontWeight: '700', color: '#0ea5e9' },
+  deadline: { borderRadius: 16, borderWidth: 1, borderColor: 'rgba(245, 158, 11, 0.35)', backgroundColor: 'rgba(245, 158, 11, 0.1)', padding: 16, gap: 4 },
+  deadlineTitle: { fontSize: 13, lineHeight: 19, fontWeight: '700' },
+  deadlineText: { fontSize: 11, lineHeight: 17 },
+  title: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  body: { fontSize: 12, lineHeight: 19, flexShrink: 1 },
+  muted: { fontSize: 11, lineHeight: 16 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 2 },
+  chip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, minHeight: 36, justifyContent: 'center' },
+  chipText: { fontSize: 12, lineHeight: 17 },
+  note: { flexDirection: 'row', gap: 8, borderRadius: 16, padding: 12 },
+  dock: { borderTopWidth: 1, paddingHorizontal: 16, paddingVertical: 12, gap: 6 },
+  summary: { borderRadius: 16, padding: 12, gap: 2 },
+});
+
 export function InspectorQueueView({ items, total, loading, error, filter, onFilter, onOpen, onMore, onRetry }: {
   items: { id: number; orderId: number; productName: string; statusLabel: string }[];
   total: number | null; loading?: boolean; error?: string; filter: string;

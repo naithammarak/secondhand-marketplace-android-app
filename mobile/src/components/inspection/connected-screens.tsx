@@ -55,11 +55,16 @@ export function InspectionScreen({ kind }: { kind: Kind }) {
   const checking = auth.initializing || auth.accountChecking;
   const allowed = auth.account?.source === 'backend' && !auth.accountError && roles.includes(auth.account.role ?? '');
   const valid = ['queue', 'courier', 'admin'].includes(kind) || id !== null;
-  return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
-    <MarketplaceHeader title={kind === 'result' && id !== null ? `${titles[kind]} · #${id}` : titles[kind]} back /><ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-      {checking ? <Loading label="กำลังตรวจสอบบัญชี" /> : !allowed ? <Card><ThemedText>บัญชีนี้ไม่มีสิทธิ์ใช้บริการนี้ หรือยังตรวจสอบบัญชีไม่สำเร็จ</ThemedText><Button label="ตรวจบัญชีอีกครั้ง" onPress={() => { void auth.retryAccount(); }} /></Card> : !valid ? <EmptyState title="รหัสรายการไม่ถูกต้อง" /> :
-        <Connected key={`${auth.session?.user.id}:${kind}:${id}`} kind={kind} id={id ?? 0} />}
-    </ScrollView></SafeAreaView></Screen>;
+  const gate = checking ? <Loading label="กำลังตรวจสอบบัญชี" /> : !allowed ? <Card><ThemedText>บัญชีนี้ไม่มีสิทธิ์ใช้บริการนี้ หรือยังตรวจสอบบัญชีไม่สำเร็จ</ThemedText><Button label="ตรวจบัญชีอีกครั้ง" onPress={() => { void auth.retryAccount(); }} /></Card> : !valid ? <EmptyState title="รหัสรายการไม่ถูกต้อง" /> : null;
+  const title = kind === 'result' && id !== null ? `${titles[kind]} · #${id}` : kind === 'ship' && id !== null ? `ส่งสินค้าเข้าศูนย์ตรวจ · #${id}` : titles[kind];
+  return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0, maxWidth: undefined }]}>
+    <MarketplaceHeader title={title} back />
+    {/* หน้าส่งเข้าศูนย์จัดการ ScrollView เองเพื่อให้ปุ่มยืนยันติดล่างจอ */}
+    {kind === 'ship' && !gate ? <View style={{ flex: 1 }}><Connected key={`${auth.session?.user.id}:${kind}:${id}`} kind={kind} id={id ?? 0} /></View>
+      : <ScrollView contentContainerStyle={{ padding: 16, gap: 16, width: '100%', maxWidth: 800, alignSelf: 'center' }}>
+        {gate ?? <Connected key={`${auth.session?.user.id}:${kind}:${id}`} kind={kind} id={id ?? 0} />}
+      </ScrollView>}
+  </SafeAreaView></Screen>;
 }
 
 function Connected({ kind, id }: { kind: Kind; id: number }) {
@@ -83,12 +88,13 @@ function Ship({ id }: { id: number }) {
   const order = resource.data;
   const view = address.data ?? null;
   const ready = !!view?.address && !!view.savedAt;
-  if (resource.loading || resource.error || !order) return <Status {...resource} />;
+  if (resource.loading || resource.error || !order) return <View style={{ padding: 16, gap: 16 }}><Status {...resource} /></View>;
   if (order.viewerRole !== 'seller' || order.status !== 'WAITING_SELLER_SHIP') {
-    return <Card><ThemedText>{orderStatusLabel(order.status)}</ThemedText><ThemedText>แจ้งส่งได้เฉพาะผู้ขายของรายการที่ชำระแล้วและรอจัดส่ง</ThemedText>
-      <Button label="กลับไปที่คำสั่งซื้อ" onPress={() => router.replace(routes.order(id))} /></Card>;
+    return <View style={{ padding: 16 }}><Card><ThemedText>{orderStatusLabel(order.status)}</ThemedText><ThemedText>แจ้งส่งได้เฉพาะผู้ขายของรายการที่ชำระแล้วและรอจัดส่ง</ThemedText>
+      <Button label="กลับไปที่คำสั่งซื้อ" onPress={() => router.replace(routes.order(id))} /></Card></View>;
   }
   return <SellerShipView orderId={id} productName={order.product.name} paidAt={order.paidAt} busy={ship.busy} error={ship.error}
+    product={{ condition: order.product.condition, size: order.product.size, imageUrl: order.product.imageUrl }} statusLabel={orderStatusLabel(order.status)}
     onSubmit={ready ? input => {
       void ship.mutate(`ship:${id}:${JSON.stringify(input)}`, key => api.call(token => api.service.ship(token, id, input, key))).then(ok => {
         if (ok) router.replace(routes.order(id));

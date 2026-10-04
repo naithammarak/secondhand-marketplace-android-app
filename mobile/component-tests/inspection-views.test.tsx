@@ -47,6 +47,8 @@ test('ship trims valid fields, but unavailable integration cannot submit', () =>
   fireEvent.changeText(screen.getByLabelText('ผู้ให้บริการขนส่ง'), '  ขนส่งตัวอย่าง  ');
   fireEvent.changeText(screen.getByLabelText('เลขติดตามพัสดุ'), '  TRACK42  ');
   fireEvent.press(screen.getByText('ยืนยันการจัดส่งเข้าศูนย์'));
+  expect(submit).not.toHaveBeenCalled(); // ต้องยืนยันอีกครั้งตาม design
+  fireEvent.press(screen.getByRole('button', { name: 'ยืนยันส่งเข้าศูนย์' }));
   expect(submit).toHaveBeenCalledWith({ carrier: 'ขนส่งตัวอย่าง', tracking_number: 'TRACK42' });
 });
 test('inspection finalization uses only currently available selected evidence and needs confirmation', () => {
@@ -78,6 +80,7 @@ test('shipping accepts the contract boundary of one character after trimming', (
   fireEvent.changeText(screen.getByLabelText('ผู้ให้บริการขนส่ง'), ' A ');
   fireEvent.changeText(screen.getByLabelText('เลขติดตามพัสดุ'), ' 1 ');
   fireEvent.press(screen.getByText('ยืนยันการจัดส่งเข้าศูนย์'));
+  fireEvent.press(screen.getByRole('button', { name: 'ยืนยันส่งเข้าศูนย์' }));
   expect(submit).toHaveBeenCalledWith({ carrier: 'A', tracking_number: '1' });
 });
 
@@ -129,4 +132,15 @@ test('summary lines in "label: value" form render as report rows', () => {
   render(<BuyerResultView {...props} outcome="PASS" summary={'ความแท้: ตรวจแล้วตรงตามหลักฐาน\nสภาพ: ตรงกับที่ประกาศ'} />);
   expect(screen.getByText('ความแท้')).toBeTruthy();
   expect(screen.getByText('ตรวจแล้วตรงตามหลักฐาน')).toBeTruthy();
+});
+
+test('a carrier chip fills the carrier but any other carrier can still be typed', () => {
+  const submit = jest.fn(); render(<SellerShipView orderId={42} productName="เสื้อ" onSubmit={submit} />);
+  fireEvent.press(screen.getByRole('button', { name: 'เลือก Flash Express' }));
+  expect(screen.getByLabelText('ผู้ให้บริการขนส่ง').props.value).toBe('Flash Express');
+  fireEvent.changeText(screen.getByLabelText('ผู้ให้บริการขนส่ง'), 'ขนส่งท้องถิ่น');
+  fireEvent.changeText(screen.getByLabelText('เลขติดตามพัสดุ'), 'abc-123 x');
+  fireEvent.press(screen.getByText('ยืนยันการจัดส่งเข้าศูนย์'));
+  fireEvent.press(screen.getByRole('button', { name: 'ยืนยันส่งเข้าศูนย์' }));
+  expect(submit).toHaveBeenCalledWith({ carrier: 'ขนส่งท้องถิ่น', tracking_number: 'abc-123 x' });
 });
