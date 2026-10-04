@@ -13,6 +13,8 @@ jest.mock('expo-router', () => ({
   router: {
     push: (...args: any[]) => mockPush(...args),
     replace: (...args: any[]) => mockReplace(...args),
+    canGoBack: () => false,
+    back: jest.fn(),
   },
 }));
 jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
@@ -81,13 +83,14 @@ test('cancelled Google login clears the saved checkout destination', async () =>
   expect(await marketplaceReturn.consume()).toBeNull();
 });
 
-test('browsing without login cancels the saved purchase destination', async () => {
+test('closing login to browse cancels the saved purchase destination', async () => {
   await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
   mockAuth = newUserAuth({ session: null, account: null });
   render(<LoginScreen />);
-  fireEvent.press(screen.getByRole('button', { name: 'ดูสินค้าก่อน' }));
-  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
-  expect(await marketplaceReturn.consume()).toBeNull();
+  // ปุ่มปิด (X) แทนปุ่ม "ดูสินค้าก่อน" เดิมตาม design: กลับไปเลือกดูสินค้าและล้างปลายทางที่ค้างไว้
+  fireEvent.press(screen.getByRole('button', { name: 'ปิด' }));
+  await waitFor(async () => expect(await marketplaceReturn.peek()).toBeNull());
+  expect(mockReplace).toHaveBeenCalledWith('/');
 });
 
 test('waits for the backend and never offers self-selection of Seller', () => {
@@ -116,4 +119,12 @@ test.each(['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR'])('verified %s can open the p
   fireEvent.press(screen.getByRole('button', { name: 'ไปที่โปรไฟล์' }));
   expect(mockReplace).toHaveBeenCalledWith('/profile');
   expect(mockAuth.selectRole).not.toHaveBeenCalled();
+});
+
+test('signed-out view shows only the Google sign-in action from the design', () => {
+  mockAuth = newUserAuth({ session: null, account: null });
+  render(<LoginScreen />);
+  expect(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'ดูสินค้าก่อน' })).toBeNull();
+  expect(screen.queryByText('ยินยอมการใช้ข้อมูล')).toBeNull();
 });
