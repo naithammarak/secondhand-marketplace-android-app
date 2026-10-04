@@ -122,3 +122,23 @@ test('field validation and submission conflicts stay visible', () => {
   view.rerender(<SellerVerificationScreen />);
   expect(screen.getByText('ส่งคำขอไว้แล้ว ระบบกำลังแสดงสถานะล่าสุด')).toBeTruthy();
 });
+
+test('a deep link waits for session restore instead of redirecting to login', () => {
+  mockAuth = { initializing: true, session: null, account: null, retryAccount: jest.fn() };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('กำลังตรวจสอบบัญชี')).toBeTruthy();
+});
+
+test('status uses Thai labels from the API state, not raw enum text', () => {
+  mockState.record = { id: 1, status: 'PENDING', canSubmit: false, shopName: 'ร้านวนดี', bankName: 'ธนาคารทดสอบ', bankAccountName: 'สมใจ', bankAccountLast4: '4567' };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('รอตรวจสอบ')).toBeTruthy();
+  expect(screen.queryByText('PENDING')).toBeNull();
+  expect(screen.getByText('กำลังตรวจสอบคำขอของคุณ')).toBeTruthy();
+});
+
+test('a first application shows only the form, without a status block', () => {
+  render(<SellerVerificationScreen />);
+  expect(screen.queryByText('เตรียมร้านของคุณให้พร้อม')).toBeNull();
+  expect(screen.getByLabelText('ชื่อร้านค้า')).toBeTruthy();
+});
