@@ -56,7 +56,7 @@ export function InspectionScreen({ kind }: { kind: Kind }) {
   const allowed = auth.account?.source === 'backend' && !auth.accountError && roles.includes(auth.account.role ?? '');
   const valid = ['queue', 'courier', 'admin'].includes(kind) || id !== null;
   return <Screen><SafeAreaView style={[styles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
-    <MarketplaceHeader title={titles[kind]} back /><ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+    <MarketplaceHeader title={kind === 'result' && id !== null ? `${titles[kind]} · #${id}` : titles[kind]} back /><ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
       {checking ? <Loading label="กำลังตรวจสอบบัญชี" /> : !allowed ? <Card><ThemedText>บัญชีนี้ไม่มีสิทธิ์ใช้บริการนี้ หรือยังตรวจสอบบัญชีไม่สำเร็จ</ThemedText><Button label="ตรวจบัญชีอีกครั้ง" onPress={() => { void auth.retryAccount(); }} /></Card> : !valid ? <EmptyState title="รหัสรายการไม่ถูกต้อง" /> :
         <Connected key={`${auth.session?.user.id}:${kind}:${id}`} kind={kind} id={id ?? 0} />}
     </ScrollView></SafeAreaView></Screen>;

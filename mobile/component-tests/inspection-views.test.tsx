@@ -105,3 +105,28 @@ test.each(['NOT_AS_DESCRIBED', 'FAKE'] as const)('negative result %s cannot subm
   expect(screen.getByText(/ไม่มีใบรับรองและไม่เปิดให้ยอมรับผลตรวจ/)).toBeTruthy();
   expect(decide).not.toHaveBeenCalled();
 });
+
+test('certificate shows the real inspection date, not the issue date', () => {
+  render(<CertificateSheet visible enabled outcome="PASS" certificate={{ ...cert, issuedAt: '2026-09-29T06:00:00Z' }}
+    inspectedAt="2026-09-27T06:00:00Z" onClose={() => {}} />);
+  expect(screen.getByText(new Date('2026-09-27T06:00:00Z').toLocaleDateString('th-TH'))).toBeTruthy();
+  expect(screen.getByText(new Date('2026-09-29T06:00:00Z').toLocaleDateString('th-TH'))).toBeTruthy();
+});
+
+test('certificate without an inspection time does not reuse the issue date as the inspection date', () => {
+  render(<CertificateSheet visible enabled outcome="PASS" certificate={cert} onClose={() => {}} />);
+  expect(screen.queryByText('ตรวจเมื่อ')).toBeNull();
+  expect(screen.getByText('ออกใบรับรอง')).toBeTruthy();
+});
+
+test('a negative result states the next step once', () => {
+  render(<BuyerResultView {...props} outcome="FAKE" certificate={null} nextAction="RETURN_TO_SELLER" />);
+  expect(screen.getAllByText('ขั้นตอนถัดไป')).toHaveLength(1);
+  expect(screen.getAllByText(/สินค้าจะถูกส่งคืนผู้ขาย/)).toHaveLength(1);
+});
+
+test('summary lines in "label: value" form render as report rows', () => {
+  render(<BuyerResultView {...props} outcome="PASS" summary={'ความแท้: ตรวจแล้วตรงตามหลักฐาน\nสภาพ: ตรงกับที่ประกาศ'} />);
+  expect(screen.getByText('ความแท้')).toBeTruthy();
+  expect(screen.getByText('ตรวจแล้วตรงตามหลักฐาน')).toBeTruthy();
+});
