@@ -30,18 +30,46 @@ class ProductImageReference(BaseModel):
         return self
 
 
-class CreateProductRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ProductBrandFields(BaseModel):
+    brand_id: PositiveStrictInt | None = None
+    brand_name: str | None = Field(default=None, description="ชื่อแบรนด์ที่พิมพ์เอง ส่งแทน brand_id")
+
+    @field_validator("brand_name")
+    @classmethod
+    def valid_brand_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not 1 <= len(value) <= 255:
+            raise ValueError("ชื่อแบรนด์ต้องมีความยาว 1–255 ตัวอักษร")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ValueError("ชื่อแบรนด์ต้องเป็นข้อความ Unicode ที่ถูกต้อง") from None
+        return value
+
+
+class CreateProductRequest(ProductBrandFields):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={
+        "oneOf": [{"required": ["brand_id"]}, {"required": ["brand_name"]}],
+    })
 
     product_name: str
     description: str
     price: str
     category_id: PositiveStrictInt
-    brand_id: PositiveStrictInt
     size: str
     condition: Literal["NEW", "LIKE_NEW", "GOOD", "FAIR"]
     sale_type: Literal["FIXED_PRICE"]
     images: list[ProductUploadReference]
+
+    @model_validator(mode="after")
+    def exactly_one_brand(self):
+        if (self.brand_id is None) == (self.brand_name is None):
+            raise ValueError("ต้องส่ง brand_id หรือ brand_name เพียงอย่างเดียว")
+        if any(getattr(self, name) is None for name in self.model_fields_set):
+            raise ValueError("ไม่อนุญาตให้ส่ง null")
+        return self
 
     @field_validator("product_name")
     @classmethod
@@ -88,14 +116,13 @@ class CreateProductRequest(BaseModel):
         return value
 
 
-class UpdateProductRequest(BaseModel):
+class UpdateProductRequest(ProductBrandFields):
     model_config = ConfigDict(extra="forbid")
 
     product_name: str | None = None
     description: str | None = None
     price: str | None = None
     category_id: PositiveStrictInt | None = None
-    brand_id: PositiveStrictInt | None = None
     size: str | None = None
     condition: Literal["NEW", "LIKE_NEW", "GOOD", "FAIR"] | None = None
     sale_type: Literal["FIXED_PRICE"] | None = None
@@ -108,6 +135,8 @@ class UpdateProductRequest(BaseModel):
         null_fields = [name for name in self.model_fields_set if getattr(self, name) is None]
         if null_fields:
             raise ValueError("ไม่อนุญาตให้ส่ง null")
+        if {"brand_id", "brand_name"} <= self.model_fields_set:
+            raise ValueError("ต้องส่ง brand_id หรือ brand_name เพียงอย่างเดียว")
         return self
 
     @field_validator("product_name")

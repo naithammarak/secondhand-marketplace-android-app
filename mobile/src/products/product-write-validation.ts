@@ -7,6 +7,12 @@ export type ProductWriteFields = {
 
 export type ProductWriteErrors = Partial<Record<keyof ProductWriteFields, string>>;
 
+export function validateProductBrand(brand: string): string | undefined {
+  const length = [...brand.trim()].length;
+  if (length < 1 || length > 255) return 'ชื่อแบรนด์ต้องมีความยาว 1–255 ตัวอักษร';
+  return undefined;
+}
+
 const PRICE_PATTERN = /^(?:0|[1-9]\d{0,9})(?:\.\d{1,2})?$/;
 const ZERO_PRICE = /^0(?:\.0{1,2})?$/;
 

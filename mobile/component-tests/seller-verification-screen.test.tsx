@@ -123,6 +123,19 @@ test('field validation and submission conflicts stay visible', () => {
   expect(screen.getByText('ส่งคำขอไว้แล้ว ระบบกำลังแสดงสถานะล่าสุด')).toBeTruthy();
 });
 
+test('a local card read error appears next to the image without clearing the form', () => {
+  const view = render(<SellerVerificationScreen />);
+  fireEvent.changeText(screen.getByLabelText('ชื่อร้านค้า'), 'ร้านทดสอบ');
+  fireEvent.changeText(screen.getByLabelText('เลขที่บัญชี'), '1234567890');
+  mockState.fieldErrors = { idCard: 'อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่' };
+  mockState.submitError = 'validation-error';
+  view.rerender(<SellerVerificationScreen />);
+  expect(screen.getByText('อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่')).toBeTruthy();
+  expect(screen.getByLabelText('ชื่อร้านค้า').props.value).toBe('ร้านทดสอบ');
+  expect(screen.getByLabelText('เลขที่บัญชี').props.value).toBe('1234567890');
+  expect(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' })).toBeTruthy();
+});
+
 test('a deep link waits for session restore instead of redirecting to login', () => {
   mockAuth = { initializing: true, session: null, account: null, retryAccount: jest.fn() };
   render(<SellerVerificationScreen />);

@@ -9,7 +9,7 @@ import {
 } from '../src/products/product-form.ts';
 import { ProductServiceError } from '../src/services/product-service.ts';
 
-const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด', description: 'สภาพดี', size: 'M', images: ['mock://product-images/one'] };
+const validValues = { ...emptyProductFormValues, name: 'เสื้อยืด', description: 'สภาพดี', size: 'M', brand: 'ไม่ระบุแบรนด์', images: ['mock://product-images/one'] };
 
 test('an empty name is rejected', () => {
   const errors = validateProductForm(emptyProductFormValues, '100');
@@ -62,12 +62,19 @@ test('invalid categoryId not in categories is rejected', () => {
   assert.equal(errors.category, 'กรุณาเลือกหมวดหมู่สินค้า');
 });
 
-test('brand is required when brands options are provided and brandId is missing or invalid', () => {
+test('a brand name is required and stale selected IDs are rejected', () => {
   const brands = [{ id: 1, name: 'ไม่ระบุแบรนด์' }, { id: 2, name: 'Nike' }];
-  const errorsMissing = validateProductForm({ ...validValues, brandId: undefined }, '150', { brands });
-  assert.equal(errorsMissing.brand, 'กรุณาเลือกแบรนด์สินค้า');
+  const errorsMissing = validateProductForm({ ...validValues, brand: '   ', brandId: undefined }, '150', { brands });
+  assert.equal(errorsMissing.brand, 'ชื่อแบรนด์ต้องมีความยาว 1–255 ตัวอักษร');
   const errorsInvalid = validateProductForm({ ...validValues, brandId: 999 }, '150', { brands });
   assert.equal(errorsInvalid.brand, 'กรุณาเลือกแบรนด์สินค้า');
+});
+
+test('custom brand names pass validation without an option ID', () => {
+  const brands = [{ id: 2, name: 'Nike' }];
+  assert.equal(validateProductForm({ ...validValues, brand: ' แบรนด์ท้องถิ่น ', brandId: undefined }, '150', { brands }).brand, undefined);
+  assert.equal(validateProductForm({ ...validValues, brand: '😀'.repeat(255) }, '150', { brands }).brand, undefined);
+  assert.equal(typeof validateProductForm({ ...validValues, brand: 'x'.repeat(256) }, '150', { brands }).brand, 'string');
 });
 
 test('valid categoryId and brandId matching options pass validation', () => {

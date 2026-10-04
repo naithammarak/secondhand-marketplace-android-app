@@ -6,6 +6,8 @@
 
 **ทำ final หลัง:** A รวม tasks01–09 และ runtime code เป็น candidate เดียว
 
+**คิวแก้ปัญหาปัจจุบัน:** [ช่องแบรนด์ → อัปโหลดรูปลงขาย → ยืนยันตัวตนขอเปิดร้าน → Render Cron worker](../coordination/F-WORK-QUEUE.md)
+
 ## ผลลัพธ์
 
 Android APK ใช้ได้บนเครื่องจริง ไม่พึ่ง Metro พร้อม API/Auth/private Storage/public QR/worker ที่เข้าถึงได้ ผล QA ผูกกับ release เดียว คู่มือ/demo data/สไลด์/หลักฐานและบันทึกสำรอง

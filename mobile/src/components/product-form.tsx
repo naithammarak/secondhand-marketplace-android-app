@@ -85,13 +85,16 @@ export function syncValuesWithOptions(
   const matchedBrandById = current.brandId
     ? brandList.find(b => b.id === current.brandId)
     : undefined;
-  const matchedBrand = matchedBrandByName ?? matchedBrandById;
+  // Keep typed names through option reloads; an old ID must not override them.
+  const matchedBrand = current.brand.trim() ? matchedBrandByName : matchedBrandById;
 
   if (matchedBrand) {
     updated.brand = matchedBrand.name;
     updated.brandId = matchedBrand.id;
+  } else if (current.brand.trim()) {
+    updated.brandId = undefined;
   } else {
-    // If brand is custom/unlisted or empty, assign the real ID of "ไม่ระบุแบรนด์" from database
+    // Default only an empty brand; preserve custom names for the API.
     const unbranded = brandList.find(b => b.name === 'ไม่ระบุแบรนด์') ?? brandList[0];
     if (unbranded) {
       updated.brandId = unbranded.id;
@@ -249,7 +252,7 @@ export function ProductForm({
 
   const nameError = fieldErrors.name || serverFieldErrors?.name || serverFieldErrors?.product_name;
   const descError = fieldErrors.description || serverFieldErrors?.description;
-  const brandError = fieldErrors.brand || serverFieldErrors?.brand || serverFieldErrors?.brand_id;
+  const brandError = fieldErrors.brand || serverFieldErrors?.brand || serverFieldErrors?.brand_id || serverFieldErrors?.brand_name;
   const sizeError = fieldErrors.size || serverFieldErrors?.size;
   const priceError = fieldErrors.price || serverFieldErrors?.price;
   const categoryError = fieldErrors.category || serverFieldErrors?.category || serverFieldErrors?.category_id;
@@ -466,6 +469,7 @@ export function ProductForm({
               }}
               accessibilityLabel="แบรนด์"
               placeholder="เช่น Uniqlo"
+              maxLength={255}
               placeholderTextColor={theme.textSecondary}
               editable={!disabled && !loadingOptions}
             />

@@ -93,6 +93,12 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? Object.assign(new Error('Aborted'), { name: 'AbortError' });
+  }
+}
+
 export function createVerificationService(options: { baseUrl?: string; fetch?: FetchLike }) {
   let baseUrl: string | undefined;
   if (options.baseUrl) {
@@ -104,6 +110,7 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
 
   const request = async (path: string, init: RequestInit, signal?: AbortSignal): Promise<Response> => {
     if (!baseUrl) throw new VerificationServiceError('unavailable');
+    throwIfAborted(signal);
     let response: Response;
     try {
       response = await fetcher(`${baseUrl}${path}`, { ...init, signal });
@@ -138,18 +145,32 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
       input: VerificationInput,
       signal?: AbortSignal,
     ): Promise<VerificationRecord> {
+      if (!baseUrl) throw new VerificationServiceError('unavailable');
+      throwIfAborted(signal);
       const body = new FormData();
       body.append('shop_name', input.shopName);
       body.append('bank_name', input.bankName);
       body.append('bank_account_name', input.bankAccountName);
       body.append('bank_account_number', input.bankAccountNumber);
-      // เว็บส่ง File จาก picker ได้ตรง ๆ ส่วน native ใช้ descriptor ของไฟล์ในเครื่อง
-      if (input.idCard.file) body.append('id_card_image', input.idCard.file as Blob, input.idCard.name);
-      else body.append('id_card_image', {
-        uri: input.idCard.uri,
-        name: input.idCard.name,
-        type: input.idCard.type,
-      } as unknown as Blob);
+      if (input.idCard.file) {
+        body.append('id_card_image', input.idCard.file as Blob, input.idCard.name);
+      } else {
+        // SDK 57's global expo/fetch needs file bytes, not RN URI descriptors.
+        // Load the native filesystem only for files selected on the device.
+        let localFile: Blob;
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { File }: typeof import('expo-file-system') = require('expo-file-system');
+          const image = new File(input.idCard.uri);
+          if (!image.exists) throw new Error('Selected card image no longer exists');
+          localFile = image;
+        } catch {
+          throw new VerificationServiceError('validation-error', {
+            id_card_image: 'อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่',
+          });
+        }
+        body.append('id_card_image', localFile);
+      }
 
       const response = await request('/verifications', {
         method: 'POST',

@@ -79,14 +79,23 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
           if (fileInput?.file) {
             formData.append('file', fileInput.file as any);
           } else if (fileInput?.uri) {
-            formData.append('file', {
-              uri: fileInput.uri,
-              name: fileInput.name || 'product-' + Date.now() + '.jpg',
-              type: fileInput.type || 'image/jpeg',
-            } as any);
+            // SDK 57's global expo/fetch serializes bytes, not RN URI descriptors.
+            // Keep this native import lazy so browser File uploads stay unchanged.
+            let localFile: Blob;
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
+              const { File }: typeof import('expo-file-system') = require('expo-file-system');
+              const image = new File(fileInput.uri);
+              if (!image.exists) throw new Error('Selected image no longer exists');
+              localFile = image;
+            } catch {
+              throw new ProductServiceError('validation-error', 'อ่านรูปภาพไม่สำเร็จ กรุณาเลือกรูปใหม่');
+            }
+            formData.append('file', localFile);
           } else {
             throw new ProductServiceError('validation-error', 'กรุณาเลือกรูปภาพ');
           }
+          if (signal.aborted) throw new ProductRequestCancelledError();
           const response = await fetcher(baseUrl + '/products/images/upload', {
             method: 'POST',
             headers: { Authorization: 'Bearer ' + token },

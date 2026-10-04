@@ -376,7 +376,7 @@ def categories(request: Request, response: Response, db: Session = Depends(get_d
     }
 
 
-@router.get("/brands", tags=["Product options"], summary="ดูแบรนด์สินค้า", description="ไม่ต้องกรอกข้อมูล กด Try it out แล้ว Execute ใช้ค่า id ที่ได้เป็น brand_id ตอนสร้างหรือแก้ไขสินค้า")
+@router.get("/brands", tags=["Product options"], summary="ดูแบรนด์สินค้า", description="ใช้ id เป็น brand_id ตอนสร้างหรือแก้ไขสินค้า หรือส่ง brand_name ที่พิมพ์เองแทน brand_id")
 def brands(request: Request, response: Response, db: Session = Depends(get_db)):
     validate_query(request, set())
     try:

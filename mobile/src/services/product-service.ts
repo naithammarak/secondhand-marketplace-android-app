@@ -1,5 +1,5 @@
 // PRODUCT-06: Product listing (create/edit/cancel) with real API; in-memory data is opt-in for development.
-import { validateProductWriteFields } from '../products/product-write-validation.ts';
+import { validateProductBrand, validateProductWriteFields } from '../products/product-write-validation.ts';
 import { ProductRequestCancelledError, ProductRequestTimeoutError, withProductRequestDeadline } from '../products/product-request-deadline.ts';
 
 export type SaleType = 'FIXED_PRICE';
@@ -47,11 +47,16 @@ export type ProductInput = Omit<Product, 'id' | 'saleType'>;
 function validateWriteInput(input: ProductInput): void {
   const fields: Record<string, string> = { ...validateProductWriteFields(input) };
   if (!input.categoryId) fields.category_id = 'กรุณาเลือกหมวดหมู่สินค้า';
-  if (!input.brandId) fields.brand_id = 'กรุณาเลือกแบรนด์สินค้า';
+  const brandError = validateProductBrand(input.brand);
+  if (brandError) fields.brand_name = brandError;
   if (input.images.length < 1 || input.images.length > 10) fields.images = 'กรุณาแนบรูปภาพ 1–10 รูป';
   if (Object.keys(fields).length > 0) {
     throw new ProductServiceError('validation-error', 'ข้อมูลสินค้าไม่ถูกต้อง', fields);
   }
+}
+
+function brandRequestFields(input: ProductInput) {
+  return input.brandId ? { brand_id: input.brandId } : { brand_name: input.brand.trim() };
 }
 
 export const SALE_TYPE: SaleType = 'FIXED_PRICE';
@@ -334,7 +339,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
         description: input.description.trim(),
         price: input.price,
         category_id: input.categoryId,
-        brand_id: input.brandId,
+        ...brandRequestFields(input),
         size: input.size.trim(),
         condition: input.condition,
         sale_type: SALE_TYPE,
@@ -378,7 +383,7 @@ export function createProductService(options: ProductServiceOptions = {}) {
         description: input.description.trim(),
         price: input.price,
         category_id: input.categoryId,
-        brand_id: input.brandId,
+        ...brandRequestFields(input),
         size: input.size.trim(),
         condition: input.condition,
         sale_type: SALE_TYPE,

@@ -1,5 +1,6 @@
 """PRODUCT-04 update/cancel ownership, state, image and transaction coverage."""
 
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -172,6 +173,67 @@ def add_legacy_image(db, product_id, image_id=100, sort_order=0):
 def count(db, model):
     db.expire_all()
     return db.scalar(select(func.count()).select_from(model))
+
+def test_update_to_typed_brand_then_existing_brand_keeps_names_and_images(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, images = make_product(db, seller_id, category_id, brand_id)
+    response = client.patch(f"/products/{product_id}", headers=headers, json={"brand_name": " Local Brand "})
+    assert response.status_code == 200
+    brand = response.json()["data"]["brand"]
+    assert brand["brand_name"] == "Local Brand"
+    for path in [f"/products/me/{product_id}", f"/products/{product_id}"]:
+        reopened = client.get(path, headers=headers)
+        assert reopened.status_code == 200
+        assert reopened.json()["data"]["brand"] == brand
+    reused = client.patch(f"/products/{product_id}", headers=headers, json={"brand_name": "local brand"})
+    assert reused.json()["data"]["brand"] == brand
+    assert count(db, Brand) == 2
+    restored = client.patch(f"/products/{product_id}", headers=headers, json={"brand_id": brand_id})
+    assert restored.json()["data"]["brand"]["id"] == brand_id
+    assert [image["image_id"] for image in restored.json()["data"]["images"]] == images
+
+
+def test_failed_update_rolls_back_new_brand_and_original_brand(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, seller_id, category_id, brand_id)
+    response = client.patch(f"/products/{product_id}", headers=headers, json={
+        "brand_name": "Rollback brand", "images": [{"upload_id": 99999}],
+    })
+    assert response.status_code == 422
+    assert count(db, Brand) == 1
+    assert db.get(Product, product_id).brand_id == brand_id
+
+
+@pytest.mark.parametrize("body", [
+    {"brand_name": " "}, {"brand_name": "x" * 256}, {"brand_name": None},
+    {"brand_name": 123}, {"brand_name": "\ud800"}, {"brand_id": 1, "brand_name": "Mango"},
+])
+def test_invalid_update_brand_is_rejected(db, body):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, seller_id, category_id, brand_id)
+    response = client.patch(f"/products/{product_id}", headers=headers | {"Content-Type": "application/json"},
+                            content=json.dumps(body))
+    assert response.status_code == 422
+    assert count(db, Brand) == 1
+    assert db.get(Product, product_id).brand_id == brand_id
+
+
+def test_other_owner_cannot_add_a_brand_through_update(db):
+    owner_id, _ = create_user(db, UserRole.SELLER)
+    other_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, owner_id)
+    approve(db, other_id)
+    category_id, brand_id = catalog(db)
+    product_id, _ = make_product(db, owner_id, category_id, brand_id)
+    response = client.patch(f"/products/{product_id}", headers=headers, json={"brand_name": "Forbidden brand"})
+    assert response.status_code == 404
+    assert count(db, Brand) == 1
 
 
 def test_openapi_documents_update_and_cancel_errors():
