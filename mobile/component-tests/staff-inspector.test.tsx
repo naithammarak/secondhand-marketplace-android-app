@@ -86,3 +86,19 @@ test('queue hints derive from server status and flags', () => {
   expect(workHint(base({ order_status: 'RESULT_NOTIFIED', can_create_fulfillment: true, next_action: 'SHIP_TO_BUYER' }))).toBe('พร้อมส่งถึงผู้ซื้อ');
   expect(workHint(base({ order_status: 'RESULT_NOTIFIED', next_action: 'WAIT_BUYER_DECISION' }))).toBe('รอผู้ซื้อตัดสินผลตรวจ');
 });
+
+test('checklist toggles replace that topic line instead of appending duplicates', () => {
+  const handlers = actions();
+  render(<InspectorWorkView work={base({ order_status: 'INSPECTING', inspector_id: 9, evidence: [
+    { id: 31, mime_type: 'image/png', size_bytes: 10, url: '/inspection-evidence/31' }] })} actions={handlers} />);
+  fireEvent.press(screen.getAllByRole('button', { name: '✓ ตรง' })[0]);
+  fireEvent.press(screen.getAllByRole('button', { name: '✗ ไม่ตรง' })[0]);
+  fireEvent.press(screen.getAllByRole('button', { name: '✗ ไม่ตรง' })[0]);
+  expect(screen.getByLabelText('สรุปผลการตรวจ').props.value).toBe('ความแท้: พบข้อสงสัย');
+});
+
+test('the inspect dock lists what is still missing before review', () => {
+  render(<InspectorWorkView work={base({ order_status: 'INSPECTING', inspector_id: 9 })} actions={actions()} />);
+  expect(screen.getByText(/ยังขาด: เลือกผลตรวจ/)).toBeTruthy();
+  expect(disabled('ตรวจทานและบันทึกผล')).toBe(true);
+});
