@@ -30,3 +30,19 @@ Not yet verified on a real device: install, cold launch, Google login return, ca
 | Checks | `assets/index.android.bundle` present |
 
 Not yet verified on a real device: product image upload, custom brand, seller verification submit, C4 inspection → certificate + QR, courier proof → confirm delivery.
+
+# APK manifest — preview build 3
+
+| Field | Value |
+|---|---|
+| File | `2ndhand-preview-8d115f7.apk` (not committed; 113,892,988 bytes) |
+| SHA-256 | `01519d5f4da1d704c1b7ba10eee30b4f3086382bb899f4a19c0cd62f939dc054` |
+| Download | https://expo.dev/artifacts/eas/fYdq1dvOS67JG702XotO_kXGErpuYTS-1_HV-1-uhO0.apk |
+| EAS build | https://expo.dev/accounts/thammaraknai/projects/mobile-expo/builds/be473806-f3cb-4b70-8c2b-8175a6d60cba (finished 2026-10-04 17:55 UTC) |
+| Source commit | `8d115f76bc0e12ee98a30d43e106d37b08f48a31` |
+| Profile | EAS `preview` (same as builds 1–2) |
+| Package / version | `com.kmutnb.secondhandmarketplace` / 1.0.0 (install over build 2) |
+| Changes since build 2 | seller ship-to-center screen redesigned to match design reference |
+| Checks | `assets/index.android.bundle` present; `tsc --noEmit` passed before build |
+
+Backend custom-brand change (`7ab4ab4`) is still not deployed to Render, so custom brand entry fails against the live API until it is.
