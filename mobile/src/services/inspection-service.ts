@@ -2,6 +2,7 @@
 
 import type { OrderStatus } from './order-service';
 import type { FulfillmentPolicy, ShipmentLeg } from '../fulfillment/contract';
+import { LocalUploadFileError, uploadFilePart } from './upload-file-part.ts';
 
 export type InspectionResult = 'PASS' | 'MINOR_ISSUE' | 'NOT_AS_DESCRIBED' | 'FAKE';
 export type EvidenceFile = { uri: string; name: string; type: string; size?: number; file?: unknown };
@@ -118,6 +119,18 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
     body: JSON.stringify(payload),
   });
 
+  // Missing/unreadable local images fail before any request, not as network_error.
+  const fileForm = (file: EvidenceFile): FormData => {
+    const form = new FormData();
+    try {
+      form.append('file', uploadFilePart(file));
+    } catch (error) {
+      if (error instanceof LocalUploadFileError) throw new InspectionServiceError(422, 'local_file_unreadable');
+      throw error;
+    }
+    return form;
+  };
+
   return {
     couriers: (token: string, offset = 0) => request<{ items: { id: number; name: string }[]; total: number }>(token, `/admin/couriers?limit=20&offset=${offset}`),
     publicCertificate: (publicToken: string) => request<{ certificate_no: string; result: InspectionResult; issued_at: string; status: CertificateStatus }>(null,
@@ -148,9 +161,8 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
       }
     },
     confirmDelivery: (token: string, id: number, key: string, proofIds: number[]) => request<{ shipment_id: number; courier_delivered_at: string }>(token, `/courier/shipments/${id}/confirm-delivery`, json({ proof_ids: [...proofIds].sort((a, b) => a - b) }, key)),
-    uploadProof: (token: string, id: number, file: EvidenceFile, key: string) => {
-      const form = new FormData();
-      form.append('file', (file.file ?? { uri: file.uri, name: file.name, type: file.type }) as Blob);
+    uploadProof: async (token: string, id: number, file: EvidenceFile, key: string) => {
+      const form = fileForm(file);
       return request<{ proof: Evidence }>(token, `/courier/shipments/${id}/proofs`, { method: 'POST', headers: { 'Idempotency-Key': key }, body: form }, 60_000);
     },
     getProgress: (token: string, orderId: number) => request<Progress>(token, `/orders/${orderId}/inspection-progress`),
@@ -166,9 +178,8 @@ export function createInspectionService(options: { baseUrl?: string; fetch?: Fet
     receive: (token: string, id: number, note: string | null, key: string) =>
       request<WorkDetail>(token, `/inspections/${id}/receive`, json(note?.trim() ? { note: note.trim() } : {}, key)),
     start: (token: string, id: number, key: string) => request<WorkDetail>(token, `/inspections/${id}/start`, json({}, key)),
-    upload: (token: string, id: number, file: EvidenceFile, key: string) => {
-      const form = new FormData();
-      form.append('file', (file.file ?? { uri: file.uri, name: file.name, type: file.type }) as Blob);
+    upload: async (token: string, id: number, file: EvidenceFile, key: string) => {
+      const form = fileForm(file);
       return request<{ evidence: { id: number; mime_type: string; size_bytes: number } }>(token,
         `/inspections/${id}/evidence`, { method: 'POST', headers: { 'Idempotency-Key': key }, body: form }, 60_000);
     },

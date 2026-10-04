@@ -1,3 +1,5 @@
+import { readLocalUploadFile } from './upload-file-part.ts';
+
 export type VerificationStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type VerificationRecord = {
@@ -155,15 +157,9 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
       if (input.idCard.file) {
         body.append('id_card_image', input.idCard.file as Blob, input.idCard.name);
       } else {
-        // SDK 57's global expo/fetch needs file bytes, not RN URI descriptors.
-        // Load the native filesystem only for files selected on the device.
         let localFile: Blob;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { File }: typeof import('expo-file-system') = require('expo-file-system');
-          const image = new File(input.idCard.uri);
-          if (!image.exists) throw new Error('Selected card image no longer exists');
-          localFile = image;
+          localFile = readLocalUploadFile(input.idCard.uri);
         } catch {
           throw new VerificationServiceError('validation-error', {
             id_card_image: 'อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่',

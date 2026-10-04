@@ -1,5 +1,6 @@
 // PRODUCT-06: Product image upload service using multipart API; in-memory uploads are opt-in for development.
 import { ProductServiceError, registerProductImage } from './product-service.ts';
+import { readLocalUploadFile } from './upload-file-part.ts';
 import { ProductRequestCancelledError, ProductRequestTimeoutError, withProductRequestDeadline } from '../products/product-request-deadline.ts';
 
 export interface UploadedImage {
@@ -79,15 +80,9 @@ export function createImageUploadService(options: ImageUploadServiceOptions = {}
           if (fileInput?.file) {
             formData.append('file', fileInput.file as any);
           } else if (fileInput?.uri) {
-            // SDK 57's global expo/fetch serializes bytes, not RN URI descriptors.
-            // Keep this native import lazy so browser File uploads stay unchanged.
             let localFile: Blob;
             try {
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              const { File }: typeof import('expo-file-system') = require('expo-file-system');
-              const image = new File(fileInput.uri);
-              if (!image.exists) throw new Error('Selected image no longer exists');
-              localFile = image;
+              localFile = readLocalUploadFile(fileInput.uri);
             } catch {
               throw new ProductServiceError('validation-error', 'อ่านรูปภาพไม่สำเร็จ กรุณาเลือกรูปใหม่');
             }

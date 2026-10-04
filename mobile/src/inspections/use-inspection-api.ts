@@ -10,6 +10,7 @@ const messages: Record<string, string> = {
   courier_delivery_required: 'รอ Courier แนบหลักฐานและยืนยันส่งถึงศูนย์ก่อนรับสินค้า',
   certificate_unavailable: 'บริการออกใบรับรองยังไม่พร้อม ผลตรวจยังไม่ถูกบันทึก กรุณาลองใหม่',
   storage_unavailable: 'โหลดหรือบันทึกรูปหลักฐานไม่ได้ กรุณาลองใหม่',
+  local_file_unreadable: 'อ่านรูปภาพไม่สำเร็จ กรุณาเลือกรูปใหม่',
   invalid_courier: 'ไม่พบบัญชี Courier ที่ใช้งานได้ กรุณาตรวจรหัสผู้ขนส่ง',
   assignment_locked: 'รายการนี้ยืนยันการส่งหรือมีหลักฐานแล้ว จึงเปลี่ยนผู้ขนส่งไม่ได้',
   proof_required: 'กรุณาแนบรูปส่งถึงศูนย์ 1–3 รูปก่อนยืนยัน',

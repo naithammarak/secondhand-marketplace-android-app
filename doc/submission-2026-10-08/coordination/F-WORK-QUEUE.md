@@ -12,6 +12,7 @@
 | 2 | แก้อัปโหลดรูปในหน้าลงขายของผู้ขาย | PATCHED_LOCAL — เปลี่ยน native upload เป็น Expo File แล้ว; ยังต้องสร้าง APK ใหม่และยืนยันบนเครื่องจริง | Galaxy A02s เลือกรูป JPEG/PNG ที่รองรับแล้วอัปโหลดได้ ลงขายและเปิดสินค้ากลับมาเห็นรูปจริง; กรณีผิดพลาดแสดงข้อความที่ตรงสาเหตุและลองใหม่ได้โดยไม่เสียข้อมูลที่กรอก |
 | 3 | แก้ส่งคำขอยืนยันตัวตนในหน้าขอเปิดร้าน | PATCHED_LOCAL — ส่งรูปบัตร native ด้วย Expo File แล้ว; regression/ฟอร์ม/สถานะ/Android compilation ผ่าน ยังต้องทดสอบ APK ใหม่กับ API จริง | กรอกข้อมูลร้าน/ธนาคารและแนบรูปที่รองรับแล้วส่งได้ สถานะเป็น PENDING และเปิดกลับมายังเห็นคำขอ; validation/retry ไม่ทำข้อมูลฟอร์มหายและไม่เปิดเผยรูปบัตรหรือข้อมูลบัญชี |
 | 4 | เปิด lifecycle worker บน Render Cron Job ทุก 5 นาที | PENDING — ยังไม่ได้เปิด | ใช้ `backend/scripts/run_lifecycle_jobs.py` มีหลักฐาน scheduler และผลการรันจริง หลังได้รับอนุญาตให้ตั้งค่า remote |
+| 5 | แก้อัปโหลดรูปหลักฐานตรวจสินค้าและรูปส่งถึงศูนย์ของ Courier | PATCHED_LOCAL — ส่งรูป native ด้วย Expo File ผ่าน helper กลางแล้ว; tests/typecheck/Android export ผ่าน ยังต้องสร้าง APK ใหม่และทดสอบบนเครื่องจริง | Inspector แนบรูปหลักฐาน บันทึกผล “ผ่าน” แล้วได้ใบรับรอง + QR (C4); Courier แนบรูปส่งถึงศูนย์และยืนยันส่งได้; ไฟล์หายแสดง “อ่านรูปภาพไม่สำเร็จ กรุณาเลือกรูปใหม่” ไม่ใช่ข้อความเครือข่าย |
 
 หลังแก้โค้ดและอนุมัติ rollout ให้สร้าง APK ใหม่ ทดสอบรายการที่ได้รับผลกระทบใน [QA ของเพื่อน](../QA-FRIEND-CHECKLIST.md) โดยเฉพาะ A6–A8/Q02 และ B1–B3/Q03 แล้วดำเนิน tasks 10–13 ตาม [งาน F](../work-packages/F-release-android-presentation.md) ต่อ ผลทดสอบ APK build 1 ไม่ถือเป็นผลทดสอบรุ่นที่แก้แล้ว
 
@@ -38,6 +39,12 @@
 - [F-UPLOAD-REPRO.mjs](../reports/F-UPLOAD-REPRO.mjs) รักษาบริการทั้งสองที่ commit ก่อนแพตช์ และทำซ้ำ `network-error` ก่อน HTTP ด้วย Expo serializer จริง โดยไม่ส่งข้อมูลร้าน/ธนาคาร/รูปบัตรจริงออกนอกเครื่อง
 - ผลแก้และคำสั่งตรวจอยู่ใน [F-VERIFICATION-FIX-2026-10-04.md](../reports/F-VERIFICATION-FIX-2026-10-04.md): ใช้ Expo File, แสดงข้อผิดพลาดตรงช่องรูปบัตรเมื่อไฟล์หาย และไม่ส่งคำขอที่ถูกยกเลิกหลังเปลี่ยนบัญชีระหว่างรอ token
 - งานยืนยันที่เหลือ: สร้าง APK ใหม่ ตรวจ Auth/private Storage และการบันทึก/อ่านสถานะ PENDING บนเครื่องจริงตามสิทธิ์ที่ได้รับ
+
+## รายละเอียดคิว 5 — รูปหลักฐานตรวจสินค้า/Courier
+
+- `mobile/src/services/inspection-service.ts` (`upload` → `/inspections/{id}/evidence`, `uploadProof` → `/courier/shipments/{id}/proofs`) ยังแนบ `{ uri, name, type }` บน native จึงล้มก่อนส่ง HTTP แบบเดียวกับคิว 2–3 และบล็อก C4 และการยืนยันส่งของ Courier
+- เพิ่ม `mobile/src/services/upload-file-part.ts` ใช้ร่วมกับบริการอัปโหลดสินค้า/ยืนยันตัวตน (ข้อความ error เดิมไม่เปลี่ยน); ไฟล์หายเป็น `InspectionServiceError(422, 'local_file_unreadable')` และล้างรูปที่รอส่งให้เลือกใหม่
+- ผลและคำสั่งตรวจอยู่ใน [F-INSPECTION-UPLOAD-FIX-2026-10-04.md](../reports/F-INSPECTION-UPLOAD-FIX-2026-10-04.md)
 
 ## ขอบเขตสิทธิ์
 

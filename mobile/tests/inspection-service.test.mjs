@@ -131,3 +131,13 @@ test('buyer inspection decision posts the documented payload to the protected ro
   assert.deepEqual(JSON.parse(request.init.body), { decision: 'REJECT', reason: 'สภาพไม่ตรง' });
   assert.equal(result.next_action, 'RETURN_TO_SELLER');
 });
+
+test('evidence and proof uploads without a readable file fail as local_file_unreadable, never network_error', async () => {
+  let calls = 0;
+  const service = createInspectionService({ baseUrl: 'https://api.test', fetch: async () => { calls += 1; return json(201, {}); } });
+  for (const method of ['upload', 'uploadProof']) {
+    await assert.rejects(service[method]('tok', 4, { uri: 'file:///missing.jpg', name: 'missing.jpg', type: 'image/jpeg' }, 'key-12345678'),
+      error => error instanceof InspectionServiceError && error.status === 422 && error.code === 'local_file_unreadable');
+  }
+  assert.equal(calls, 0);
+});
