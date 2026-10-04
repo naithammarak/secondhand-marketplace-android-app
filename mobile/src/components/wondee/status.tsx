@@ -16,8 +16,10 @@ export { formatLongRemaining, textLength };
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral';
 
 function toneColors(theme: ReturnType<typeof useTheme>, tone: Tone) {
-  if (tone === 'neutral') return { fg: theme.text, bg: theme.backgroundElement, border: theme.border };
-  return { fg: theme[tone], bg: theme[`${tone}Soft` as const], border: theme[tone] };
+  // พื้นอ่อน + ขอบโปร่งแบบ design (bg-*-500/10 border-*-500/30)
+  const tint = { success: '16, 185, 129', warning: '245, 158, 11', danger: '244, 63, 94', info: '14, 165, 233' } as const;
+  if (tone === 'neutral') return { fg: theme.text, bg: theme.backgroundElement, border: 'rgba(100, 116, 139, 0.25)' };
+  return { fg: theme[tone], bg: `rgba(${tint[tone]}, 0.1)`, border: `rgba(${tint[tone]}, 0.3)` };
 }
 
 /** Section-level state banner. `testID` lets tests and visual QA target the state. */
@@ -28,8 +30,8 @@ export function StatusBanner({ tone, title, detail, children, testID }: PropsWit
   const colors = toneColors(theme, tone);
   return <View testID={testID} accessibilityLiveRegion="polite"
     style={[styles.banner, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-    <ThemedText type="smallBold" style={{ color: colors.fg, fontSize: 15 }}>{title}</ThemedText>
-    {typeof detail === 'string' ? <ThemedText type="small" themeColor="textSecondary">{detail}</ThemedText> : detail}
+    <ThemedText style={{ color: tone === 'neutral' ? theme.text : colors.fg, fontSize: 14, lineHeight: 20, fontWeight: '700' }}>{title}</ThemedText>
+    {typeof detail === 'string' ? <ThemedText themeColor="textSecondary" style={styles.bannerDetail}>{detail}</ThemedText> : detail}
     {children}
   </View>;
 }
@@ -49,17 +51,18 @@ export function MoneyRow({ label, amount, emphasis, negative, note }: {
   const shown = formatBaht(amount);
   return <View style={styles.moneyRow}>
     <View style={{ flex: 1, gap: 2 }}>
-      <ThemedText type={emphasis ? 'smallBold' : 'small'} themeColor={emphasis ? undefined : 'textSecondary'}>{label}</ThemedText>
-      {note ? <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 11 }}>{note}</ThemedText> : null}
+      <ThemedText themeColor={emphasis ? undefined : 'textSecondary'} style={emphasis ? styles.moneyStrong : styles.money}>{label}</ThemedText>
+      {note ? <ThemedText themeColor="textSecondary" style={styles.moneyNote}>{note}</ThemedText> : null}
     </View>
-    <ThemedText type={emphasis ? 'smallBold' : 'small'}>{negative && shown !== '-' ? `-${shown}` : shown}</ThemedText>
+    {/* ยอดรวมเป็นสีเขียวเฉพาะเมื่อมีเงินจริง ยอด 0 (เช่นไม่จ่ายผู้ขายเพราะคืนเงิน) ไม่ทำให้ดูเหมือนได้เงิน */}
+    <ThemedText style={emphasis ? [styles.moneyStrong, Number(amount) > 0 ? { color: '#10b981' } : null] : styles.money}>{negative && shown !== '-' ? `-${shown}` : shown}</ThemedText>
   </View>;
 }
 
 export function SectionCard({ title, trailing, children, testID }: PropsWithChildren<{ title: string; trailing?: ReactNode; testID?: string }>) {
   const theme = useTheme();
   return <View testID={testID} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-    <View style={styles.cardHeader}><ThemedText type="smallBold" style={{ fontSize: 15, flex: 1 }}>{title}</ThemedText>{trailing}</View>
+    <View style={styles.cardHeader}><ThemedText style={styles.cardTitle}>{title}</ThemedText>{trailing}</View>
     {children}
   </View>;
 }
@@ -129,9 +132,14 @@ export function ReasonField({ label, value, onChange, min, max, editable = true,
 }
 
 const styles = StyleSheet.create({
-  banner: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
+  banner: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 4 },
+  bannerDetail: { fontSize: 11, lineHeight: 17 },
+  money: { fontSize: 12, lineHeight: 18 },
+  moneyStrong: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  moneyNote: { fontSize: 10, lineHeight: 15 },
+  cardTitle: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '700' },
   pill: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
-  moneyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 5 },
+  moneyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 3 },
   card: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   deadline: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, padding: 12 },

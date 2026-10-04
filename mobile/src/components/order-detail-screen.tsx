@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, useRouter } from 'expo-router';
 
 import { useAuth } from '@/auth/auth-provider';
-import { MarketplaceHeader } from './marketplace-header';
+import { OrderStatusPill } from './order-status-pill';
+import { ProductImage, cardConditionLabels, conditionBadgeTheme } from './product-catalog-ui';
+import { EmptyState, ErrorState, Skeleton } from './wondee/primitives';
+import type { ProductCondition } from '@/services/product-catalog-service';
 import { ThemedText } from '@/components/themed-text';
 import { Button, errorText, Loading, Screen, styles as orderUiStyles } from '@/components/order-ui';
 import { WondeeLoader } from './wondee/loader';
@@ -93,6 +97,8 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
     void store.refresh();
   }, [deadlinePassed, now, store]);
 
+  // รอกู้ session ก่อน ไม่งั้นเปิดลิงก์คำสั่งซื้อตรง ๆ จะถูกส่งไปหน้า login ทั้งที่ล็อกอินอยู่
+  if (auth.initializing) return <Screen><Loading label="กำลังตรวจสอบบัญชี" /></Screen>;
   if (!auth.session) return <Redirect href="/login" />;
 
   const timeline = order && journey ? journeyTimeline({ createdAt: order.createdAt, paidAt: order.paidAt, journey, delivery: data.delivery, result: data.result }) : [];
@@ -101,23 +107,41 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
 
   return (
     <Screen>
-      <SafeAreaView style={[orderUiStyles.content, { flex: 1, alignSelf: 'center', gap: 0 }]}>
-        <MarketplaceHeader title={`คำสั่งซื้อ${order ? ` #${order.id}` : ''}`} back
-          trailing={order ? <Pressable accessibilityRole="button" accessibilityLabel="รีเฟรชสถานะ" onPress={() => { void refreshAll(); }} hitSlop={8} style={styles.headerRefreshBtn}>
-            <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>รีเฟรช</ThemedText></Pressable> : null} />
+      <SafeAreaView style={[orderUiStyles.content, { flex: 1, alignSelf: 'center', gap: 0, maxWidth: undefined, backgroundColor: theme.background }]}>
+        <View style={[styles.header, { backgroundColor: theme.background === '#0c0e14' ? '#121622' : '#ffffff', borderBottomColor: theme.border }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="กลับ" hitSlop={8} style={styles.headerBack}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/orders'))}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Path d="M15 19l-7-7 7-7" stroke={theme.text} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Pressable>
+          <ThemedText accessibilityRole="header" style={[styles.headerTitle, { color: theme.text }]}>
+            คำสั่งซื้อ{order ? <ThemedText style={[styles.headerTitle, styles.mono, { color: theme.text }]}>{` #${order.id}`}</ThemedText> : null}
+          </ThemedText>
+          {order ? <OrderStatusPill status={order.status} /> : null}
+          <View style={{ flex: 1 }} />
+          {order ? <Pressable accessibilityRole="button" accessibilityLabel="รีเฟรชสถานะ" onPress={() => { void refreshAll(); }} hitSlop={8} style={styles.headerBack}>
+            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+              <Path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" stroke={theme.textSecondary} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+          </Pressable> : null}
+        </View>
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContainer} alwaysBounceVertical
           onScroll={pullToRefresh.handleScroll} scrollEventThrottle={16}
           {...(Platform.OS === 'web' ? { onWheel: pullToRefresh.handleWheel, onPointerDown: pullToRefresh.handlePointerDown, onPointerUp: pullToRefresh.handlePointerUp } : {})}
           refreshControl={<RefreshControl refreshing={isManualRefresh && state.refreshing} colors={[theme.brand]} tintColor={theme.brand} onRefresh={handleManualRefresh} />}>
           {Platform.OS === 'web' && isManualRefresh && state.refreshing ? <Loading label="กำลังรีเฟรชคำสั่งซื้อ..." /> : null}
-          {orderId === null ? <ThemedText>รหัสคำสั่งซื้อไม่ถูกต้อง</ThemedText> : null}
-          {state.loading && !order ? <Loading label="กำลังโหลดคำสั่งซื้อ" /> : null}
-          {state.loadError && !order ? <SectionCard title="โหลดคำสั่งซื้อไม่สำเร็จ">
-            <ThemedText accessibilityLiveRegion="polite">{errorText(state.loadError)}</ThemedText>
-            {state.loadError === 'unauthorized' ? <Button label="เข้าสู่ระบบอีกครั้ง" onPress={() => router.replace('/login')} />
-              : state.loadError !== 'not-found' && state.loadError !== 'forbidden' ? <Button label="ลองใหม่อีกครั้ง" onPress={() => { void store.refresh(); }} /> : null}
-          </SectionCard> : null}
+          {orderId === null ? <EmptyState icon="receipt" title="ไม่พบคำสั่งซื้อ" detail="รหัสคำสั่งซื้อไม่ถูกต้อง" /> : null}
+          {state.loading && !order ? <View style={{ gap: 14 }}>
+            <Skeleton height={84} label="กำลังโหลดคำสั่งซื้อ" />
+            <Skeleton height={220} />
+            <Skeleton height={140} />
+          </View> : null}
+          {state.loadError && !order ? <ErrorState icon={state.loadError === 'network-error' ? 'offline' : 'alert'} title="โหลดคำสั่งซื้อไม่สำเร็จ" detail={errorText(state.loadError)}>
+            {state.loadError === 'unauthorized' ? <View style={styles.stateAction}><Button label="เข้าสู่ระบบอีกครั้ง" variant="primary" onPress={() => router.replace('/login')} /></View>
+              : state.loadError !== 'not-found' && state.loadError !== 'forbidden' ? <View style={styles.stateAction}><Button label="ลองใหม่อีกครั้ง" variant="primary" onPress={() => { void store.refresh(); }} /></View> : null}
+          </ErrorState> : null}
 
           {order && journey && money ? <View style={{ gap: 14 }}>
             {state.lastResult === 'succeeded' ? <StatusNotice tone="success" title="ชำระเงินจำลองสำเร็จ" detail="ระบบบันทึกการชำระและออกใบเสร็จแล้ว เงินจำลองพักไว้ตามขั้นตอน" /> : null}
@@ -145,24 +169,30 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
             {journey.stage === 'COMPLETED' && isBuyer ? <OrderReviewEntry orderId={order.id} productName={order.product.name}
               onReviewed={() => { void store.refresh(); void list.store.refresh(); }} /> : null}
 
+            <TimelineCard steps={timeline} current={journey.title}
+              done={journey.stage === 'COMPLETED' || order.status === 'REFUNDED' || order.status === 'CANCELLED'} />
+
             {journey.outbound ? <ShipmentCard shipment={journey.outbound} /> : null}
             {journey.returnLeg ? <ShipmentCard shipment={journey.returnLeg} /> : null}
             {journey.inbound ? <ShipmentCard shipment={journey.inbound} /> : null}
 
-            <TimelineCard steps={timeline} current={journey.title} />
-
             <Pressable accessibilityRole="button" accessibilityLabel={`ดูรายละเอียดสินค้า ${order.product.name}`}
               onPress={() => router.push(routes.product(order.product.id))}
               style={({ pressed }) => [styles.productCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: pressed ? 0.85 : 1 }]}>
-              <View style={[styles.productImageWrapper, { backgroundColor: theme.backgroundElement }]}>
-                {productImageUrl ? <Image source={{ uri: productImageUrl }} style={styles.productImage} resizeMode="cover" accessibilityLabel={`รูปสินค้า ${order.product.name}`} />
-                  : <ThemedText style={{ fontSize: 26 }}>📦</ThemedText>}
+              <View style={styles.productImageWrapper}>
+                <ProductImage uri={productImageUrl} width={48} height={48} borderRadius={12} accessibilityLabel={`รูปสินค้า ${order.product.name}`} />
               </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <ThemedText type="smallBold" numberOfLines={2}>{order.product.name}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">{CONDITION_LABELS[order.product.condition] ?? order.product.condition} · ขนาด {order.product.size}</ThemedText>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <ThemedText numberOfLines={1} style={[styles.productName, { color: theme.text }]}>{order.product.name}</ThemedText>
+                <View style={styles.productMeta}>
+                  {CONDITION_LABELS[order.product.condition] ? <View accessibilityLabel={CONDITION_LABELS[order.product.condition]}
+                    style={[styles.condBadge, { backgroundColor: conditionBadgeTheme[order.product.condition as ProductCondition].bg }]}>
+                    <ThemedText style={styles.condBadgeText}>{cardConditionLabels[order.product.condition as ProductCondition]}</ThemedText>
+                  </View> : null}
+                  {order.product.size?.trim() ? <ThemedText style={[styles.productSize, { color: theme.textSecondary }]}>ขนาด {order.product.size}</ThemedText> : null}
+                </View>
               </View>
-              <ThemedText style={{ fontSize: 22, color: theme.textSecondary }}>›</ThemedText>
+              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none"><Path d="M9 5l7 7-7 7" stroke={theme.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
             </Pressable>
 
             <SectionCard title={isBuyer ? 'ที่อยู่จัดส่ง' : 'ที่อยู่ผู้ซื้อ'}>
@@ -201,12 +231,12 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
         {order && journey ? <StickyActions>
           {isBuyer && waitingPayment && order.canPay ? <View style={styles.stickyPayRow}>
             <View style={{ flex: 1 }}>
-              <ThemedText type="small" themeColor="textSecondary">ยอดชำระ (จำลอง)</ThemedText>
-              <ThemedText type="smallBold" style={{ fontSize: 18 }}>{formatBaht(order.amounts.totalAmount)}</ThemedText>
+              <ThemedText style={[styles.barLabel, { color: theme.textSecondary }]}>ยอดชำระ (จำลอง)</ThemedText>
+              <ThemedText style={styles.barAmount}>{formatBaht(order.amounts.totalAmount)}</ThemedText>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel={COPY.simulatedPayment} disabled={paying} onPress={() => { void store.pay('SUCCESS'); }}
-              style={({ pressed }) => [styles.stickyPrimary, { backgroundColor: theme.primary, opacity: pressed || paying ? 0.8 : 1 }]}>
-              {state.paying === 'SUCCESS' ? <WondeeLoader size={20} /> : <ThemedText style={{ color: theme.onPrimary, fontWeight: '700' }}>ชำระเงินจำลอง</ThemedText>}
+              style={({ pressed }) => [styles.stickyPrimary, { backgroundColor: pressed ? '#10b981' : '#059669', opacity: paying ? 0.8 : 1 }]}>
+              {state.paying === 'SUCCESS' ? <WondeeLoader size={20} /> : <ThemedText style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>ชำระเงินจำลอง</ThemedText>}
             </Pressable>
           </View>
             : !isBuyer && journey.actions.includes('ship-to-center') ? <Button label="บันทึกที่อยู่รับคืนและแจ้งส่งเข้าศูนย์" variant="primary" onPress={() => router.push(routes.shipToCenter(order.id))} />
@@ -218,9 +248,11 @@ export function OrderDetailScreen({ orderId }: { orderId: number | null }) {
           <View style={styles.modalBackdrop}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirmingCancel(false)} />
             <View style={[styles.modalPanel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <ThemedText type="subtitle">ยกเลิกคำสั่งซื้อ</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">ยกเลิกแล้วกลับมาไม่ได้ และสินค้าจะกลับไปขายต่อ</ThemedText>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.modalIcon}><ThemedText style={styles.modalIconText}>!</ThemedText></View>
+              <ThemedText style={[styles.modalTitle, { color: theme.text }]}>ยกเลิกคำสั่งซื้อ</ThemedText>
+              <ThemedText style={[styles.modalText, { color: theme.textSecondary }]}>ยกเลิกแล้วกลับมาไม่ได้ และสินค้าจะกลับไปขายต่อ</ThemedText>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                 <View style={{ flex: 1 }}><Button label="ไม่ยกเลิก" disabled={state.cancelling} onPress={() => setConfirmingCancel(false)} /></View>
                 <View style={{ flex: 1 }}><Button label="ยืนยันยกเลิก" variant="danger" busy={state.cancelling} onPress={async () => { await store.cancel(); setConfirmingCancel(false); }} /></View>
               </View>
@@ -250,20 +282,35 @@ function MetaRow({ label, value }: { label: string; value: string | null | undef
 function StickyActions({ children }: { children: React.ReactNode }) {
   const theme = useTheme();
   if (!children) return null;
-  return <View style={[styles.stickyBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</View>;
+  return <View style={[styles.stickyBar, { backgroundColor: theme.background === '#0c0e14' ? '#121622' : '#ffffff', borderColor: theme.border }]}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: { padding: 16, paddingBottom: 40, gap: 14 },
-  headerRefreshBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, backgroundColor: 'rgba(148, 163, 184, 0.1)' },
+  scrollContainer: { padding: 16, paddingBottom: 32, gap: 14, width: '100%', maxWidth: 800, alignSelf: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
+  headerBack: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  mono: { fontFamily: 'monospace' },
+  stateAction: { marginTop: 16, alignSelf: 'stretch' },
+  productName: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  productMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  condBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  condBadgeText: { fontSize: 10, lineHeight: 14, fontWeight: '800', color: '#ffffff' },
+  productSize: { fontSize: 10, lineHeight: 14 },
+  barLabel: { fontSize: 10, lineHeight: 14 },
+  barAmount: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: '#10b981' },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(100, 116, 139, 0.4)', alignSelf: 'center', marginBottom: 8 },
+  modalIcon: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(244, 63, 94, 0.1)', alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
+  modalIconText: { fontSize: 24, lineHeight: 30, fontWeight: '800', color: '#f43f5e' },
+  modalTitle: { fontSize: 16, lineHeight: 24, fontWeight: '700', textAlign: 'center' },
+  modalText: { fontSize: 12, lineHeight: 18, textAlign: 'center' },
   notice: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 4 },
   productCard: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 12 },
-  productImageWrapper: { width: 64, height: 64, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  productImage: { width: 64, height: 64 },
+  productImageWrapper: { width: 48, height: 48, borderRadius: 12, overflow: 'hidden' },
   cancelTriggerBtn: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
-  stickyBar: { borderTopWidth: 1, padding: 12, gap: 8 },
+  stickyBar: { borderTopWidth: 1, paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
   stickyPayRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stickyPrimary: { minHeight: 48, borderRadius: 12, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center' },
+  stickyPrimary: { minHeight: 46, borderRadius: 12, paddingHorizontal: 28, alignItems: 'center', justifyContent: 'center' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   modalPanel: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, padding: 20, gap: 12 },
 });

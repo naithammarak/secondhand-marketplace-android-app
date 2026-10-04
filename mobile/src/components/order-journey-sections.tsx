@@ -3,7 +3,8 @@
  * `can_*` flag carried in `journey.actions`; nothing here computes money or outcomes.
  */
 import { useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDateTime, textLength } from '@/orders/order-format';
 import type { JourneyCommand } from '@/orders/use-order-journey';
@@ -24,11 +25,11 @@ export function JourneyBanner({ journey, onDeadlineReached }: { journey: Journey
   </StatusBanner>;
 }
 
-function Line({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
+function Line({ label, value, mono, accent }: { label: string; value: string | null | undefined; mono?: boolean; accent?: boolean }) {
   if (!value) return null;
-  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, paddingVertical: 3 }}>
-    <ThemedText type="small" themeColor="textSecondary">{label}</ThemedText>
-    <ThemedText type="small" style={mono ? { fontFamily: 'monospace' } : undefined} selectable>{value}</ThemedText>
+  return <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, paddingVertical: 2 }}>
+    <ThemedText themeColor="textSecondary" style={{ fontSize: 12, lineHeight: 18 }}>{label}</ThemedText>
+    <ThemedText style={[{ fontSize: 12, lineHeight: 18 }, mono ? { fontFamily: 'monospace' } : null, accent ? { color: '#0ea5e9' } : null]} selectable>{value}</ThemedText>
   </View>;
 }
 
@@ -39,15 +40,15 @@ export function ShipmentCard({ shipment }: { shipment: ShipmentView }) {
   const theme = useTheme();
   return <SectionCard title={LEG_TITLES[shipment.leg]} testID={`shipment-${shipment.leg}`}>
     <Line label="ผู้ให้บริการขนส่ง" value={shipment.carrier} />
-    <Line label="เลขพัสดุ" value={shipment.trackingNumber} mono />
+    <Line label="เลขพัสดุ" value={shipment.trackingNumber} mono accent />
     <Line label="ส่งเมื่อ" value={formatDateTime(shipment.shippedAt)} />
     <View style={{ gap: 4, borderTopWidth: 1, borderColor: theme.border, paddingTop: 8 }}>
-      <ThemedText type="smallBold">สถานะขนส่ง</ThemedText>
+      <ThemedText style={{ fontSize: 12, lineHeight: 18, fontWeight: '700' }}>สถานะขนส่ง</ThemedText>
       {shipment.transportDeliveredAt ? <View style={{ gap: 4 }}>
         <ThemedText type="small">แจ้งว่าส่งถึงแล้ว · {formatDateTime(shipment.transportDeliveredAt)}</ThemedText>
         {shipment.simulatedTransport ? <SimulationLabel text="สถานะขนส่งจำลอง" /> : shipment.transportSource === 'LEGACY_COURIER' ? <ThemedText type="small" themeColor="textSecondary">ยืนยันโดยผู้ขนส่งรุ่นเดิม</ThemedText> : null}
       </View> : <ThemedText type="small" themeColor="textSecondary">ยังไม่มีสถานะส่งถึงจากขนส่ง</ThemedText>}
-      <ThemedText type="smallBold" style={{ marginTop: 4 }}>ผู้รับยืนยัน</ThemedText>
+      <ThemedText style={{ fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 4 }}>ผู้รับยืนยัน</ThemedText>
       {shipment.recipientReceivedAt
         ? <ThemedText type="small">ยืนยันรับจริงโดย{recipientSourceLabel(shipment.recipientSource)} · {formatDateTime(shipment.recipientReceivedAt)}</ThemedText>
         : <ThemedText type="small" themeColor="textSecondary">ยังไม่มีการยืนยันรับจากผู้รับ</ThemedText>}
@@ -195,25 +196,44 @@ export function journeyTimeline(input: { createdAt: string | null; paidAt: strin
   return steps.filter(step => !!step.at);
 }
 
-export function TimelineCard({ steps, current }: { steps: { label: string; at: string | null }[]; current: string }) {
+export function TimelineCard({ steps, current, done }: { steps: { label: string; at: string | null }[]; current: string; done?: boolean }) {
   const theme = useTheme();
-  return <SectionCard title="ความคืบหน้า" testID="order-timeline">
-    {steps.map((step, index) => <View key={`${step.label}-${index}`} style={{ flexDirection: 'row', gap: 10 }}>
-      <View style={{ alignItems: 'center', width: 14 }}>
-        <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: theme.primary, marginTop: 4 }} />
-        <View style={{ width: 2, flex: 1, backgroundColor: theme.border }} />
+  const muted = theme.background === '#0c0e14' ? '#64748b' : '#94a3b8';
+  // ทุกขั้นที่แสดงมีเวลาจากเซิร์ฟเวอร์แล้ว (ทำแล้ว) ขั้นสุดท้ายคือสถานะปัจจุบัน ไม่เดาขั้นในอนาคต
+  return <SectionCard title="สถานะคำสั่งซื้อ" testID="order-timeline">
+    <View>
+      {steps.map((step, index) => <View key={`${step.label}-${index}`} style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ alignItems: 'center', width: 22 }}>
+          <View style={[timelineStyles.dot, { backgroundColor: '#10b981' }]}>
+            <Svg width={11} height={11} viewBox="0 0 24 24" fill="none"><Path d="M5 13l4 4L19 7" stroke="#ffffff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+          </View>
+          <View style={[timelineStyles.line, { backgroundColor: '#10b981' }]} />
+        </View>
+        <View style={{ flex: 1, paddingBottom: 12 }}>
+          <ThemedText style={[timelineStyles.label, { color: theme.text }]}>{step.label}</ThemedText>
+          <ThemedText style={[timelineStyles.time, { color: muted }]}>{formatDateTime(step.at)}</ThemedText>
+        </View>
+      </View>)}
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ width: 22, alignItems: 'center' }}>
+          <View style={[timelineStyles.dot, done
+            ? { backgroundColor: '#10b981' }
+            : { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderWidth: 2, borderColor: '#f59e0b' }]}>
+            {done ? <Svg width={11} height={11} viewBox="0 0 24 24" fill="none"><Path d="M5 13l4 4L19 7" stroke="#ffffff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" /></Svg> : null}
+          </View>
+        </View>
+        <ThemedText style={[timelineStyles.label, { flex: 1, color: theme.text, paddingTop: 2 }]}>ตอนนี้: {current}</ThemedText>
       </View>
-      <View style={{ flex: 1, paddingBottom: 10 }}>
-        <ThemedText type="small">{step.label}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">{formatDateTime(step.at)}</ThemedText>
-      </View>
-    </View>)}
-    <View style={{ flexDirection: 'row', gap: 10 }}>
-      <View style={{ width: 14, alignItems: 'center' }}><View style={{ width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: theme.warning, marginTop: 4 }} /></View>
-      <ThemedText type="smallBold" style={{ flex: 1 }}>ตอนนี้: {current}</ThemedText>
     </View>
   </SectionCard>;
 }
+
+const timelineStyles = StyleSheet.create({
+  dot: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  line: { width: 2, flex: 1, minHeight: 10 },
+  label: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  time: { fontSize: 10, lineHeight: 15 },
+});
 
 /** Shown when the order is paid but this build has no shipping client bound (before E_BASE). */
 export function JourneyUnavailable() {

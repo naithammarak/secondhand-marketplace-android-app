@@ -23,8 +23,9 @@ import { useTheme } from '@/hooks/use-theme';
 import { useThemePreference } from '@/theme/theme-provider';
 import { useProductImage } from '@/hooks/use-product-image';
 import { MarketplaceNav } from './marketplace-nav';
+import { OrderStatusPill } from './order-status-pill';
 import { CONDITION_LABELS } from '@/services/product-service';
-import { cancelReasonLabels, formatBaht, formatDateTime, orderStatusLabel } from '@/orders/order-format';
+import { cancelReasonLabels, formatBaht, formatDateTime } from '@/orders/order-format';
 import { useOrdersList } from '@/orders/orders-provider';
 import type { OrderListItem, OrderStatus } from '@/services/order-service';
 import type { ProductCondition } from '@/services/product-catalog-service';
@@ -87,33 +88,6 @@ const SELLER_TABS: { key: SellerFilterTab; label: string }[] = [
 export function matchesFilter(item: OrderListItem, filterKey: StatusFilterTab): boolean {
   if (filterKey === 'ALL') return true;
   return ST_GROUPS[filterKey].includes(item.status);
-}
-
-/** สีป้ายตาม design (.st-*): รอผู้ใช้ทำอะไร = อำพัน, ดำเนินการ = ฟ้า, สำเร็จ = เขียว, ปิดแล้ว = เทา */
-function statusTone(status: OrderStatus | string): { bg: string; light: string; dark: string } {
-  if (status === 'WAITING_PAYMENT' || status === 'RESULT_NOTIFIED' || status === 'DELIVERED_PENDING_BUYER' || status === 'DELIVERY_DISPUTED') {
-    return { bg: 'rgba(245, 158, 11, 0.15)', light: '#d97706', dark: '#fbbf24' };
-  }
-  if (status === 'COMPLETED') return { bg: 'rgba(16, 185, 129, 0.15)', light: '#059669', dark: '#34d399' };
-  if (status === 'CANCELLED' || status === 'REFUNDED' || status === 'RETURNED' || status === 'UNKNOWN') {
-    return { bg: 'rgba(100, 116, 139, 0.18)', light: '#64748b', dark: '#94a3b8' };
-  }
-  return { bg: 'rgba(14, 165, 233, 0.15)', light: '#0284c7', dark: '#38bdf8' };
-}
-
-function OrderCardBadge({ status }: { status: OrderStatus | string }) {
-  const { scheme } = useThemePreference();
-  const tone = statusTone(status);
-  return (
-    <View style={[styles.statusBadge, { backgroundColor: tone.bg }]}>
-      <ThemedText
-        numberOfLines={1}
-        style={[styles.statusBadgeText, { color: scheme === 'dark' ? tone.dark : tone.light }]}
-        accessibilityLiveRegion="polite">
-        {orderStatusLabel(status)}
-      </ThemedText>
-    </View>
-  );
 }
 
 function ClockIcon({ color }: { color: string }) {
@@ -221,7 +195,7 @@ function OrderRow({ item, onPress }: { item: OrderListItem; onPress(): void }) {
       style={({ pressed }) => [styles.cardBody, { opacity: pressed ? 0.85 : 1 }]}>
       <View style={styles.cardHeaderRow}>
         <ThemedText style={[styles.orderIdText, { color: muted }]}>#{item.id}</ThemedText>
-        <OrderCardBadge status={item.status} />
+        <OrderStatusPill status={item.status} />
       </View>
 
       <View style={styles.productRow}>
@@ -574,8 +548,6 @@ const styles = StyleSheet.create({
   cardBody: { gap: 10 },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   orderIdText: { fontFamily: 'monospace', fontSize: 11, lineHeight: 16 },
-  statusBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, flexShrink: 1 },
-  statusBadgeText: { fontSize: 10, lineHeight: 15, fontWeight: '700' },
   productRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   imageBox: { width: 48, height: 48, borderRadius: 12, overflow: 'hidden' },
   productInfo: { flex: 1, minWidth: 0 },

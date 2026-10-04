@@ -115,7 +115,10 @@ export function Button({
       style={({ pressed }) => [
         { minHeight: 48, opacity: pressed ? 0.75 : 1 },
         variant === 'secondary' ? styles.secondaryButton : styles.primaryButton,
-        { borderColor: variant === 'danger' ? theme.danger : theme.primary, backgroundColor: variant === 'secondary' ? theme.surface : variant === 'danger' ? theme.danger : theme.primary },
+        // สีตาม design: หลัก = เขียว #059669 ตัวขาว, รอง = พื้นเทาอ่อนไม่มีขอบ, อันตราย = แดงตัวขาว
+        variant === 'secondary'
+          ? { borderWidth: 0, backgroundColor: theme.backgroundElement }
+          : { borderColor: 'transparent', backgroundColor: variant === 'danger' ? '#e11d48' : pressed ? '#10b981' : '#059669' },
         inactive && styles.buttonDisabled,
       ]}
       disabled={inactive}
@@ -123,8 +126,8 @@ export function Button({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       onPress={onPress}>
-      {busy ? <ActivityIndicator color={variant === 'secondary' ? theme.accent : theme.onPrimary} /> : null}
-      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.accent : variant === 'danger' ? theme.onDanger : theme.onPrimary }}>
+      {busy ? <ActivityIndicator color={variant === 'secondary' ? theme.text : '#ffffff'} /> : null}
+      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.text : '#ffffff', textAlign: 'center' }}>
         {label}
       </ThemedText>
     </Pressable>

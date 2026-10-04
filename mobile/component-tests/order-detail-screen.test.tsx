@@ -10,7 +10,8 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn() }),
 }));
 
-jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: { user: { id: 'user-a' } } }) }));
+let mockAuth: { initializing?: boolean; session: unknown } = { session: { user: { id: 'user-a' } } };
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
 
 let mockKeySeq = 0;
 jest.mock('expo-crypto', () => ({ randomUUID: () => `key-${++mockKeySeq}` }));
@@ -250,4 +251,15 @@ describe('order journey', () => {
     expect(await screen.findByTestId('journey-unavailable')).toBeTruthy();
     expect(screen.getByTestId('journey-AWAITING_SELLER_SHIP')).toBeTruthy();
   });
+});
+
+test('a deep link waits for session restore instead of redirecting to login', () => {
+  const saved = mockAuth;
+  mockAuth = { initializing: true, session: null };
+  try {
+    render(<OrderDetailScreen orderId={42} />);
+    expect(screen.getByText('กำลังตรวจสอบบัญชี')).toBeTruthy();
+  } finally {
+    mockAuth = saved;
+  }
 });
