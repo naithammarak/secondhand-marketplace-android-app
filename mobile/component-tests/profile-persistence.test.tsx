@@ -34,7 +34,7 @@ test('account switch clears private data and late save cannot populate next acco
   mockOwner='b'; mockService.get.mockResolvedValue({...profile,id:2,full_name:'Second',email:'second@example.test'});
   ui.rerender(<Harness />); await screen.findByDisplayValue('Second');
   await act(async () => finish({...profile,full_name:'PRIVATE A'}));
-  expect(screen.queryByDisplayValue('PRIVATE A')).toBeNull(); expect(screen.queryByText('อีเมล: private@example.test')).toBeNull();
+  expect(screen.queryByDisplayValue('PRIVATE A')).toBeNull(); expect(screen.queryByText('private@example.test')).toBeNull();
   expect(screen.queryByText('บันทึกชื่อแล้ว')).toBeNull();
 });
 test('policy records through server and failure keeps modal open for retry', async () => {

@@ -71,6 +71,10 @@ test('certificate entry is unavailable to a Buyer or while Admin authorization i
 test('logout uses the auth provider and clears the saved return', async () => {
   render(<ProfileScreen />);
   fireEvent.press(screen.getByRole('button', { name: 'ออกจากระบบ' }));
+  // ถามยืนยันก่อนตาม design
+  expect(mockAuth.logout).not.toHaveBeenCalled();
+  expect(screen.getByText('ออกจากระบบ?')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'ยืนยันออกจากระบบ' }));
   await waitFor(() => expect(mockAuth.logout).toHaveBeenCalledTimes(1));
 });
 
@@ -86,4 +90,29 @@ test('inactive account can read profile but cannot save or open seller applicati
   render(<ProfileScreen />);
   expect(screen.getByRole('button', { name: 'บันทึกชื่อ' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'ขอเปิดร้านค้า' })).toBeNull();
+});
+
+test('cancelling the logout confirmation keeps the session', () => {
+  render(<ProfileScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'ออกจากระบบ' }));
+  fireEvent.press(screen.getByRole('button', { name: 'ยกเลิก' }));
+  expect(mockAuth.logout).not.toHaveBeenCalled();
+});
+
+test('profile shows the account initial and email instead of a mascot or GUEST badge', () => {
+  mockProfile = { id: 1, full_name: 'สมใจ ใจดี', email: 'somjai@example.test', role: 'BUYER', status: 'ACTIVE' };
+  render(<ProfileScreen />);
+  expect(screen.getByText('ส')).toBeTruthy();
+  expect(screen.getAllByText('somjai@example.test').length).toBeGreaterThan(0);
+  expect(screen.queryByText('GUEST')).toBeNull();
+  expect(screen.getByRole('header', { name: 'โปรไฟล์' })).toBeTruthy();
+});
+
+test('guest sees a sign-in card and theme settings but no logout', () => {
+  mockAuth = { session: null, account: null, retryAccount: jest.fn(), logout: jest.fn() };
+  render(<ProfileScreen />);
+  expect(screen.getByText('เข้าสู่ระบบเพื่อใช้งานบัญชีของคุณ')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'ธีมมืด' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'ออกจากระบบ' })).toBeNull();
+  expect(screen.queryByText('GUEST')).toBeNull();
 });

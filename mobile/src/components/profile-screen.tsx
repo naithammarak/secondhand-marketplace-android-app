@@ -1,6 +1,8 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Constants from 'expo-constants';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useAuth } from '@/auth/auth-provider';
@@ -12,9 +14,7 @@ import { MarketplaceHeader } from './marketplace-header';
 import { MarketplaceNav } from './marketplace-nav';
 import { Button, Loading, Screen } from './order-ui';
 import { ThemedText } from './themed-text';
-import { WondeeMascot } from './wondee/brand';
 import { staffWorkspaceFor } from '@/navigation/routes';
-import { WondeeLoader } from './wondee/loader';
 import { useProfile } from '@/profile/use-profile';
 import { ProfileDetails } from './profile-details';
 
@@ -33,13 +33,12 @@ export function ProfileScreen() {
   const isDark = scheme === 'dark';
   const { state, store } = useVerification();
   const [logoutError, setLogoutError] = useState(false);
-  const [focused, setFocused] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const owner = auth.session?.user.id;
 
   useFocusEffect(
     useCallback(() => {
-      setFocused(true);
       if (owner) void auth.retryAccount();
       if (
         owner &&
@@ -48,7 +47,6 @@ export function ProfileScreen() {
       ) {
         void store.refresh();
       }
-      return () => setFocused(false);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [owner, state.owner, store, auth.account?.role]),
   );
@@ -103,10 +101,26 @@ export function ProfileScreen() {
     },
   });
 
+  const muted = isDark ? '#64748b' : '#94a3b8';
+  const email = profileModel.profile?.email ?? auth.session?.user?.email ?? null;
+  const initial = (profileModel.profile?.full_name ?? email ?? '?').trim().charAt(0).toUpperCase() || '?';
+  const version = Constants.expoConfig?.version;
+
+  const doLogout = () => {
+    setConfirmLogout(false);
+    void marketplaceReturn
+      .clear()
+      .catch(() => undefined)
+      .then(() => auth.logout())
+      .catch(() => setLogoutError(true));
+  };
+
+  const card = (extra?: StyleProp<ViewStyle>) => [styles.card, { backgroundColor: theme.surface, borderColor: theme.border }, extra];
+
   return (
     <Screen>
-      <SafeAreaView style={[styles.screenContent, { flex: 1, alignSelf: 'center' }]}>
-        <MarketplaceHeader title="ฉัน" />
+      <SafeAreaView style={[styles.screenContent, { flex: 1, alignSelf: 'center', backgroundColor: theme.background }]}>
+        <MarketplaceHeader title="โปรไฟล์" />
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -122,12 +136,7 @@ export function ProfileScreen() {
               }
             : {})}
           refreshControl={
-            <RefreshControl
-              refreshing={isManualRefresh}
-              colors={['#059669']}
-              tintColor="#059669"
-              onRefresh={handleManualRefresh}
-            />
+            <RefreshControl refreshing={isManualRefresh} colors={['#059669']} tintColor="#059669" onRefresh={handleManualRefresh} />
           }>
           {Platform.OS === 'web' && isManualRefresh ? (
             <View style={{ paddingVertical: 8, alignItems: 'center' }}>
@@ -136,350 +145,137 @@ export function ProfileScreen() {
           ) : null}
           {auth.initializing ? (
             <Loading label="กำลังตรวจสอบบัญชี" />
+          ) : !auth.session ? (
+            /* Guest: การ์ดเข้าสู่ระบบแบบ design */
+            <View style={card(styles.guestCard)}>
+              <View style={[styles.guestAvatar, { backgroundColor: theme.backgroundElement }]}>
+                <PersonIcon color={muted} size={36} />
+              </View>
+              <ThemedText style={[styles.guestTitle, { color: theme.text }]}>เข้าสู่ระบบเพื่อใช้งานบัญชีของคุณ</ThemedText>
+              <View style={{ gap: 4 }}>
+                {['สั่งซื้อสินค้าและชำระเงิน', 'ติดตามสถานะคำสั่งซื้อ', 'เปิดร้านขายของมือสองของคุณ'].map(text => (
+                  <ThemedText key={text} style={[styles.guestBullet, { color: theme.textSecondary }]}>• {text}</ThemedText>
+                ))}
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="เข้าสู่ระบบด้วย Google"
+                onPress={() => router.push('/login')}
+                style={({ pressed }) => [styles.primaryBtn, { backgroundColor: pressed ? '#10b981' : '#059669', alignSelf: 'stretch' }]}>
+                <ThemedText style={styles.primaryBtnText}>เข้าสู่ระบบด้วย Google</ThemedText>
+              </Pressable>
+            </View>
           ) : (
             <>
-              {/* Card 1: User Identity Card */}
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                    shadowColor: '#0F172A',
-                    shadowOpacity: isDark ? 0.25 : 0.06,
-                  },
-                ]}>
+              {/* ตัวตนผู้ใช้: ตัวอักษรแรกของชื่อแทน mascot/รูป (ไม่มีอัปโหลดรูปใน release นี้) */}
+              <View style={card()}>
                 <View style={styles.identityRow}>
-                  {/* Static mascot; avatar upload/picker is out of release scope. */}
-                  <View style={styles.avatarWrapper}>
-                    <View
-                      style={[
-                        styles.avatarCircle,
-                        {
-                          backgroundColor: isDark ? '#07241D' : '#ECFDF5',
-                          borderColor: '#10B981',
-                        },
-                      ]}>
-                      <WondeeMascot size={46} variant="neutral" animate={focused} />
-                    </View>
+                  <View style={styles.avatar}>
+                    <ThemedText style={styles.avatarText}>{initial}</ThemedText>
                   </View>
-
-                  {/* User Details */}
-                  <View style={styles.identityInfo}>
-                    <View style={styles.nameRoleRow}>
-                      <ThemedText style={[styles.nameText, { color: theme.text }]} numberOfLines={1}>
-                        {displayName}
-                      </ThemedText>
-                      <View
-                        style={[
-                          styles.roleBadge,
-                          isDark ? styles.roleBadgeDark : styles.roleBadgeLight,
-                        ]}>
-                        <ThemedText
-                          style={[
-                            styles.roleBadgeText,
-                            isDark ? styles.roleBadgeTextDark : styles.roleBadgeTextLight,
-                          ]}>
-                          {roleText}
-                        </ThemedText>
-                      </View>
-                    </View>
-
-                    <View style={styles.memberStatusRow}>
-                      <ThemedText style={styles.memberDateText}>{profileModel.profile?.status ?? ''}</ThemedText>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <ThemedText style={[styles.nameText, { color: theme.text }]} numberOfLines={1}>{displayName}</ThemedText>
+                    {email ? <ThemedText style={[styles.emailText, { color: muted }]} numberOfLines={1}>{email}</ThemedText> : null}
+                    <View style={styles.pillRow}>
+                      <View style={styles.rolePill}><ThemedText style={styles.rolePillText}>{roleText}</ThemedText></View>
+                      {profileModel.profile?.status ? <ThemedText style={[styles.statusText, { color: muted }]}>{profileModel.profile.status}</ThemedText> : null}
                     </View>
                   </View>
                 </View>
 
                 {!account && auth.accountChecking && <Loading label="กำลังอัปเดตบัญชี" />}
                 {auth.accountError && (
-                  <View style={styles.accountErrorBox}>
-                    <ThemedText accessibilityRole="alert" style={{ color: theme.danger }}>
-                      ตรวจสอบบัญชีไม่สำเร็จ กรุณาลองใหม่
-                    </ThemedText>
-                    <Button
-                      label="ตรวจสอบบัญชีอีกครั้ง"
-                      onPress={() => {
-                        void auth.retryAccount();
-                      }}
-                    />
+                  <View style={{ gap: 8 }}>
+                    <ThemedText accessibilityRole="alert" style={{ color: theme.danger, fontSize: 12 }}>ตรวจสอบบัญชีไม่สำเร็จ กรุณาลองใหม่</ThemedText>
+                    <Button label="ตรวจสอบบัญชีอีกครั้ง" onPress={() => { void auth.retryAccount(); }} />
                   </View>
                 )}
-                {auth.session && account && !account.role && (
-                  <View style={styles.accountErrorBox}>
-                    <ThemedText>บัญชียังไม่พร้อมใช้งาน กรุณาอัปเดตข้อมูลจากระบบ</ThemedText>
-                    <Button
-                      label="อัปเดตบัญชี"
-                      onPress={() => {
-                        void auth.retryAccount();
-                      }}
-                    />
+                {account && !account.role && (
+                  <View style={{ gap: 8 }}>
+                    <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>บัญชียังไม่พร้อมใช้งาน กรุณาอัปเดตข้อมูลจากระบบ</ThemedText>
+                    <Button label="อัปเดตบัญชี" onPress={() => { void auth.retryAccount(); }} />
                   </View>
                 )}
               </View>
 
-              {auth.session && <ProfileDetails key={owner} model={profileModel} />}
-
-              {/* Card 2: Open Shop Card (Prototype vfRenderCard: NONE / PENDING / REJECTED) */}
-              {customer && !verificationReady && <View style={styles.card}>
-                <ThemedText>{state.loadError ? 'โหลดสถานะคำขอผู้ขายไม่สำเร็จ' : 'กำลังตรวจสอบสถานะคำขอผู้ขาย'}</ThemedText>
+              {/* เปิดร้าน: สถานะจริงจากคำขอยืนยันตัวตน */}
+              {customer && !verificationReady && <View style={card()}>
+                <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>{state.loadError ? 'โหลดสถานะคำขอผู้ขายไม่สำเร็จ' : 'กำลังตรวจสอบสถานะคำขอผู้ขาย'}</ThemedText>
                 <Button label="โหลดสถานะผู้ขายอีกครั้ง" onPress={() => void store.refresh()} />
               </View>}
               {customer && verificationReady && !approved && (
-                <View
-                  style={[
-                    styles.sellerBanner,
-                    isDark ? styles.sellerBannerDark : styles.sellerBannerLight,
-                  ]}>
+                <View style={card()}>
                   {record?.status === 'PENDING' ? (
-                    <View style={{ gap: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <WondeeLoader size={36} accessibilityLabel="กำลังตรวจสอบคำขอเปิดร้าน" />
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
-                            กำลังตรวจสอบคำขอเปิดร้าน
-                          </ThemedText>
-                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
-                            รอผู้ดูแลตรวจสอบคำขอ
-                          </ThemedText>
-                        </View>
-                      </View>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={openShopBtnLabel}
-                        onPress={() => router.push('/seller-verification')}
-                        style={({ pressed }) => [
-                          styles.openShopButton,
-                          isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
-                          { opacity: pressed ? 0.85 : 1, width: '100%' },
-                        ]}>
-                        <ThemedText style={styles.openShopButtonText}>ดูสถานะคำขอ</ThemedText>
-                      </Pressable>
-                    </View>
+                    <SellerCta icon={<ClockIcon color="#f59e0b" />} tint="rgba(245, 158, 11, 0.15)" title="กำลังตรวจสอบคำขอเปิดร้าน"
+                      detail="รอผู้ดูแลตรวจสอบเอกสาร เราจะแสดงผลที่นี่เมื่อพิจารณาแล้ว"
+                      action={{ label: 'ดูสถานะคำขอ', accessibilityLabel: openShopBtnLabel, primary: false, onPress: () => router.push('/seller-verification') }} />
                   ) : record?.status === 'REJECTED' ? (
-                    <View style={{ gap: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <View style={[styles.tagIconCircle, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2' }]}>
-                          <ThemedText style={{ fontSize: 18, color: '#EF4444', fontWeight: '800' }}>!</ThemedText>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.sellerBannerTitle, { color: '#EF4444' }]}>
-                            คำขอเปิดร้านถูกปฏิเสธ
-                          </ThemedText>
-                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
-                            ดูเหตุผลแล้วแก้ไขส่งใหม่ได้
-                          </ThemedText>
-                        </View>
-                      </View>
+                    <>
+                      <SellerCta icon={<AlertIcon color="#f43f5e" />} tint="rgba(244, 63, 94, 0.12)" title="คำขอเปิดร้านถูกปฏิเสธ" titleColor="#f43f5e"
+                        detail="ดูเหตุผลแล้วแก้ไขส่งใหม่ได้" />
                       {!!record?.rejectReason && (
-                        <View style={{ backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEF2F2', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FCA5A5' }}>
-                          <ThemedText style={{ color: '#EF4444', fontSize: 12, lineHeight: 16 }}>
-                            {record.rejectReason}
-                          </ThemedText>
+                        <View style={styles.rejectBox}>
+                          <ThemedText style={styles.rejectText}>{record.rejectReason}</ThemedText>
                         </View>
                       )}
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={openShopBtnLabel}
-                        onPress={() => router.push('/seller-verification')}
-                        style={({ pressed }) => [
-                          styles.openShopButton,
-                          { backgroundColor: '#059669', opacity: pressed ? 0.85 : 1, width: '100%' },
-                        ]}>
-                        <ThemedText style={[styles.openShopButtonText, { color: '#FFFFFF' }]}>แก้ไขและส่งใหม่</ThemedText>
-                      </Pressable>
-                    </View>
+                      <ActionButton label="แก้ไขและส่งใหม่" accessibilityLabel={openShopBtnLabel} primary onPress={() => router.push('/seller-verification')} />
+                    </>
                   ) : waitingSellerAccess ? (
-                    <View style={{ gap: 12 }}>
-                      <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
-                        คำขอร้านได้รับอนุมัติแล้ว
-                      </ThemedText>
-                      <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight]}>
-                        บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล
-                      </ThemedText>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={openShopBtnLabel}
-                        onPress={() => { void auth.retryAccount(); }}
-                        style={({ pressed }) => [
-                          styles.openShopButton,
-                          isDark ? styles.openShopButtonDark : styles.openShopButtonLight,
-                          { opacity: pressed ? 0.85 : 1, width: '100%' },
-                        ]}>
-                        <ThemedText style={styles.openShopButtonText}>{openShopBtnLabel}</ThemedText>
-                      </Pressable>
-                    </View>
+                    <SellerCta icon={<StoreIcon color="#10b981" />} tint="rgba(16, 185, 129, 0.15)" title="คำขอร้านได้รับอนุมัติแล้ว"
+                      detail="บัญชียังรอเปิดสิทธิ์ผู้ขาย กรุณาตรวจสอบสิทธิ์อีกครั้งหรือติดต่อผู้ดูแล"
+                      action={{ label: openShopBtnLabel, accessibilityLabel: openShopBtnLabel, primary: false, onPress: () => { void auth.retryAccount(); } }} />
                   ) : (
-                    <View style={{ gap: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-                        <View style={[styles.tagIconCircle, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5' }]}>
-                          <ThemedText style={{ fontSize: 20 }}>🏪</ThemedText>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <ThemedText style={[styles.sellerBannerTitle, isDark ? styles.sellerBannerTitleDark : styles.sellerBannerTitleLight]}>
-                            เปิดร้าน ขายของได้ใน 3 ขั้น
-                          </ThemedText>
-                          <ThemedText style={[styles.sellerBannerSubtitle, isDark ? styles.sellerBannerSubtitleDark : styles.sellerBannerSubtitleLight, { marginTop: 2 }]}>
-                            ส่งเอกสารยืนยันตัวตนและบัญชีธนาคาร แล้วรอผู้ดูแลอนุมัติก่อนลงขาย
-                          </ThemedText>
-                        </View>
-                      </View>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={openShopBtnLabel}
-                        onPress={() => router.push('/seller-verification')}
-                        style={({ pressed }) => [
-                          styles.openShopButton,
-                          { backgroundColor: '#059669', opacity: pressed ? 0.85 : 1, width: '100%' },
-                        ]}>
-                        <ThemedText style={[styles.openShopButtonText, { color: '#FFFFFF' }]}>
-                          {openShopBtnLabel === 'ขอเปิดร้านค้า' ? 'เริ่มยืนยันตัวตน' : openShopBtnLabel}
-                        </ThemedText>
-                      </Pressable>
-                    </View>
+                    <SellerCta icon={<StoreIcon color="#10b981" />} tint="rgba(16, 185, 129, 0.15)" title="เปิดร้าน ขายของได้ใน 3 ขั้น"
+                      detail="ส่งเอกสารยืนยันตัวตนและบัญชีธนาคาร แล้วรอผู้ดูแลอนุมัติก่อนลงขาย"
+                      action={{ label: openShopBtnLabel === 'ขอเปิดร้านค้า' ? 'เริ่มยืนยันตัวตน' : openShopBtnLabel, accessibilityLabel: openShopBtnLabel, primary: true, onPress: () => router.push('/seller-verification') }} />
                   )}
                 </View>
               )}
 
-              {/* Card 2 (Alternative): Approved Seller Shop Tools */}
               {approved && (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.25 : 0.06,
-                    },
-                  ]}>
-                  <View style={styles.sellerApprovedHeader}>
-                    <View style={styles.opportunityBadge}>
-                      <ThemedText style={styles.opportunityBadgeText}>✨ ร้านค้าของคุณ</ThemedText>
-                    </View>
-                    <ThemedText style={styles.verifiedText}>อนุมัติผู้ขายแล้ว</ThemedText>
-                  </View>
-                  <ThemedText style={[styles.nameText, { color: theme.text, marginTop: 4 }]}>
-                    {record?.shopName ?? 'ร้านค้าที่ได้รับอนุมัติ'}
-                  </ThemedText>
-                  <ThemedText style={{ fontSize: 12, color: theme.textSecondary }}>
-                    คุณสามารถลงขายสินค้าและจัดการคำสั่งขายได้ทันที
-                  </ThemedText>
-                  <View style={{ gap: 8, marginTop: 6 }}>
-                    <Button
-                      label="ลงขายสินค้า"
-                      variant="primary"
-                      onPress={() => router.push('/product/new')}
-                    />
-                    <Button label="สินค้าของฉัน" onPress={() => router.push('/product/mine')} />
-                    <Button
-                      label="คำสั่งขาย"
-                      onPress={() =>
-                        router.push({ pathname: '/orders', params: { view: 'seller' } })
-                      }
-                    />
+                <View style={card()}>
+                  <SellerCta icon={<StoreIcon color="#10b981" />} tint="rgba(16, 185, 129, 0.15)"
+                    title={record?.shopName ?? 'ร้านค้าที่ได้รับอนุมัติ'} detail="อนุมัติผู้ขายแล้ว · ลงขายสินค้าและจัดการคำสั่งขายได้ทันที" />
+                  <Button label="ลงขายสินค้า" variant="primary" onPress={() => router.push('/product/new')} />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={{ flex: 1 }}><Button label="สินค้าของฉัน" onPress={() => router.push('/product/mine')} /></View>
+                    <View style={{ flex: 1 }}><Button label="คำสั่งขาย" onPress={() => router.push({ pathname: '/orders', params: { view: 'seller' } })} /></View>
                   </View>
                 </View>
               )}
 
-              {customer && <Button label="คำสั่งซื้อของฉัน" onPress={() =>
-                router.push({ pathname: '/orders', params: { view: 'buyer' } })} />}
+              {/* บัญชี */}
+              <ProfileDetails key={owner} model={profileModel} />
 
-              {/* Staff Roles (Admin / Inspector / Courier) */}
-              {account?.role === 'ADMIN' && (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.25 : 0.06,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
-                    เมนูผู้ดูแลระบบ (Admin)
-                  </ThemedText>
-                  {staffWorkspaceFor('ADMIN').map(item => (
-                    <Button key={item.label} label={item.label} disabled={auth.accountChecking} onPress={() => router.push(item.href)} />
-                  ))}
-                </View>
-              )}
-              {account?.role === 'COURIER' && (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.25 : 0.06,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
-                    เมนูผู้ขนส่ง (Courier)
-                  </ThemedText>
-                  <Button label="งานส่งเข้าศูนย์" onPress={() => router.push('/courier')} />
-                </View>
-              )}
-              {account?.role === 'INSPECTOR' && (
-                <View
-                  style={[
-                    styles.card,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                      shadowColor: '#0F172A',
-                      shadowOpacity: isDark ? 0.25 : 0.06,
-                    },
-                  ]}>
-                  <ThemedText style={[styles.menuSectionTitle, { color: theme.text }]}>
-                    เมนูเจ้าหน้าที่ตรวจสอบ (Inspector)
-                  </ThemedText>
-                  {staffWorkspaceFor('INSPECTOR').map(item => (
-                    <Button key={item.label} label={item.label} onPress={() => router.push(item.href)} />
-                  ))}
-                </View>
-              )}
+              {(customer || account?.role === 'ADMIN' || account?.role === 'COURIER' || account?.role === 'INSPECTOR') ? (
+                <MenuGroup title={account?.role === 'ADMIN' ? 'ผู้ดูแลระบบ' : account?.role === 'INSPECTOR' ? 'เจ้าหน้าที่ตรวจสอบ' : account?.role === 'COURIER' ? 'ผู้ขนส่ง' : 'บัญชี'}>
+                  {customer ? <MenuRow label="คำสั่งซื้อของฉัน" icon={<ReceiptIcon color={theme.textSecondary} />}
+                    onPress={() => router.push({ pathname: '/orders', params: { view: 'buyer' } })} /> : null}
+                  {account?.role === 'ADMIN' ? staffWorkspaceFor('ADMIN').map(item => (
+                    <MenuRow key={item.label} label={item.label} disabled={auth.accountChecking} onPress={() => router.push(item.href)} />
+                  )) : null}
+                  {account?.role === 'INSPECTOR' ? staffWorkspaceFor('INSPECTOR').map(item => (
+                    <MenuRow key={item.label} label={item.label} onPress={() => router.push(item.href)} />
+                  )) : null}
+                  {account?.role === 'COURIER' ? <MenuRow label="งานส่งเข้าศูนย์" onPress={() => router.push('/courier')} /> : null}
+                </MenuGroup>
+              ) : null}
+            </>
+          )}
 
-              {/* Card 6: Theme Preference Setting (Streamlined & Clean) */}
-              <View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.surface,
-                    borderColor: isDark ? '#1E293B' : '#EDF2F7',
-                    shadowColor: '#0F172A',
-                    shadowOpacity: isDark ? 0.25 : 0.06,
-                  },
-                ]}>
+          {/* ตั้งค่า: ธีม (ทุกคนรวม guest) */}
+          {!auth.initializing ? (
+            <MenuGroup title="ตั้งค่า">
+              <View style={styles.themeBlock}>
                 <View style={styles.themeHeaderRow}>
-                  <ThemedText style={[styles.themeTitleText, { color: theme.text }]}>
-                    🎨 การแสดงผล (ธีม)
-                  </ThemedText>
-                  <ThemedText style={{ fontSize: 11, color: theme.textSecondary }}>
-                    {preference === 'dark'
-                      ? 'โหมดมืด'
-                      : preference === 'light'
-                        ? 'โหมดสว่าง'
-                        : 'ตามระบบ'}
-                  </ThemedText>
+                  <ThemeIcon color={theme.text} />
+                  <ThemedText style={[styles.menuLabel, { color: theme.text }]}>ธีม</ThemedText>
                 </View>
-
-                {/* Sleek Segmented Pill Control */}
-                <View
-                  style={[
-                    styles.themeSegmentContainer,
-                    {
-                      backgroundColor: isDark ? '#0F141D' : '#F1F5F9',
-                      borderWidth: isDark ? 0 : 1,
-                      borderColor: '#E2E8F0',
-                    },
-                  ]}>
+                <View style={[styles.segment, { backgroundColor: theme.backgroundElement }]}>
                   {([
-                    { key: 'dark', label: 'มืด', icon: '🌙' },
-                    { key: 'light', label: 'สว่าง', icon: '☀️' },
-                    { key: 'system', label: 'ตามอุปกรณ์', icon: '⚙️' },
+                    { key: 'light', label: 'สว่าง' },
+                    { key: 'dark', label: 'มืด' },
+                    { key: 'system', label: 'ตามระบบ' },
                   ] as const).map(item => {
                     const active = preference === item.key;
                     return (
@@ -487,499 +283,161 @@ export function ProfileScreen() {
                         key={item.key}
                         accessibilityRole="button"
                         accessibilityLabel={`ธีม${item.label}`}
+                        accessibilityState={{ selected: active }}
                         onPress={() => setPreference(item.key)}
-                        style={({ pressed }) => [
-                          styles.themeSegmentItem,
-                          active && styles.themeSegmentItemActive,
-                          { opacity: pressed ? 0.8 : 1 },
-                        ]}>
-                        <ThemedText
-                          style={[
-                            styles.themeSegmentText,
-                            active
-                              ? styles.themeSegmentTextActive
-                              : { color: theme.textSecondary },
-                          ]}>
-                          {item.icon} {item.label}
+                        style={[styles.segmentItem, active && styles.segmentItemActive]}>
+                        <ThemedText style={[styles.segmentText, { color: active ? '#ffffff' : theme.textSecondary, fontWeight: active ? '700' : '500' }]}>
+                          {item.label}
                         </ThemedText>
                       </Pressable>
                     );
                   })}
                 </View>
               </View>
+            </MenuGroup>
+          ) : null}
 
-              {/* Logout / Login Button */}
-              {auth.session ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="ออกจากระบบ"
-                  onPress={() => {
-                    void marketplaceReturn
-                      .clear()
-                      .catch(() => undefined)
-                      .then(() => auth.logout())
-                      .catch(() => setLogoutError(true));
-                  }}
-                  style={({ pressed }) => [
-                    styles.logoutButton,
-                    {
-                      borderColor: isDark ? '#EF444444' : '#FECACA',
-                      backgroundColor: pressed
-                        ? isDark ? '#EF444420' : '#FEE2E2'
-                        : isDark ? 'transparent' : '#FEF2F2',
-                      shadowColor: '#EF4444',
-                      shadowOpacity: isDark ? 0 : 0.05,
-                      opacity: pressed ? 0.85 : 1,
-                    },
-                  ]}>
-                  <ThemedText style={styles.logoutButtonText}>ออกจากระบบ</ThemedText>
-                </Pressable>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="เข้าสู่ระบบด้วย Google"
-                  onPress={() => router.push('/login')}
-                  style={({ pressed }) => [
-                    styles.loginButton,
-                    { opacity: pressed ? 0.85 : 1 },
-                  ]}>
-                  <ThemedText style={styles.loginButtonText}>เข้าสู่ระบบด้วย Google</ThemedText>
-                </Pressable>
-              )}
-
-              {logoutError && (
-                <ThemedText accessibilityRole="alert" style={{ color: theme.danger, textAlign: 'center' }}>
-                  ออกจากระบบไม่สำเร็จ กรุณาลองใหม่
-                </ThemedText>
-              )}
-            </>
+          {auth.session ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="ออกจากระบบ" onPress={() => setConfirmLogout(true)} style={styles.logoutLink}>
+              <ThemedText style={styles.logoutText}>ออกจากระบบ</ThemedText>
+            </Pressable>
+          ) : null}
+          {logoutError && (
+            <ThemedText accessibilityRole="alert" style={{ color: theme.danger, textAlign: 'center', fontSize: 12 }}>
+              ออกจากระบบไม่สำเร็จ กรุณาลองใหม่
+            </ThemedText>
           )}
+          {version ? <ThemedText style={[styles.versionText, { color: muted }]}>2NDHAND · เวอร์ชัน {version}</ThemedText> : null}
         </ScrollView>
 
         <MarketplaceNav selected="profile" />
+
+        <Modal visible={confirmLogout} transparent animationType="fade" onRequestClose={() => setConfirmLogout(false)}>
+          <View style={styles.sheetBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="ปิด" onPress={() => setConfirmLogout(false)} />
+            <View style={[styles.sheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <View style={styles.sheetHandle} />
+              <ThemedText style={[styles.sheetTitle, { color: theme.text }]}>ออกจากระบบ?</ThemedText>
+              <ThemedText style={[styles.sheetText, { color: theme.textSecondary }]}>คุณสามารถเข้าสู่ระบบด้วย Google ได้อีกครั้งทุกเมื่อ</ThemedText>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                <View style={{ flex: 1 }}><Button label="ยกเลิก" onPress={() => setConfirmLogout(false)} /></View>
+                <View style={{ flex: 1 }}><Button label="ยืนยันออกจากระบบ" variant="danger" onPress={doLogout} /></View>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </Screen>
   );
 }
 
+function SellerCta({ icon, tint, title, titleColor, detail, action }: {
+  icon: React.ReactNode; tint: string; title: string; titleColor?: string; detail: string;
+  action?: { label: string; accessibilityLabel: string; primary: boolean; onPress(): void };
+}) {
+  const theme = useTheme();
+  return <View style={{ gap: 12 }}>
+    <View style={styles.ctaRow}>
+      <View style={[styles.ctaIcon, { backgroundColor: tint }]}>{icon}</View>
+      <View style={{ flex: 1 }}>
+        <ThemedText style={[styles.ctaTitle, { color: titleColor ?? theme.text }]}>{title}</ThemedText>
+        <ThemedText style={[styles.ctaDetail, { color: theme.textSecondary }]}>{detail}</ThemedText>
+      </View>
+    </View>
+    {action ? <ActionButton {...action} /> : null}
+  </View>;
+}
+
+function ActionButton({ label, accessibilityLabel, primary, onPress }: { label: string; accessibilityLabel: string; primary: boolean; onPress(): void }) {
+  const theme = useTheme();
+  return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
+    style={({ pressed }) => [styles.primaryBtn, primary
+      ? { backgroundColor: pressed ? '#10b981' : '#059669' }
+      : { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 }]}>
+    <ThemedText style={[styles.primaryBtnText, !primary && { color: theme.text }]}>{label}</ThemedText>
+  </Pressable>;
+}
+
+function MenuGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  const theme = useTheme();
+  return <View style={{ gap: 8 }}>
+    <ThemedText style={[styles.groupTitle, { color: theme.background === '#0c0e14' ? '#64748b' : '#94a3b8' }]}>{title}</ThemedText>
+    <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, padding: 0, gap: 0 }]}>{children}</View>
+  </View>;
+}
+
+function MenuRow({ label, icon, onPress, disabled }: { label: string; icon?: React.ReactNode; onPress(): void; disabled?: boolean }) {
+  const theme = useTheme();
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress}
+    style={({ pressed }) => [styles.menuRow, { opacity: disabled ? 0.5 : pressed ? 0.7 : 1 }]}>
+    {icon ?? <DotIcon color={theme.textSecondary} />}
+    <ThemedText style={[styles.menuLabel, { color: theme.text, flex: 1 }]}>{label}</ThemedText>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none"><Path d="M9 5l7 7-7 7" stroke={theme.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
+  </Pressable>;
+}
+
+function PersonIcon({ color, size = 20 }: { color: string; size?: number }) {
+  return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"><Circle cx={12} cy={8} r={4} stroke={color} strokeWidth={2} /><Path d="M4 21a8 8 0 0 1 16 0" stroke={color} strokeWidth={2} strokeLinecap="round" /></Svg>;
+}
+function StoreIcon({ color }: { color: string }) {
+  return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Path d="M4 9.5 5.5 4h13L20 9.5M4 9.5V20h16V9.5M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0M10 20v-5h4v5" stroke={color} strokeWidth={2} strokeLinejoin="round" /></Svg>;
+}
+function ClockIcon({ color }: { color: string }) {
+  return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2} /><Path d="M12 7v5l3 2" stroke={color} strokeWidth={2} strokeLinecap="round" /></Svg>;
+}
+function AlertIcon({ color }: { color: string }) {
+  return <Svg width={20} height={20} viewBox="0 0 24 24" fill="none"><Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2} /><Path d="M12 8v4M12 16h.01" stroke={color} strokeWidth={2} strokeLinecap="round" /></Svg>;
+}
+function ReceiptIcon({ color }: { color: string }) {
+  return <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Path d="M7 3h10a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2V4a1 1 0 0 1 1-1zM9 8h6M9 12h6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+}
+function ThemeIcon({ color }: { color: string }) {
+  return <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Circle cx={12} cy={12} r={9} stroke={color} strokeWidth={2} /><Path d="M12 3a9 9 0 0 0 0 18z" fill={color} /></Svg>;
+}
+function DotIcon({ color }: { color: string }) {
+  return <Svg width={18} height={18} viewBox="0 0 24 24" fill="none"><Rect x={4} y={4} width={16} height={16} rx={4} stroke={color} strokeWidth={2} /></Svg>;
+}
+
 const styles = StyleSheet.create({
-  screenContent: {
-    width: '100%',
-    maxWidth: 800,
-    gap: 0,
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 24,
-  },
-  card: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    gap: 12,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  identityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  avatarWrapper: {
-    position: 'relative',
-  },
-  avatarCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 2.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  identityInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  nameRoleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  nameText: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  roleBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderWidth: 1,
-  },
-  roleBadgeDark: {
-    backgroundColor: '#064e3b',
-    borderColor: '#047857',
-  },
-  roleBadgeLight: {
-    backgroundColor: '#d1fae5',
-    borderColor: '#a7f3d0',
-  },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  roleBadgeTextDark: {
-    color: '#34d399',
-  },
-  roleBadgeTextLight: {
-    color: '#065f46',
-  },
-  memberStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  memberDateText: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  verifiedText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#10b981',
-  },
-  accountErrorBox: {
-    gap: 6,
-    paddingTop: 6,
-  },
-  sellerBanner: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    gap: 8,
-  },
-  sellerBannerDark: {
-    backgroundColor: '#07241d',
-    borderColor: 'rgba(16, 185, 129, 0.25)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  sellerBannerLight: {
-    backgroundColor: '#f0fdf4',
-    borderColor: '#bbf7d0',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  sellerBannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  opportunityBadge: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  opportunityBadgeDark: {
-    backgroundColor: '#10b981',
-  },
-  opportunityBadgeLight: {
-    backgroundColor: '#10b981',
-  },
-  opportunityBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  opportunityBadgeTextDark: {
-    color: '#022c22',
-  },
-  opportunityBadgeTextLight: {
-    color: '#ffffff',
-  },
-  tagIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagIconCircleDark: {
-    backgroundColor: '#0d382d',
-  },
-  tagIconCircleLight: {
-    backgroundColor: '#dcfce7',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-  },
-  sellerBannerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  sellerBannerTitleDark: {
-    color: '#FFFFFF',
-  },
-  sellerBannerTitleLight: {
-    color: '#0f172a',
-  },
-  sellerBannerSubtitle: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  sellerBannerSubtitleDark: {
-    color: '#94a3b8',
-  },
-  sellerBannerSubtitleLight: {
-    color: '#475569',
-  },
-  sellerBannerDivider: {
-    height: 1,
-    marginVertical: 4,
-  },
-  sellerBannerDividerDark: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-  },
-  sellerBannerDividerLight: {
-    backgroundColor: '#dcfce7',
-  },
-  sellerBannerFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  idCardNotice: {
-    fontSize: 12,
-  },
-  idCardNoticeDark: {
-    color: '#10b981',
-    fontWeight: '500',
-  },
-  idCardNoticeLight: {
-    color: '#059669',
-    fontWeight: '600',
-  },
-  openShopButton: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  openShopButtonDark: {
-    backgroundColor: '#10b981',
-  },
-  openShopButtonLight: {
-    backgroundColor: '#059669',
-    shadowColor: '#059669',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  openShopButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  sellerApprovedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginTop: 4,
-  },
-  hubHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  shieldIconContainer: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hubTitleContainer: {
-    flex: 1,
-    gap: 2,
-  },
-  hubTitleText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  hubSubtitleText: {
-    fontSize: 11,
-  },
-  officialBadge: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  officialBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  hubActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  hubSubButton: {
-    flex: 1,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  hubSubButtonTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  hubSubButtonSubtitle: {
-    fontSize: 10,
-    color: '#94a3b8',
-    marginTop: 1,
-  },
-  inspectorButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  inspectorButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    flex: 1,
-    marginLeft: 8,
-  },
-  inspectorChevron: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  menuSectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  menuListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  menuItemIcon: {
-    fontSize: 18,
-  },
-  menuItemTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  menuItemChevron: {
-    fontSize: 18,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  menuDivider: {
-    height: 1,
-  },
-  themeHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  themeTitleText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  themeSegmentContainer: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: 3,
-    gap: 4,
-  },
-  themeSegmentItem: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  themeSegmentItemActive: {
-    backgroundColor: '#10b981',
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  themeSegmentText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  themeSegmentTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  logoutButton: {
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  logoutButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#EF4444',
-  },
-  loginButton: {
-    backgroundColor: '#10b981',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loginButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  screenContent: { width: '100%', maxWidth: 800, gap: 0 },
+  scrollContent: { padding: 16, gap: 14, paddingBottom: 24 },
+  card: { borderRadius: 16, borderWidth: 1, padding: 16, gap: 12 },
+  identityRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  avatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(16, 185, 129, 0.15)', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 22, lineHeight: 28, fontWeight: '800', color: '#10b981' },
+  nameText: { fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  emailText: { fontSize: 12, lineHeight: 17 },
+  pillRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  rolePill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: 'rgba(16, 185, 129, 0.15)' },
+  rolePillText: { fontSize: 10, lineHeight: 15, fontWeight: '700', color: '#10b981' },
+  statusText: { fontSize: 10, lineHeight: 15 },
+  guestCard: { alignItems: 'center', paddingVertical: 24, gap: 12 },
+  guestAvatar: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
+  guestTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700', textAlign: 'center' },
+  guestBullet: { fontSize: 12, lineHeight: 19 },
+  primaryBtn: { minHeight: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  primaryBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+  ctaRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  ctaIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  ctaTitle: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  ctaDetail: { fontSize: 11, lineHeight: 17, marginTop: 2 },
+  rejectBox: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(244, 63, 94, 0.1)' },
+  rejectText: { color: '#f43f5e', fontSize: 12, lineHeight: 17 },
+  groupTitle: { fontSize: 11, lineHeight: 16, fontWeight: '600', paddingHorizontal: 4 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 50 },
+  menuLabel: { fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  themeBlock: { padding: 16, gap: 12 },
+  themeHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  segment: { flexDirection: 'row', borderRadius: 12, padding: 4 },
+  segmentItem: { flex: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center' },
+  segmentItemActive: { backgroundColor: '#059669' },
+  segmentText: { fontSize: 12, lineHeight: 17 },
+  logoutLink: { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16, marginTop: 4 },
+  logoutText: { fontSize: 14, fontWeight: '700', color: '#f43f5e' },
+  versionText: { fontSize: 11, lineHeight: 16, textAlign: 'center' },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, padding: 20, paddingBottom: 24, alignItems: 'stretch' },
+  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(100, 116, 139, 0.4)', alignSelf: 'center', marginBottom: 16 },
+  sheetTitle: { fontSize: 16, lineHeight: 24, fontWeight: '700', textAlign: 'center' },
+  sheetText: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 4 },
 });
