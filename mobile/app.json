@@ -13,7 +13,7 @@
     "android": {
       "package": "com.kmutnb.secondhandmarketplace",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -29,9 +29,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#24407e",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 220,
+          "dark": {
+            "backgroundColor": "#0F1F1A",
+            "image": "./assets/images/splash-icon-dark.png"
+          }
         }
       ],
       "expo-web-browser",
