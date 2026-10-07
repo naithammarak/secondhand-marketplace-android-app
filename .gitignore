@@ -1,8 +1,7 @@
 # Environment variables and local secrets
-.env
-.env.*
-!.env.example
-!.env.*.example
+.env*
+!/backend/.env.example
+!/mobile/.env.example
 
 # Python
 __pycache__/
@@ -24,6 +23,7 @@ dist/
 
 # Node.js / Expo / React Native
 node_modules/
+/mobile/node_modules
 .expo/
 .expo-shared/
 web-build/
@@ -64,3 +64,6 @@ Thumbs.db
 /saproject/.mcp.json
 /saproject/.agentsroom/
 /backend/test-data/login-role-assignments.local.json
+
+# Built Android packages (hash recorded in artifacts/android/APK-MANIFEST.md)
+artifacts/android/*.apk

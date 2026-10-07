@@ -25,7 +25,10 @@ from sqlalchemy.orm import Session
 from app.api.auth import get_current_user
 from app.database import get_db
 from app.models.order import Escrow, Order, Payment, PaymentAttempt, Receipt
+from app.models.fulfillment import OrderSettlement
 from app.models.product import Product
+from app.models.product_image import ProductImage
+from app.api.products import sign_images
 from app.models.user import User, UserRole, UserStatus
 from app.schemas.order import (
     CancelReason,
@@ -47,6 +50,7 @@ from app.schemas.order import (
     SimulatePaymentResponse,
     ViewerRole,
 )
+from app.services.transaction_clock import database_now
 from app.services.order_expiry import (
     release_reserved_products,
     sweep_expired_orders,
@@ -74,13 +78,17 @@ from app.services.order_pricing import (
     utcnow,
 )
 
+NEW_ORDER_POLICY = "EXTERNAL_V2"
+
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+BUYER_ACCOUNT_ROLES = frozenset({UserRole.BUYER, UserRole.SELLER})
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,100}$")
-PHONE_PATTERN = re.compile(r"^0\d{8,9}$")
-POSTAL_CODE_PATTERN = re.compile(r"^\d{5}$")
+PHONE_PATTERN = re.compile(r"^0[0-9]{8,9}$")
+POSTAL_CODE_PATTERN = re.compile(r"^[0-9]{5}$")
 REPLAY_HEADER = "Idempotent-Replayed"
 
 # (ชื่อช่อง, ชื่อที่แสดง, ความยาวต่ำสุด, ความยาวสูงสุด)
@@ -173,9 +181,9 @@ def require_idempotency_key(
 
 
 def require_buyer(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.BUYER:
+    if current_user.role not in BUYER_ACCOUNT_ROLES:
         raise api_error(
-            status.HTTP_403_FORBIDDEN, "buyer_role_required", "เฉพาะบัญชีผู้ซื้อเท่านั้นที่สั่งซื้อได้"
+            status.HTTP_403_FORBIDDEN, "buyer_role_required", "เฉพาะบัญชีผู้ซื้อหรือผู้ขายเท่านั้นที่สั่งซื้อได้"
         )
     ensure_active(current_user)
     return current_user
@@ -218,7 +226,9 @@ def clean_address(raw: ShippingAddressInput | None) -> tuple[ShippingAddress | N
 
     for name, label, minimum, maximum in ADDRESS_TEXT_FIELDS:
         text = " ".join((getattr(raw, name) or "").split())
-        if not text:
+        if any(char == "\x00" or 0xD800 <= ord(char) <= 0xDFFF for char in text):
+            fields[name] = "ข้อความมีอักขระที่ไม่รองรับ"
+        elif not text:
             fields[name] = f"กรุณากรอก{label}"
         elif len(text) < minimum:
             fields[name] = f"{label}สั้นเกินไป"
@@ -246,6 +256,8 @@ def clean_address(raw: ShippingAddressInput | None) -> tuple[ShippingAddress | N
 
 
 def viewer_role_for(order: Order, user: User) -> ViewerRole | None:
+    if user.role not in {UserRole.BUYER, UserRole.SELLER}:
+        return None
     if order.buyer_id == user.id:
         return ViewerRole.BUYER
     if order.seller_id == user.id:
@@ -253,7 +265,10 @@ def viewer_role_for(order: Order, user: User) -> ViewerRole | None:
     return None
 
 
-def load_order_for(db: Session, order_id: int, user: User, lock: bool = False) -> tuple[Order, ViewerRole]:
+def load_order_for(db: Session, order_id: int, user: User, lock: bool = False,
+                   allow_inactive: bool = False) -> tuple[Order, ViewerRole]:
+    if not allow_inactive:
+        ensure_active(user)
     query = select(Order).where(Order.id == order_id)
     if lock:
         # ล็อกแถว Order ไว้จนจบ transaction ให้คำขอจ่ายเงินของ Order เดียวกันเข้าแถวทีละคำขอ
@@ -325,12 +340,35 @@ def attempt_view(attempt: PaymentAttempt) -> PaymentAttemptView:
     )
 
 
-def product_snapshot(order: Order) -> ProductSnapshot:
+def get_product_images_map(db: Session, product_ids: set[int]) -> dict[int, str]:
+    if not product_ids:
+        return {}
+    try:
+        images = db.scalars(
+            select(ProductImage)
+            .where(ProductImage.product_id.in_(product_ids))
+            .order_by(ProductImage.sort_order, ProductImage.image_id)
+        ).all()
+        first_images: dict[int, ProductImage] = {}
+        for img in images:
+            if img.product_id not in first_images:
+                first_images[img.product_id] = img
+        try:
+            signed = sign_images(list(first_images.values()))
+            return {img.product_id: signed_url for img, signed_url, _ in signed}
+        except Exception:
+            return {pid: img.image_url for pid, img in first_images.items()}
+    except Exception:
+        return {}
+
+
+def product_snapshot(order: Order, image_url: str | None = None) -> ProductSnapshot:
     return ProductSnapshot(
         id=order.product_id,
         name=order.product_name,
         condition=order.product_condition,
         size=order.product_size,
+        image_url=image_url,
     )
 
 
@@ -346,15 +384,29 @@ def order_address(order: Order) -> ShippingAddress:
     )
 
 
+def current_payment_status(order: Order, *, refunded: bool) -> PaymentStatus:
+    """Present terminal refunds while retaining the immutable successful charge."""
+    if refunded:
+        return PaymentStatus.REFUNDED
+    return PaymentStatus.PAID if is_paid(order) else PaymentStatus.UNPAID
+
+
 def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> OrderDetail:
+    from app.api.finish import delivery_view
+    finish = delivery_view(db, order, viewer, seller=role == ViewerRole.SELLER)
+    finish_fields = {key: finish[key] for key in (
+        "can_confirm_receipt", "can_report_missing", "receipt_deadline_at", "settlement")}
     paid = is_paid(order)
     reason = CancelReason(order.cancel_reason) if order.cancel_reason else None
+    refunded = db.scalar(select(OrderSettlement.id).where(OrderSettlement.order_id == order.id, OrderSettlement.kind == "REFUND")) is not None
+    payment_status = current_payment_status(order, refunded=refunded)
     # ปุ่มเปิดได้เฉพาะสถานะที่ทำสิ่งนั้นได้จริง ไม่ใช่ "ยังไม่จ่ายและยังไม่ยกเลิก"
     # เผื่อกรณีที่ยังไม่มีใครมากวาดแถวที่หมดเวลา ปุ่มบนหน้าจอต้องปิดไปแล้วตั้งแต่ตอนนี้
     # จ่ายได้กับยกเลิกได้ตัดสินจากชุดสถานะของตัวเอง ชุดใดชุดหนึ่งเปลี่ยนต้องไม่ลากอีกปุ่มไปด้วย
     within_window = not payment_window_passed(order, utcnow()) and viewer.status == UserStatus.ACTIVE
     can_pay = within_window and is_payable(order)
     can_cancel = within_window and is_cancellable(order)
+    image_url = get_product_images_map(db, {order.product_id}).get(order.product_id)
     if role == ViewerRole.BUYER:
         last_attempt = db.scalars(
             select(PaymentAttempt)
@@ -366,11 +418,12 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             db.scalar(select(Receipt.receipt_no).where(Receipt.order_id == order.id)) if paid else None
         )
         return OrderDetail(
+            **finish_fields,
             id=order.id,
             status=OrderStatus(order.status),
-            payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
+            payment_status=payment_status,
             viewer_role=role,
-            product=product_snapshot(order),
+            product=product_snapshot(order, image_url),
             amounts=OrderAmountsView(
                 currency=order.currency,
                 item_price=order.item_price,
@@ -395,11 +448,12 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
 
     # มุมมองผู้ขาย: เห็นยอดที่จะได้รับ และเห็นที่อยู่เมื่อถึงขั้นต้องส่งของเท่านั้น
     return OrderDetail(
+        **finish_fields,
         id=order.id,
         status=OrderStatus(order.status),
-        payment_status=PaymentStatus.PAID if paid else PaymentStatus.UNPAID,
+        payment_status=payment_status,
         viewer_role=role,
-        product=product_snapshot(order),
+        product=product_snapshot(order, image_url),
         amounts=OrderAmountsView(
             currency=order.currency,
             item_price=order.item_price,
@@ -410,7 +464,8 @@ def to_detail(db: Session, order: Order, role: ViewerRole, viewer: User) -> Orde
             seller_payout=order.seller_payout,
         ),
         # ผู้ขายเห็นที่อยู่ตั้งแต่จ่ายเงินสำเร็จเป็นต้นไป และต้องไม่หายไปเมื่อสถานะเดินหน้าต่อ (D-12)
-        shipping_address=order_address(order) if paid else None,
+        shipping_address=order_address(order) if paid and not any(
+            s["leg"] != "TO_CENTER" for s in finish["shipments"]) else None,
         last_payment_attempt=None,
         paid_at=order.paid_at,
         receipt_no=None,
@@ -505,9 +560,14 @@ def checkout_quote(
 ):
     product = load_purchasable_product(db, buyer, product_id)
     amounts = calculate_amounts(product.price)
+    image_url = get_product_images_map(db, {product.id}).get(product.id)
     return CheckoutQuote(
         product=ProductSnapshot(
-            id=product.id, name=product.product_name, condition=product.condition, size=product.size
+            id=product.id,
+            name=product.product_name,
+            condition=product.condition,
+            size=product.size,
+            image_url=image_url,
         ),
         currency=CURRENCY,
         item_price=amounts.item_price,
@@ -541,7 +601,20 @@ def create_order(
     if existing is not None:
         return replay_order(db, existing, fingerprint, buyer, response)
 
-    load_purchasable_product(db, buyer, body.product_id)
+    try:
+        load_purchasable_product(db, buyer, body.product_id)
+    except HTTPException as exc:
+        # A same-key winner may commit after our lookup but before this precheck.
+        # Retry only availability conflicts; preserve unrelated validation/errors.
+        if (exc.status_code != status.HTTP_409_CONFLICT
+                or not isinstance(exc.detail, dict)
+                or exc.detail.get("code") not in {"already_ordered", "product_unavailable"}):
+            raise
+        db.rollback()
+        replay = find_order_by_key(db, buyer.id, idempotency_key)
+        if replay is not None:
+            return replay_order(db, replay, fingerprint, buyer, response)
+        raise
 
     try:
         # ใครเปลี่ยน AVAILABLE -> RESERVED ได้ก่อนคือผู้ชนะ คำขอที่แข่งกันจะรอ row lock
@@ -574,6 +647,7 @@ def create_order(
         amounts = calculate_amounts(reserved.price)
         # เส้นตายคิดจากนาฬิกาของ server ตอนสร้าง เก็บเป็นค่าคงที่ของ Order นี้ไปตลอด
         order = Order(
+            fulfillment_policy=NEW_ORDER_POLICY,
             expires_at=payment_deadline(utcnow()),
             buyer_id=buyer.id,
             seller_id=reserved.user_id,
@@ -626,6 +700,7 @@ def list_orders(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    require_buyer(current_user)
     if role is None:
         role = {UserRole.BUYER: "buyer", UserRole.SELLER: "seller"}.get(current_user.role)
     if role is None:
@@ -648,14 +723,24 @@ def list_orders(
         .offset(offset)
     ).all()
 
+    product_ids = {order.product_id for order in orders}
+    images_map = get_product_images_map(db, product_ids)
+    # One bounded financial read for this page, including either owner's view.
+    refunded_order_ids = set(db.scalars(
+        select(OrderSettlement.order_id).where(
+            OrderSettlement.order_id.in_([order.id for order in orders]),
+            OrderSettlement.kind == "REFUND",
+        )
+    )) if orders else set()
+
     return OrderPage(
         items=[
             OrderListItem(
                 id=order.id,
                 status=OrderStatus(order.status),
-                payment_status=PaymentStatus.PAID if is_paid(order) else PaymentStatus.UNPAID,
+                payment_status=current_payment_status(order, refunded=order.id in refunded_order_ids),
                 viewer_role=viewer_role,
-                product=product_snapshot(order),
+                product=product_snapshot(order, images_map.get(order.product_id)),
                 total_amount=order.total_amount if viewer_role == ViewerRole.BUYER else None,
                 seller_payout=order.seller_payout if viewer_role == ViewerRole.SELLER else None,
                 currency=order.currency,
@@ -707,7 +792,7 @@ def cancel_order(
         elif not is_cancellable(order):
             raise not_cancellable()
         else:
-            now = utcnow()
+            now = database_now(db, fallback=utcnow)
             # เลยเวลาไปแล้วให้บันทึกตามความจริงว่าหมดเวลา ผลที่ผู้ใช้เห็นเหมือนกัน
             reason = CANCEL_REASON_EXPIRED if payment_window_passed(order, now) else CANCEL_REASON_BUYER
             if not cancel_waiting_order(db, order, reason, now):
@@ -745,7 +830,7 @@ def simulate_payment(
         # เส้นตายต้องมีผลก่อนทุกอย่าง รวมถึงการส่งซ้ำด้วย key เดิม
         # ถ้าปล่อยให้ replay ตอบก่อน ผู้ซื้อจะได้ยินว่า "ยังรอชำระเงิน" ทั้งที่เลยเวลาแล้ว
         # และสินค้าจะยังค้างถูกจองจนกว่าจะมีคำขออื่นมากวาด
-        expired = payment_window_passed(order, utcnow())
+        expired = payment_window_passed(order, database_now(db, fallback=utcnow))
         if expired:
             # กวาดแล้ว transaction ปิดและล็อกถูกปล่อย เส้นทางนี้จึงมีแต่การอ่านกับการปฏิเสธเท่านั้น
             sweep_expired_orders(db, Order.id == order.id)
@@ -785,7 +870,11 @@ def simulate_payment(
         db.flush()
 
         if attempt.outcome == ATTEMPT_SUCCEEDED:
-            paid_at = utcnow()
+            paid_at = database_now(db, fallback=utcnow)
+            if payment_window_passed(order, paid_at):
+                db.rollback()
+                sweep_expired_orders(db, Order.id == order.id)
+                raise payment_expired_error()
             payment = Payment(
                 order_id=order.id,
                 attempt_id=attempt.id,

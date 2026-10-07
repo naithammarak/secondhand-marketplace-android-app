@@ -1,8 +1,11 @@
+import { readLocalUploadFile } from './upload-file-part.ts';
+
 export type VerificationStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type VerificationRecord = {
   status: VerificationStatus;
   id: number | null;
+  shopName: string | null;
   bankName: string | null;
   bankAccountName: string | null;
   bankAccountLast4: string | null;
@@ -26,6 +29,7 @@ export type IdCardFile = {
 };
 
 export type VerificationInput = {
+  shopName: string;
   bankName: string;
   bankAccountName: string;
   bankAccountNumber: string;
@@ -60,6 +64,7 @@ function toRecord(payload: unknown): VerificationRecord {
   return {
     status,
     id: typeof data.id === 'number' ? data.id : null,
+    shopName: readString(data.shop_name),
     bankName: readString(data.bank_name),
     bankAccountName: readString(data.bank_account_name),
     bankAccountLast4: readString(data.bank_account_last4),
@@ -90,6 +95,12 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw signal.reason ?? Object.assign(new Error('Aborted'), { name: 'AbortError' });
+  }
+}
+
 export function createVerificationService(options: { baseUrl?: string; fetch?: FetchLike }) {
   let baseUrl: string | undefined;
   if (options.baseUrl) {
@@ -101,6 +112,7 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
 
   const request = async (path: string, init: RequestInit, signal?: AbortSignal): Promise<Response> => {
     if (!baseUrl) throw new VerificationServiceError('unavailable');
+    throwIfAborted(signal);
     let response: Response;
     try {
       response = await fetcher(`${baseUrl}${path}`, { ...init, signal });
@@ -135,17 +147,26 @@ export function createVerificationService(options: { baseUrl?: string; fetch?: F
       input: VerificationInput,
       signal?: AbortSignal,
     ): Promise<VerificationRecord> {
+      if (!baseUrl) throw new VerificationServiceError('unavailable');
+      throwIfAborted(signal);
       const body = new FormData();
+      body.append('shop_name', input.shopName);
       body.append('bank_name', input.bankName);
       body.append('bank_account_name', input.bankAccountName);
       body.append('bank_account_number', input.bankAccountNumber);
-      // เว็บส่ง File จาก picker ได้ตรง ๆ ส่วน native ใช้ descriptor ของไฟล์ในเครื่อง
-      if (input.idCard.file) body.append('id_card_image', input.idCard.file as Blob, input.idCard.name);
-      else body.append('id_card_image', {
-        uri: input.idCard.uri,
-        name: input.idCard.name,
-        type: input.idCard.type,
-      } as unknown as Blob);
+      if (input.idCard.file) {
+        body.append('id_card_image', input.idCard.file as Blob, input.idCard.name);
+      } else {
+        let localFile: Blob;
+        try {
+          localFile = readLocalUploadFile(input.idCard.uri);
+        } catch {
+          throw new VerificationServiceError('validation-error', {
+            id_card_image: 'อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่',
+          });
+        }
+        body.append('id_card_image', localFile);
+      }
 
       const response = await request('/verifications', {
         method: 'POST',

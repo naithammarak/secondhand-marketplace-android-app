@@ -264,7 +264,7 @@ def test_database_rejects_an_unknown_status(migrated_database):
             )
 
 
-def test_user_can_exist_before_role_selection(user_session):
+def test_new_user_defaults_to_buyer_without_role_selection(user_session):
     from app.models.user import User, UserStatus
 
     user = User(
@@ -276,5 +276,5 @@ def test_user_can_exist_before_role_selection(user_session):
     user_session.commit()
     user_session.refresh(user)
 
-    assert user.role is None
+    assert user.role.value == "BUYER"
     assert user.status is UserStatus.ACTIVE

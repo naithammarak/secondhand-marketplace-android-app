@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import { ProductForm } from '@/components/product-form';
+import { ProductForm, syncValuesWithOptions } from '@/components/product-form';
 import { emptyProductFormValues } from '@/products/product-form';
 
 let mockUploadImage = jest.fn();
@@ -62,6 +62,27 @@ describe('ProductForm', () => {
       { id: 2, name: 'Nike' },
       { id: 99, name: 'แบรนด์พิเศษ' },
     ]);
+  });
+
+  test('preserves a custom brand across option refreshes and clears its stale ID', () => {
+    const values = { ...emptyProductFormValues, category: 'เสื้อผ้า', brand: 'แบรนด์ท้องถิ่น', brandId: 2 };
+    const synced = syncValuesWithOptions(values, [{ id: 42, name: 'เสื้อผ้า' }], [{ id: 2, name: 'Nike' }]);
+    expect(synced).toMatchObject({ brand: 'แบรนด์ท้องถิ่น', brandId: undefined, categoryId: 42 });
+    expect(values.brandId).toBe(2);
+  });
+
+  test.each(['create', 'edit'] as const)('%s accepts a brand typed outside the options', async mode => {
+    const onSubmit = jest.fn();
+    render(<ProductForm mode={mode} onSubmit={onSubmit} initialValues={{
+      ...emptyProductFormValues, name: 'เสื้อ', description: 'สภาพดี', size: 'M', price: '250',
+      category: 'เสื้อผ้า', brand: 'Nike', brandId: 2, images: ['mock://brand-test.jpg'],
+    }} />);
+    await act(async () => {});
+    fireEvent.changeText(screen.getByLabelText('แบรนด์'), 'แบรนด์ท้องถิ่น');
+    await act(async () => {
+      fireEvent.press(screen.getByText(mode === 'create' ? 'ลงขายสินค้า' : 'บันทึกการแก้ไข'));
+    });
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ brand: 'แบรนด์ท้องถิ่น', brandId: undefined }));
   });
 
   test('does not start an upload if the account changes while the picker is open', async () => {

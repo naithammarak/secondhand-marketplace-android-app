@@ -14,8 +14,14 @@ const pendingBody = {
   can_submit: false,
 };
 
-const idCard = { uri: 'file:///card.png', name: 'card.png', type: 'image/png' };
+// Node covers response/error handling using a browser File. Native URI files
+// are exercised with Expo's actual serializer in component-tests.
+const idCard = {
+  uri: 'blob:synthetic-card', name: 'card.png', type: 'image/png',
+  file: new File([new Uint8Array([1, 2, 3])], 'card.png', { type: 'image/png' }),
+};
 const input = {
+  shopName: 'ร้านทดสอบ',
   bankName: 'ธนาคารทดสอบ',
   bankAccountName: 'ผู้ขาย ทดสอบ',
   bankAccountNumber: '1234567890',

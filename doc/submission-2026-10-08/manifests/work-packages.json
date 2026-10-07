@@ -1,0 +1,15 @@
+{
+  "scope": "Assignment wrappers for existing tasks, not new implementation or acceptance",
+  "prepared_task_ids": ["00"],
+  "authoritative_task_dependencies": "tasks.json",
+  "migration_order": ["02", "07", "08"],
+  "release_order": ["10", "12", "11", "13"],
+  "packages": [
+    {"id": "A", "file": "work-packages/A-base-and-schema.md", "owner": "Lead integration/DB Codex", "task_ids": ["01", "02"], "execution_order": ["01", "02"], "note": "Return to integrate downstream delivery before source freeze"},
+    {"id": "B", "file": "work-packages/B-backend-delivery-settlement.md", "owner": "Friend 1 backend Codex", "task_ids": ["03", "04", "05"], "execution_order": ["03", "04", "05"], "implementation_requires": ["02"]},
+    {"id": "C", "file": "work-packages/C-profile-reviews.md", "owner": "Friend 2 full stack Codex", "task_ids": ["07", "08"], "execution_order": ["07", "08"], "implementation_requires": ["02"], "review_final_integration_requires": ["04", "07"]},
+    {"id": "D", "file": "work-packages/D-certificate-revocation.md", "owner": "Friend 3 or Friend 2 while waiting for task04", "task_ids": ["09"], "execution_order": ["09"], "implementation_requires": ["01"]},
+    {"id": "E", "file": "work-packages/E-frontend-integration.md", "owner": "Existing frontend session", "task_ids": ["06"], "execution_order": ["06"], "api_integration_requires": ["03", "04"]},
+    {"id": "F", "file": "work-packages/F-release-android-presentation.md", "owner": "Lead runtime/build/QA/docs Codex and device owner", "task_ids": ["10", "12", "11", "13"], "execution_order": ["10", "12", "11", "13"], "final_execution_requires": ["01", "02", "03", "04", "05", "06", "07", "08", "09"]}
+  ]
+}

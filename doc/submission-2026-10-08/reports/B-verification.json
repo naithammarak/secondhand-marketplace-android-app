@@ -1,0 +1,178 @@
+{
+  "status": "IMPLEMENTED_AND_TESTED_BACKEND_RELEASE_ACCEPTANCE_PENDING",
+  "recorded_at_utc": "2026-10-02T07:46:49.461794+00:00",
+  "branch": "feat/package-b-delivery-settlement",
+  "review_pr": 124,
+  "original_b_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
+  "a_source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
+  "a_pr_head_sha": "94a26a0fbb7a0a82948d95de7db9af070707b770",
+  "a_review_status": "REVIEW_PENDING",
+  "a_deployed_release_sha": null,
+  "integration_merge_sha": "76faba8a3fd939e7dad429f3351da583bd302cf0",
+  "implementation_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+  "git_merge_conflicts": [],
+  "migration_head": "a02f20261002",
+  "b_migrations_added": false,
+  "environment": {
+    "os": "Windows",
+    "python": "3.13.5",
+    "postgresql": "18.6",
+    "host": "127.0.0.1",
+    "port": 55483,
+    "synthetic_role": "package_b_test",
+    "new_owned_temporary_cluster": true,
+    "cluster_stopped": true,
+    "private_storage": "pytest temporary directories"
+  },
+  "shared_supabase_touched": false,
+  "shared_storage_touched": false,
+  "persistent_schedule_registered": false,
+  "checks": [
+    {
+      "name": "final FINISH + INSPECT/CERT API PostgreSQL",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_finish_flow_postgres.py tests/test_inspection_flow_postgres.py -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-finish-inspection-tests.xml",
+      "passed": 91,
+      "finish": 45,
+      "inspect": 46,
+      "result": "PASS",
+      "evidence": "B-finish-inspection-tests.xml",
+      "executed_at_committed_source_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc"
+    },
+    {
+      "name": "Orders + A foundation + unpaid worker PostgreSQL",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest tests/test_orders_postgres.py tests/test_finish_foundation_postgres.py tests/test_unpaid_expiry_postgres.py -q -x --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-order-worker-tests.xml",
+      "passed": 77,
+      "result": "PASS",
+      "evidence": "B-order-worker-tests.xml"
+    },
+    {
+      "name": "A predecessor migration/preflight/downgrade/RLS PostgreSQL",
+      "cwd": "repository root",
+      "command": "backend/.venv/Scripts/python.exe -m pytest backend/tests/test_finish_foundation_migration.py -q -x --tb=short --junitxml=doc/submission-2026-10-08/reports/B-migration-tests.xml",
+      "legacy_source_export_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
+      "passed": 5,
+      "result": "PASS",
+      "evidence": "B-migration-tests.xml"
+    },
+    {
+      "name": "default backend",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m pytest -q --tb=short --junitxml=../doc/submission-2026-10-08/reports/B-default-tests.xml",
+      "passed": 627,
+      "skipped": 243,
+      "warnings": 3,
+      "result": "PASS",
+      "evidence": "B-default-tests.xml"
+    },
+    {
+      "name": "mobile typecheck",
+      "cwd": "mobile",
+      "command": "npm run typecheck",
+      "result": "PASS",
+      "setup": "Refreshed ignored Expo route declarations using installed getTypedRoutesDeclarationFile/requireContext over src/app; no tracked type relaxation"
+    },
+    {
+      "name": "mobile logic",
+      "cwd": "mobile",
+      "command": "npm run test:logic",
+      "passed": 306,
+      "result": "PASS"
+    },
+    {
+      "name": "mobile components",
+      "cwd": "mobile",
+      "command": "npm run test:components -- --silent",
+      "passed": 214,
+      "suites": 29,
+      "result": "PASS"
+    },
+    {
+      "name": "Alembic heads",
+      "cwd": "backend",
+      "command": ".venv/Scripts/python.exe -m alembic heads",
+      "heads": [
+        "a02f20261002"
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "PowerShell wrapper/Task XML syntax",
+      "result": "PASS",
+      "activated": false
+    },
+    {
+      "name": "documentation package links/JSON/graph",
+      "result": "PASS",
+      "task_files": 14,
+      "requirements": 59,
+      "qa_cases": 28,
+      "checked_links": 190
+    },
+    {
+      "name": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "specialized_postgres_passed": 173,
+  "proofs": {
+    "real_decoded_bytes": true,
+    "bound_selected_only": true,
+    "storage_byte_bound": 5242880,
+    "storage_call_timeout_seconds": 20,
+    "maximum_proofs": 3,
+    "historical_bodyless_replay_hashes_preserved": true
+  },
+  "financial_examples": {
+    "release": {
+      "held": "1350.00",
+      "seller": "1140.00",
+      "commission": "60.00",
+      "inspection": "100.00",
+      "shipping": "50.00",
+      "buyer_refund": "0.00"
+    },
+    "refund": {
+      "held": "1350.00",
+      "buyer_refund": "1350.00",
+      "other_allocations": "0.00"
+    },
+    "external_transfers": false,
+    "original_receipt_equality_proven": true
+  },
+  "worker_evidence": [
+    "all five jobs without HTTP after preparation",
+    "exact before/at/after boundaries",
+    "two runners and two processes",
+    "actual DB locks crossing receipt/report deadlines",
+    "partial progress stop/restart",
+    "missing/corrupt Storage and recovery",
+    "durable return before refund failure",
+    "one overdue escalation without automatic decision",
+    "CLI target safeguards/nonzero failure",
+    "Windows forced termination then new process"
+  ],
+  "initial_failures_resolved": [
+    "A report ID physical String(36) comparison",
+    "test DB rows from another private Storage root",
+    "legacy assertion versus specified Seller inbound proof scope",
+    "stale ignored Expo generated routes"
+  ],
+  "pending": [
+    "independent A/B review",
+    "legacy in-flight null return snapshot audited repair",
+    "E/C combined feature integration",
+    "real Android/OAuth/shared private Storage/public QR",
+    "task10 scheduler registration/activation/monitoring",
+    "final release acceptance"
+  ],
+  "historical_evidence": {
+    "B-contract-tests.xml": "7918fc2 preparation on previous55482 cluster; superseded for implementation acceptance"
+  },
+  "github_prs_merged": false,
+  "latest_backend_source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
+  "latest_reviewed_sha": "29e90c3fe7c283aab6444ad56f011eef455b84fc",
+  "review_fix_evidence": "B-review-fixes-verification.json",
+  "historical_checks_scope": "Initial Task03-05 implementation; current correction results are in review_fix_evidence"
+}

@@ -5,7 +5,7 @@ import {
   type CategoryOption,
   type ProductInput,
 } from '../services/product-service.ts';
-import { validateProductWriteFields } from './product-write-validation.ts';
+import { validateProductBrand, validateProductWriteFields } from './product-write-validation.ts';
 
 export type ProductFormValues = ProductInput;
 
@@ -57,8 +57,10 @@ export function validateProductForm(
       errors.category = 'กรุณาเลือกหมวดหมู่สินค้า';
     }
   }
-  if (options?.brands && options.brands.length > 0) {
-    if (!values.brandId || !options.brands.some(b => b.id === values.brandId)) {
+  const brandError = validateProductBrand(values.brand);
+  if (brandError) errors.brand = brandError;
+  if (values.brandId && options?.brands && options.brands.length > 0) {
+    if (!options.brands.some(b => b.id === values.brandId)) {
       errors.brand = 'กรุณาเลือกแบรนด์สินค้า';
     }
   }

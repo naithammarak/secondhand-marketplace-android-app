@@ -1,0 +1,130 @@
+import { fireEvent, render, screen } from '@testing-library/react-native';
+
+import { ReceiptScreen } from '@/components/receipt-screen';
+
+const mockPush = jest.fn();
+const mockReplace = jest.fn();
+
+jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
+  Redirect: () => null,
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+}));
+
+let mockAuth: { initializing?: boolean; session: unknown } = { session: { user: { id: 'buyer-test' } } };
+jest.mock('@/auth/auth-provider', () => ({
+  useAuth: () => mockAuth,
+}));
+
+const mockDetailStore = {
+  open: jest.fn().mockResolvedValue(undefined),
+  loadReceipt: jest.fn().mockResolvedValue(undefined),
+};
+
+let mockDetailState: any;
+
+jest.mock('@/orders/orders-provider', () => ({
+  useOrderDetail: () => ({ state: mockDetailState, store: mockDetailStore }),
+}));
+
+const mockReceipt = {
+  receiptNo: 'RC-000042',
+  orderId: 42,
+  issuedAt: '2026-09-28T14:32:00Z',
+  paymentMethod: 'พร้อมเพย์',
+  currency: 'THB',
+  productName: 'กระเป๋าหนังแท้วินเทจ',
+  itemPrice: '3850.00',
+  shippingFee: '50.00',
+  inspectionFee: '100.00',
+  totalAmount: '4000.00',
+};
+
+const mockOrder = {
+  id: 42,
+  status: 'WAITING_SELLER_SHIP',
+  paymentStatus: 'PAID',
+  shippingAddress: {
+    recipientName: 'สมชาย ใจดี',
+    phone: '0812345678',
+    addressLine: '128/9 ซอยสุขุมวิท 39',
+    subdistrict: 'คลองตันเหนือ',
+    district: 'วัฒนา',
+    province: 'กรุงเทพมหานคร',
+    postalCode: '10110',
+  },
+};
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockAuth = { session: { user: { id: 'buyer-test' } } };
+  mockDetailState = {
+    owner: 'buyer-test',
+    orderId: 42,
+    order: mockOrder,
+    receipt: mockReceipt,
+    receiptLoading: false,
+    receiptError: null,
+  };
+});
+
+test('renders order success header and receipt paper details', () => {
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.getByText('ชำระเงินสำเร็จ')).toBeTruthy();
+  expect(screen.getByText('ผู้ขายจะส่งสินค้าเข้าตรวจสภาพก่อนส่งถึงคุณ')).toBeTruthy();
+  expect(screen.getByText('ใบเสร็จรับเงิน')).toBeTruthy();
+  expect(screen.getByText('RC-000042')).toBeTruthy();
+  expect(screen.getByText('#42')).toBeTruthy();
+  expect(screen.getByText('พร้อมเพย์')).toBeTruthy();
+  expect(screen.getByText('กระเป๋าหนังแท้วินเทจ')).toBeTruthy();
+  expect(screen.getByText('฿3,850.00')).toBeTruthy();
+  expect(screen.getByText('฿50.00')).toBeTruthy();
+  expect(screen.getByText('฿100.00')).toBeTruthy();
+  expect(screen.getByText('฿4,000.00')).toBeTruthy();
+  expect(screen.getByText(/จัดส่งถึง/)).toBeTruthy();
+  expect(screen.getByText(/สมชาย ใจดี/)).toBeTruthy();
+  expect(screen.getByText('เอกสารนี้ออกจากระบบจำลองเพื่อการทดสอบ ไม่ใช่ใบเสร็จทางภาษี')).toBeTruthy();
+});
+
+test('navigates to order detail when clicking ดูสถานะคำสั่งซื้อ', () => {
+  render(<ReceiptScreen orderId={42} />);
+  fireEvent.press(screen.getByRole('button', { name: 'ดูสถานะคำสั่งซื้อ' }));
+  expect(mockReplace).toHaveBeenCalledWith({ pathname: '/orders/[orderId]', params: { orderId: '42' } });
+});
+
+test('navigates to home when clicking กลับหน้าแรก', () => {
+  render(<ReceiptScreen orderId={42} />);
+  fireEvent.press(screen.getByRole('button', { name: 'กลับหน้าแรก' }));
+  expect(mockReplace).toHaveBeenCalledWith('/');
+});
+
+test('does not claim payment success before the persisted receipt loads', () => {
+  mockDetailState = { ...mockDetailState, receipt: null, receiptLoading: true };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.queryByText('ชำระเงินสำเร็จ')).toBeNull();
+  expect(screen.getByLabelText('กำลังโหลดใบเสร็จ')).toBeTruthy();
+});
+
+test('a receipt load error shows retry and no success claim', () => {
+  mockDetailState = { ...mockDetailState, receipt: null, receiptError: 'network-error' };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.queryByText('ชำระเงินสำเร็จ')).toBeNull();
+  expect(screen.getByText('โหลดใบเสร็จไม่สำเร็จ')).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' }));
+  expect(mockDetailStore.loadReceipt).toHaveBeenCalled();
+});
+
+test('waits for session restore instead of redirecting a deep link to login', () => {
+  mockAuth = { initializing: true, session: null };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.getByText('กำลังตรวจสอบบัญชี')).toBeTruthy();
+  expect(screen.queryByText('ใบเสร็จรับเงิน')).toBeNull();
+});
+
+test('a refunded order keeps the original receipt and does not promise shipping', () => {
+  mockDetailState = { ...mockDetailState, order: { ...mockOrder, status: 'REFUNDED', paymentStatus: 'REFUNDED' } };
+  render(<ReceiptScreen orderId={42} />);
+  expect(screen.getByText('฿4,000.00')).toBeTruthy();
+  expect(screen.queryByText('ผู้ขายจะส่งสินค้าเข้าตรวจสภาพก่อนส่งถึงคุณ')).toBeNull();
+  expect(screen.getByText(/คำสั่งซื้อนี้คืนเงินแล้ว/)).toBeTruthy();
+});

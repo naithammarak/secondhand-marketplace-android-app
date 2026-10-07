@@ -7,18 +7,17 @@ import { marketplaceReturn } from '@/auth/marketplace-return-instance';
 const mockPush = jest.fn();
 const mockReplace = jest.fn();
 let mockAuth: any;
-let mockVerification: any = { state: { record: null } };
 
 jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
   router: {
     push: (...args: any[]) => mockPush(...args),
     replace: (...args: any[]) => mockReplace(...args),
+    canGoBack: () => false,
+    back: jest.fn(),
   },
 }));
 jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
-jest.mock('@/verification/verification-provider', () => ({
-  useVerification: () => mockVerification,
-}));
 
 function newUserAuth(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,7 +40,6 @@ beforeEach(async () => {
   await marketplaceReturn.clear();
   jest.clearAllMocks();
   mockAuth = newUserAuth();
-  mockVerification = { state: { record: null } };
 });
 
 afterEach(() => jest.restoreAllMocks());
@@ -85,126 +83,48 @@ test('cancelled Google login clears the saved checkout destination', async () =>
   expect(await marketplaceReturn.consume()).toBeNull();
 });
 
-test('browsing without login cancels the saved purchase destination', async () => {
+test('closing login to browse cancels the saved purchase destination', async () => {
   await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
   mockAuth = newUserAuth({ session: null, account: null });
   render(<LoginScreen />);
-  fireEvent.press(screen.getByRole('button', { name: 'ดูสินค้าก่อน' }));
-  await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/'));
-  expect(await marketplaceReturn.consume()).toBeNull();
+  // ปุ่มปิด (X) แทนปุ่ม "ดูสินค้าก่อน" เดิมตาม design: กลับไปเลือกดูสินค้าและล้างปลายทางที่ค้างไว้
+  fireEvent.press(screen.getByRole('button', { name: 'ปิด' }));
+  await waitFor(async () => expect(await marketplaceReturn.peek()).toBeNull());
+  expect(mockReplace).toHaveBeenCalledWith('/');
 });
 
-test('waits for account verification before showing first-role choices', async () => {
+test('waits for the backend and never offers self-selection of Seller', () => {
   mockAuth = newUserAuth({ account: null, accountChecking: true });
-  await render(<LoginScreen />);
-
+  render(<LoginScreen />);
   expect(screen.getByLabelText('กำลังตรวจสอบบัญชี')).toBeTruthy();
-  expect(screen.queryByText('ผู้ซื้อ')).toBeNull();
+  expect(screen.queryByRole('radio')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'ไปที่โปรไฟล์' })).toBeNull();
 });
 
-test.each([
-  ['ผู้ซื้อ', 'BUYER', 'บทบาทผู้ซื้อ'],
-  ['ผู้ขาย', 'SELLER', 'บทบาทผู้ขาย'],
-] as const)('selects %s, confirms it, and welcomes with the backend result', async (label, role, roleLabel) => {
-  const view = await render(<LoginScreen />);
-  const confirm = screen.getByRole('button', { name: 'ยืนยันบทบาท' });
-  expect(confirm.props.accessibilityState?.disabled ?? confirm.props.disabled).toBeTruthy();
-
-  await fireEvent.press(screen.getByRole('radio', { name: label }));
-  await fireEvent.press(screen.getByRole('button', { name: 'ยืนยันบทบาท' }));
-  expect(mockAuth.selectRole).toHaveBeenCalledWith(role);
-
-  mockAuth.account = { fullName: 'สมใจ ซื้อดี', role, source: 'backend' };
-  await view.rerender(<LoginScreen />);
-  expect(screen.getByText('ยินดีต้อนรับ สมใจ ซื้อดี')).toBeTruthy();
-  expect(screen.getByText(roleLabel)).toBeTruthy();
-  expect(screen.queryByText('เลือกบทบาทของคุณ')).toBeNull();
-});
-
-test('keeps the role page actionable after a save failure', async () => {
-  mockAuth = newUserAuth({ roleError: 'network-error' });
-  await render(<LoginScreen />);
-
-  await fireEvent.press(screen.getByRole('radio', { name: 'ผู้ซื้อ' }));
-  expect(screen.getByText('เชื่อมต่อเพื่อบันทึกบทบาทไม่ได้ กรุณาลองใหม่')).toBeTruthy();
-  await fireEvent.press(screen.getByRole('button', { name: 'ลองบันทึกอีกครั้ง' }));
-  expect(mockAuth.selectRole).toHaveBeenCalledWith('BUYER');
-});
-
-test('an existing admin skips role selection and can log out', async () => {
-  mockAuth = newUserAuth({
-    account: { fullName: null, role: 'ADMIN', source: 'backend' },
-  });
-  await render(<LoginScreen />);
-
-  expect(screen.getByText('ยินดีต้อนรับ')).toBeTruthy();
-  expect(screen.getByText('บทบาทผู้ดูแลระบบ')).toBeTruthy();
-  expect(screen.queryByText('เลือกบทบาทของคุณ')).toBeNull();
-  expect(screen.getByText('ตรวจคำขอยืนยันตัวตน')).toBeTruthy();
-  await fireEvent.press(screen.getByText('ออกจากระบบ'));
-  await waitFor(() => expect(mockAuth.logout).toHaveBeenCalledTimes(1));
-});
-
-test('mock account cannot report a successful role save', async () => {
-  mockAuth = newUserAuth({
-    account: { fullName: null, role: null, source: 'mock' },
-  });
-  await render(<LoginScreen />);
-
+test.each(['backend', 'mock'])('null role from %s is unavailable and preserves the return destination', async source => {
+  await marketplaceReturn.save({ kind: 'checkout', productId: 42 });
+  mockAuth = newUserAuth({ account: { role: null, source } });
+  render(<LoginScreen />);
   expect(screen.getByText('บริการบัญชียังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'ยืนยันบทบาท' }).props.accessibilityState.disabled).toBeTruthy();
+  fireEvent.press(screen.getByRole('button', { name: 'อัปเดตบัญชี' }));
+  expect(mockAuth.retryAccount).toHaveBeenCalledTimes(1);
+  expect(mockAuth.selectRole).not.toHaveBeenCalled();
+  expect(mockReplace).not.toHaveBeenCalled();
+  expect(await marketplaceReturn.peek()).toEqual({ kind: 'checkout', productId: 42 });
 });
 
-test('shows "ลงขายสินค้า" button and navigates to /product/new when seller is APPROVED', async () => {
-  mockVerification = { state: { record: { status: 'APPROVED' } } };
-  mockAuth = newUserAuth({
-    account: { fullName: 'แม่ค้าใจดี', role: 'SELLER', source: 'backend' },
-  });
-  await render(<LoginScreen />);
-
-  const postProductBtn = screen.getByRole('button', { name: 'ลงขายสินค้า' });
-  expect(postProductBtn).toBeTruthy();
-  await fireEvent.press(postProductBtn);
-  expect(mockPush).toHaveBeenCalledWith('/product/new');
-  await fireEvent.press(screen.getByRole('button', { name: 'สินค้าของฉัน' }));
-  expect(mockPush).toHaveBeenCalledWith('/product/mine');
+test.each(['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR'])('verified %s can open the profile', role => {
+  mockAuth = newUserAuth({ account: { role, source: 'backend' } });
+  render(<LoginScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'ไปที่โปรไฟล์' }));
+  expect(mockReplace).toHaveBeenCalledWith('/profile');
+  expect(mockAuth.selectRole).not.toHaveBeenCalled();
 });
 
-test('does not show "ลงขายสินค้า" button when seller is not APPROVED', async () => {
-  mockVerification = { state: { record: { status: 'PENDING' } } };
-  mockAuth = newUserAuth({
-    account: { fullName: 'แม่ค้าใจดี', role: 'SELLER', source: 'backend' },
-  });
-  await render(<LoginScreen />);
-
-  expect(screen.queryByRole('button', { name: 'ลงขายสินค้า' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'สินค้าของฉัน' })).toBeNull();
-});
-
-
-describe('ทางเข้าซื้อด้วยรหัสสินค้า (ORDER-04, D-16)', () => {
-  const buyerAuth = () =>
-    newUserAuth({ account: { fullName: 'สมใจ ซื้อดี', role: 'BUYER', source: 'backend' } });
-
-  test('ซ่อนไว้เป็นค่าตั้งต้น แม้ผู้ใช้จะเป็นผู้ซื้อ', async () => {
-    mockAuth = buyerAuth();
-    await render(<LoginScreen />);
-
-    expect(screen.getByLabelText('ไปหน้าคำสั่งซื้อ')).toBeTruthy();
-    expect(screen.queryByLabelText('ซื้อสินค้าด้วยรหัสสินค้า')).toBeNull();
-  });
-
-  test('แสดงเฉพาะ build พัฒนาที่เปิด flag ไว้', async () => {
-    const previous = process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY;
-    process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY = 'true';
-    mockAuth = buyerAuth();
-    try {
-      await render(<LoginScreen />);
-      await fireEvent.press(screen.getByLabelText('ซื้อสินค้าด้วยรหัสสินค้า'));
-      expect(mockPush).toHaveBeenCalledWith('/buy-by-product-id');
-    } finally {
-      if (previous === undefined) delete process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY;
-      else process.env.EXPO_PUBLIC_ORDER_DIRECT_ID_ENTRY = previous;
-    }
-  });
+test('signed-out view shows only the Google sign-in action from the design', () => {
+  mockAuth = newUserAuth({ session: null, account: null });
+  render(<LoginScreen />);
+  expect(screen.getByRole('button', { name: 'เข้าสู่ระบบด้วย Google' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'ดูสินค้าก่อน' })).toBeNull();
+  expect(screen.queryByText('ยินยอมการใช้ข้อมูล')).toBeNull();
 });

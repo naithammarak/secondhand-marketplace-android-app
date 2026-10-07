@@ -1,0 +1,86 @@
+{
+  "updatedAtUtc": "2026-10-03T13:13:11.934096+00:00",
+  "status": "CONDITIONAL_PASS_COMPOSED_LOCAL_CODE_API",
+  "branch": "codex/e-ui-integration-2026-10-03",
+  "workspace": "/home/tmk/project/market-place-mobile-app/worktrees/e-ui-integration",
+  "verifiedCodeHead": "7233f1e79764b3855480ff126d6462ae83d9fcc8",
+  "pr": {
+    "number": 133,
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/133",
+    "base": "codex/ab-external-shipping-2026-10-02",
+    "publishedHeadBeforeDeliveryRecord": "8b56ed52b569094a6f3ccfb928be1fcaa44cdbd6"
+  },
+  "sources": {
+    "UI1": {
+      "pr": 131,
+      "head": "6c37ec3c7ff41a01f6cdd67a9bf4616b50b258fd"
+    },
+    "UI2": {
+      "pr": 132,
+      "head": "691a69da262bdbac37f0469bed6f666e88f9f82f"
+    },
+    "backend": {
+      "pr": 130,
+      "head": "0ffff2de66d321ab37a0a725d4427716cbfecba3"
+    }
+  },
+  "migrationHead": "r01e20261002",
+  "verification": {
+    "logicTests": {
+      "passed": 347,
+      "failed": 0
+    },
+    "componentTests": {
+      "suites": 34,
+      "passed": 261,
+      "failed": 0
+    },
+    "finalBindingRegression": {
+      "passed": 14,
+      "failed": 0
+    },
+    "typecheck": "PASS",
+    "changedFilesLint": "PASS",
+    "customerApiJourneys": {
+      "passed": 7,
+      "failed": 0
+    },
+    "staffApiJourneys": {
+      "passed": 7,
+      "failed": 0
+    },
+    "androidBundleExport": "PASS"
+  },
+  "review": {
+    "reviewer": "planner/Lead; same session implemented integration fixes",
+    "independentReview": "PENDING",
+    "githubApproval": "NOT_SUBMITTED"
+  },
+  "environment": {
+    "database": "isolated owned PostgreSQL 16; localhost 55491/eui",
+    "authentication": "public synthetic HS256 test JWT; not real Google/Supabase",
+    "storage": "local REST stub for product/ID and private local inspection files; not shared Supabase",
+    "payments": "simulated",
+    "carrier": "simulated",
+    "sharedDatabaseTouched": false,
+    "sharedJobsActivated": false,
+    "originalLiveCheckoutModified": false
+  },
+  "release": {
+    "apkProduced": false,
+    "androidDeviceTested": false,
+    "oauthTested": false,
+    "privateSupabaseStorageTested": false,
+    "publicHttpsQrOnAnotherDevice": false,
+    "workerDeploymentVerified": false,
+    "readyForSubmission": false
+  },
+  "remaining": [
+    "Independent review of combined candidate exact remote head",
+    "Confirm authorized device-reachable HTTPS API/OAuth/Storage/QR and worker rollout",
+    "Provide existing EAS project/account or local Android SDK/adb/signing for APK",
+    "Build standalone APK, install/cold-start and run native QA",
+    "Finalize documents, actual deck, backup recording, rehearsal and teacher scope acknowledgement"
+  ],
+  "reports": "reports/E-UI-INTEGRATION-2026-10-03.md"
+}

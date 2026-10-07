@@ -1,6 +1,12 @@
-export type AccountRole = 'BUYER' | 'SELLER' | 'ADMIN' | 'INSPECTOR' | null;
+export type AccountRole = 'BUYER' | 'SELLER' | 'ADMIN' | 'INSPECTOR' | 'COURIER' | null;
 export type SelectableRole = 'BUYER' | 'SELLER';
-export type MeResult = { fullName: string | null; role: AccountRole; source: 'backend' | 'mock' };
+export type MeResult = {
+  fullName: string | null;
+  role: AccountRole;
+  source: 'backend' | 'mock';
+  /** backend users.id (ไม่ใช่ Supabase uuid) ใช้เทียบกับ seller.id ของสินค้า */
+  userId?: number;
+};
 export type MeErrorKind = 'unauthorized' | 'forbidden' | 'conflict' | 'validation-error'
   | 'not-configured' | 'network-error' | 'server-error';
 
@@ -16,13 +22,14 @@ export class MeServiceError extends Error {
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
-function accountFromResponse(data: { full_name?: unknown; role?: unknown }): MeResult {
-  const supportedRoles: AccountRole[] = ['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR', null];
+function accountFromResponse(data: { id?: unknown; full_name?: unknown; role?: unknown }): MeResult {
+  const supportedRoles: AccountRole[] = ['BUYER', 'SELLER', 'ADMIN', 'INSPECTOR', 'COURIER', null];
   const role = supportedRoles.includes(data.role as AccountRole) ? data.role as AccountRole : null;
   return {
     fullName: typeof data.full_name === 'string' && data.full_name.trim() ? data.full_name : null,
     role,
     source: 'backend',
+    ...(Number.isInteger(data.id) && Number(data.id) > 0 ? { userId: Number(data.id) } : {}),
   };
 }
 

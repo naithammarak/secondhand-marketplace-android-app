@@ -5,15 +5,16 @@
  * order/verification service เดิมที่ใช้ {"detail":...} เพราะ Product API ใช้ envelope ใหม่นี้โดยเฉพาะ
  */
 
-export type ProductCondition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR';
+export type ProductCondition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'UNKNOWN';
 export type ProductStatus = 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'CANCELLED';
 
 /** ข้อความภาษาไทยของ condition จาก backend หน้าจอแสดงตามนี้เท่านั้น ไม่คำนวณเอง */
 export const conditionLabels: Record<ProductCondition, string> = {
-  NEW: 'ใหม่',
-  LIKE_NEW: 'เหมือนใหม่',
-  GOOD: 'ดี',
-  FAIR: 'พอใช้',
+  NEW: 'สภาพใหม่',
+  LIKE_NEW: 'สภาพเหมือนใหม่',
+  GOOD: 'สภาพดี',
+  FAIR: 'สภาพพอใช้',
+  UNKNOWN: 'ข้อมูลสภาพไม่พร้อมใช้งาน',
 };
 
 export type ProductMainImage = {
@@ -29,7 +30,10 @@ export type ProductImage = ProductMainImage & {
   photoType: 'MAIN' | 'GALLERY';
 };
 
+export type PublicSeller = { id?: number; displayName: string; verified: boolean };
+
 export type ProductListItem = {
+  seller?: PublicSeller | null;
   id: number;
   productName: string;
   /** ราคาเป็น string ทศนิยม 2 ตำแหน่งเสมอตาม contract ห้ามแปลงเป็น number เพื่อคำนวณในแอป */
@@ -37,12 +41,15 @@ export type ProductListItem = {
   condition: ProductCondition;
   status: ProductStatus;
   mainImage: ProductMainImage | null;
+  brand?: ProductBrand | null;
+  brandName?: string | null;
 };
 
 export type ProductCategory = { id: number; categoryName: string; parentCategoryId: number | null };
 export type ProductBrand = { id: number; brandName: string };
 
 export type ProductDetail = {
+  seller?: PublicSeller | null;
   id: number;
   productName: string;
   description: string;
@@ -133,7 +140,7 @@ function money(value: unknown): string {
 }
 
 function toCondition(value: unknown): ProductCondition {
-  return CONDITIONS.find(condition => condition === value) ?? bad();
+  return CONDITIONS.find(condition => condition === value) ?? (typeof value === 'string' && value.length > 0 ? 'UNKNOWN' : bad());
 }
 
 function toStatus(value: unknown): ProductStatus {
@@ -174,15 +181,25 @@ function toBrand(value: unknown): ProductBrand {
   return { id: int(data.id), brandName: str(data.brand_name) };
 }
 
+function toSeller(value: unknown): PublicSeller | null {
+  if (value === null || value === undefined) return null;
+  const data = obj(value);
+  if (typeof data.display_name !== 'string' || !data.display_name.trim() || typeof data.verified !== 'boolean') return null;
+  return { ...(Number.isInteger(data.id) && Number(data.id) > 0 ? { id: Number(data.id) } : {}), displayName: data.display_name, verified: data.verified };
+}
+
 function toListItem(value: unknown): ProductListItem {
   const data = obj(value);
   return {
     id: int(data.id),
     productName: str(data.product_name),
+    seller: toSeller(data.seller),
     price: money(data.price),
     condition: toCondition(data.condition),
     status: toStatus(data.status),
     mainImage: toMainImage(data.main_image),
+    brand: data.brand && typeof data.brand === 'object' ? toBrand(data.brand) : null,
+    brandName: typeof data.brand_name === 'string' ? data.brand_name : null,
   };
 }
 
@@ -192,6 +209,7 @@ function toDetail(value: unknown): ProductDetail {
   return {
     id: int(data.id),
     productName: str(data.product_name),
+    seller: toSeller(data.seller),
     description: str(data.description),
     price: money(data.price),
     categoryId: int(data.category_id),
@@ -281,8 +299,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '1990.00',
     categoryId: 3,
     category: { id: 3, categoryName: 'กระเป๋า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 5,
+    brand: { id: 5, brandName: 'Zara' },
     size: 'ไม่ระบุขนาด',
     condition: 'LIKE_NEW',
     saleType: 'FIXED_PRICE',
@@ -302,8 +320,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '2490.00',
     categoryId: 2,
     category: { id: 2, categoryName: 'รองเท้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 2,
+    brand: { id: 2, brandName: 'Nike' },
     size: '42',
     condition: 'NEW',
     saleType: 'FIXED_PRICE',
@@ -347,8 +365,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '890.00',
     categoryId: 1,
     category: { id: 1, categoryName: 'เสื้อผ้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 3,
+    brand: { id: 3, brandName: 'Adidas' },
     size: 'L',
     condition: 'GOOD',
     saleType: 'FIXED_PRICE',
@@ -368,8 +386,8 @@ const MOCK_SEED: MockSeedProduct[] = [
     price: '450.00',
     categoryId: 1,
     category: { id: 1, categoryName: 'เสื้อผ้า', parentCategoryId: null },
-    brandId: 1,
-    brand: { id: 1, brandName: 'ไม่ระบุแบรนด์' },
+    brandId: 4,
+    brand: { id: 4, brandName: 'Uniqlo' },
     size: '32',
     condition: 'LIKE_NEW',
     saleType: 'FIXED_PRICE',
@@ -470,6 +488,8 @@ async function mockListProducts(params: ListProductsParams): Promise<ProductPage
     condition: product.condition,
     status: product.status,
     mainImage: product.publicListMainImage,
+    brand: product.brand,
+    brandName: product.brand.brandName,
   }));
 
   return {
@@ -571,7 +591,9 @@ export function createProductCatalogService(options: ProductCatalogServiceOption
       if (mode === 'mock') return mockGetProduct(id);
 
       const body = obj(await request(`/products/${encodeURIComponent(id)}`, { method: 'GET' }, signal));
-      return toDetail(body.data);
+      const detail = toDetail(body.data);
+      // GET /products/{id} returns the public seller beside `data`, not inside it.
+      return detail.seller ? detail : { ...detail, seller: toSeller(body.seller) };
     },
   };
 }

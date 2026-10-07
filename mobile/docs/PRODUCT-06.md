@@ -1,5 +1,13 @@
 # PRODUCT-06 — Product Create & Edit
 
+> **4 October 2026 amendment (local patch):** The brand field accepts a selected
+> catalog ID or a typed name (1–255 characters). Create/update send exactly one
+> of `brand_id` or `brand_name`; the API resolves or creates the brand within the
+> product transaction. Option reloads preserve typed names. Deploy the updated
+> API before distributing the new APK. See
+> [F brand fix report](../../doc/submission-2026-10-08/reports/F-BRAND-FIX-2026-10-04.md).
+> The sections below describe the earlier PRODUCT-06 implementation.
+
 > **Status:** Merged to `main` via PR #74. Post-merge review findings on the Edit flow
 > (load error handling, stale form state on product id change, image upload error
 > handling) were fixed on branch `product-06-review-fixes` — see

@@ -1,0 +1,39 @@
+@startuml
+!pragma layout smetana
+title 2NDHAND - submission architecture target
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+left to right direction
+actor "Android user" as User
+component "Standalone Expo Android APK" as App
+component "Google / Auth provider" as Auth
+component "FastAPI complete app" as API
+database "PostgreSQL\nOrders / inspections / settlements / reviews" as DB
+component "Private Storage\nIdentity / inspection / legacy delivery evidence" as Storage
+component "Scheduled server worker\nSame guarded services" as Worker
+actor "Public QR visitor" as Visitor
+component "Public certificate HTML / JSON\nHTTPS opaque token / no PII" as Public
+component "Simulated payment / transport / payout" as Sim
+
+User --> App
+App --> Auth : provider login
+App --> API : HTTPS / verified bearer
+API --> Auth : verified identity
+API --> DB : locks / transactions / migrations
+API --> Storage : authorized private objects
+API --> Sim : persisted simulations
+Worker --> DB : bounded scans / locks
+Worker --> Storage : guarded proof checks
+Visitor --> Public : no login
+Public --> API : minimal public projection
+note bottom of Worker
+  No HTTP traffic required.
+  Six jobs: unpaid, receipt, no-ship, return retry, inspection escalation, result timeout.
+  EXTERNAL_V2 transport events differ from actual recipient receipt.
+end note
+note bottom of App
+  Latest UI preserved; no catalog-only or buyer-only release.
+  API/QR origins reachable from actual phone, not localhost.
+end note
+@enduml

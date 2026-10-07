@@ -1,40 +1,57 @@
+import { useEffect, useState } from 'react';
+import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
-
-import { useEffect } from 'react';
-import { useFonts } from 'expo-font';
-import { Colors } from '@/constants/theme';
 import { StatusBar } from 'expo-status-bar';
+
 import { AuthProvider } from '@/auth/auth-provider';
 import { ReviewProvider } from '@/admin/review-provider';
+import { Colors } from '@/constants/theme';
 import { OrdersProvider } from '@/orders/orders-provider';
+import { BoundFulfillmentPortProvider } from '@/orders/fulfillment-binding';
 import { VerificationProvider } from '@/verification/verification-provider';
+import { WondeeThemeProvider, useThemePreference } from '@/theme/theme-provider';
+import { SplashScreenView } from '@/components/wondee/splash-screen';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  return <WondeeThemeProvider><AppLayout /></WondeeThemeProvider>;
+}
+
+function AppLayout() {
+  const { scheme: colorScheme, ready } = useThemePreference();
+  const [splashFinished, setSplashFinished] = useState(() => process.env.NODE_ENV === 'test');
   const [fontsLoaded, fontError] = useFonts({
-    'Kanit-Medium': require('@/assets/fonts/Kanit-Medium.ttf'),
-    'Kanit-SemiBold': require('@/assets/fonts/Kanit-SemiBold.ttf'),
-    'NotoSansThai-Regular': require('@/assets/fonts/NotoSansThai-Regular.ttf'),
-    'NotoSansThai-Medium': require('@/assets/fonts/NotoSansThai-Medium.ttf'),
+    'Prompt-Regular': require('@/assets/fonts/Prompt-Regular.ttf'),
+    'Prompt-Medium': require('@/assets/fonts/Prompt-Medium.ttf'),
+    'Prompt-SemiBold': require('@/assets/fonts/Prompt-SemiBold.ttf'),
+    'Prompt-Bold': require('@/assets/fonts/Prompt-Bold.ttf'),
+    'Prompt-ExtraBold': require('@/assets/fonts/Prompt-ExtraBold.ttf'),
+    'PlusJakartaSans': require('@/assets/fonts/PlusJakartaSans.ttf'),
   });
-  useEffect(() => { if (fontsLoaded || fontError) void SplashScreen.hideAsync(); }, [fontsLoaded, fontError]);
-  if (!fontsLoaded && !fontError) return null;
+  useEffect(() => { if (ready && (fontsLoaded || fontError)) void SplashScreen.hideAsync(); }, [ready, fontsLoaded, fontError]);
+  if (!ready || (!fontsLoaded && !fontError)) return null;
   const theme = Colors[colorScheme === 'dark' ? 'dark' : 'light'];
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={{ ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme), colors: { ...(colorScheme === 'dark' ? DarkTheme : DefaultTheme).colors, primary: theme.primary, background: theme.background, card: theme.surface, text: theme.text, border: theme.border } }}>
       <AuthProvider>
+        <BoundFulfillmentPortProvider>
         <VerificationProvider>
           <ReviewProvider>
             <OrdersProvider>
               <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
-                <Stack.Screen name="index" />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: theme.background },
+                  // เข้าหน้าย่อยใช้ fade สั้น ๆ; แท็บล่าง (router.replace) ไม่มี animation
+                  animation: 'fade',
+                  animationDuration: 150,
+                }}>
+                <Stack.Screen name="index" options={{ animation: 'none' }} />
                 <Stack.Screen name="login" />
-                <Stack.Screen name="profile" />
+                <Stack.Screen name="profile" options={{ animation: 'none' }} />
                 <Stack.Screen name="sell" />
                 <Stack.Screen name="auth/callback" />
                 <Stack.Screen name="seller-verification" />
@@ -42,17 +59,30 @@ export default function TabLayout() {
                 <Stack.Screen name="buy-by-product-id" />
                 <Stack.Screen name="products/index" />
                 <Stack.Screen name="products/[id]" />
-                <Stack.Screen name="product/new" />
-                <Stack.Screen name="product/mine" />
-                <Stack.Screen name="product/[id]/edit" />
+                <Stack.Screen name="product" options={{ animation: 'none' }} />
                 <Stack.Screen name="checkout/[productId]" />
-                <Stack.Screen name="orders/index" />
+                <Stack.Screen name="orders/index" options={{ animation: 'none' }} />
                 <Stack.Screen name="orders/[orderId]" />
                 <Stack.Screen name="receipt/[orderId]" />
+                <Stack.Screen name="orders/[orderId]/inspection" />
+                <Stack.Screen name="orders/[orderId]/ship-to-center" />
+                <Stack.Screen name="orders/[orderId]/review" />
+                <Stack.Screen name="certificates/[token]" />
+                {/* Staff route names supplied to UI2; screens and guards live in UI2 modules. */}
+                <Stack.Screen name="inspections/index" />
+                <Stack.Screen name="inspections/[inspectionId]" />
+                <Stack.Screen name="admin-deliveries" />
+                <Stack.Screen name="admin-legacy-couriers" />
+                <Stack.Screen name="admin-certificates/index" />
+                <Stack.Screen name="admin-certificates/[certificateId]" />
               </Stack>
+              {!splashFinished ? (
+                <SplashScreenView onFinish={() => setSplashFinished(true)} />
+              ) : null}
             </OrdersProvider>
           </ReviewProvider>
         </VerificationProvider>
+        </BoundFulfillmentPortProvider>
       </AuthProvider>
     </ThemeProvider>
   );

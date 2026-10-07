@@ -1,15 +1,29 @@
 import type { PropsWithChildren } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { OrderErrorKind, OrderStatus } from '@/services/order-service';
+import { WondeeLoader } from './wondee/loader';
 
 export const orderStatusColors: Record<OrderStatus, string> = {
   WAITING_PAYMENT: Colors.light.warning,
   WAITING_SELLER_SHIP: Colors.light.success,
+  SHIPPING_TO_CENTER: Colors.light.info,
+  RECEIVED_AT_CENTER: Colors.light.info,
+  INSPECTING: Colors.light.warning,
+  RESULT_NOTIFIED: Colors.light.success,
+  SHIPPING_TO_BUYER: Colors.light.info,
+  DELIVERED_PENDING_BUYER: Colors.light.warning,
+  DELIVERY_DISPUTED: Colors.light.danger,
+  RETURNED_TO_SELLER: Colors.light.info,
+  COMPLETED: Colors.light.success,
+  RETURNING_TO_SELLER: Colors.light.warning,
+  REFUNDED: Colors.light.textSecondary,
+  RETURNED: Colors.light.textSecondary,
   CANCELLED: Colors.light.textSecondary,
   UNKNOWN: Colors.light.textSecondary,
 };
@@ -50,12 +64,20 @@ export function errorText(kind: OrderErrorKind, code?: string | null): string {
 }
 
 export function Screen({ children }: PropsWithChildren) {
-  return <ThemedView style={styles.screen}>{children}</ThemedView>;
+  return (
+    <ThemedView style={styles.screen}>
+      <Animated.View
+        entering={FadeIn?.duration ? FadeIn.duration(240) : undefined}
+        style={{ flex: 1, width: '100%' }}>
+        {children}
+      </Animated.View>
+    </ThemedView>
+  );
 }
 
-export function Card({ children }: PropsWithChildren) {
+export function Card({ children, testID }: PropsWithChildren<{ testID?: string }>) {
   const theme = useTheme();
-  return <ThemedView style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</ThemedView>;
+  return <ThemedView testID={testID} style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</ThemedView>;
 }
 
 export function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
@@ -70,8 +92,8 @@ export function Row({ label, value, bold }: { label: string; value: string; bold
 export function Loading({ label }: { label: string }) {
   return (
     <View style={styles.center}>
-      <ActivityIndicator accessibilityLabel={label} />
-      <ThemedText type="small">{label}</ThemedText>
+      <WondeeLoader size={36} accessibilityLabel={label} />
+      <ThemedText type="small" style={{ marginTop: 8 }}>{label}</ThemedText>
     </View>
   );
 }
@@ -91,9 +113,12 @@ export function Button({
   return (
     <Pressable
       style={({ pressed }) => [
-        { minHeight: 46, opacity: pressed ? 0.75 : 1 },
+        { minHeight: 48, opacity: pressed ? 0.75 : 1 },
         variant === 'secondary' ? styles.secondaryButton : styles.primaryButton,
-        { borderColor: variant === 'danger' ? theme.danger : theme.primary, backgroundColor: variant === 'secondary' ? theme.surface : variant === 'danger' ? theme.danger : theme.primary },
+        // สีตาม design: หลัก = เขียว #059669 ตัวขาว, รอง = พื้นเทาอ่อนไม่มีขอบ, อันตราย = แดงตัวขาว
+        variant === 'secondary'
+          ? { borderWidth: 0, backgroundColor: theme.backgroundElement }
+          : { borderColor: 'transparent', backgroundColor: variant === 'danger' ? '#e11d48' : pressed ? '#10b981' : '#059669' },
         inactive && styles.buttonDisabled,
       ]}
       disabled={inactive}
@@ -101,8 +126,8 @@ export function Button({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       onPress={onPress}>
-      {busy ? <ActivityIndicator color={variant === 'secondary' ? undefined : '#ffffff'} /> : null}
-      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.primary : theme.onPrimary }}>
+      {busy ? <ActivityIndicator color={variant === 'secondary' ? theme.text : '#ffffff'} /> : null}
+      <ThemedText type="smallBold" style={{ color: variant === 'secondary' ? theme.text : '#ffffff', textAlign: 'center' }}>
         {label}
       </ThemedText>
     </Pressable>
@@ -128,26 +153,26 @@ export const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, alignItems: 'center', padding: Spacing.three },
   content: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
   center: { alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.four },
-  card: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  card: { borderWidth: 1, borderRadius: 16, padding: Spacing.three, gap: Spacing.two },
   row: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: Spacing.two, paddingVertical: 7 },
   statusRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', maxWidth: '100%', gap: 6, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   field: { gap: Spacing.one },
   input: {
     borderWidth: 1,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 15, fontFamily: Fonts.sans, color: Colors.light.text, backgroundColor: Colors.light.backgroundElement, borderColor: Colors.light.border,
   },
   errorText: { color: Colors.light.danger },
-  noticeBox: { borderWidth: 1, borderRadius: Spacing.two, padding: Spacing.two, gap: Spacing.one },
+  noticeBox: { borderWidth: 1, borderRadius: 12, padding: Spacing.two, gap: Spacing.one },
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   primaryButton: {
     flexDirection: 'row',
     gap: Spacing.two,
     backgroundColor: Colors.light.primary,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',
@@ -158,7 +183,7 @@ export const styles = StyleSheet.create({
   secondaryButton: {
     flexDirection: 'row',
     gap: Spacing.two,
-    borderRadius: Spacing.two,
+    borderRadius: 12,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
     alignItems: 'center',

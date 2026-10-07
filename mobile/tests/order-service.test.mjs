@@ -289,7 +289,7 @@ test('สถานะใหม่จาก backend ไม่ทำให้ห�
 
 test('สถานะใหม่ในรายการคำสั่งซื้อก็กลายเป็น UNKNOWN เหมือนกัน', async () => {
   const item = {
-    id: 41, status: 'RECEIVED_AT_CENTER', payment_status: 'PAID', viewer_role: 'buyer',
+    id: 41, status: 'FUTURE_ORDER_STATE', payment_status: 'PAID', viewer_role: 'buyer',
     product: { id: 12, name: 'เสื้อ', condition: 'ดี', size: 'M' },
     total_amount: '1350.00', seller_payout: null, currency: 'THB',
     expires_at: null, cancel_reason: null, created_at: '2026-09-18T10:00:00Z', paid_at: '2026-09-18T10:20:00Z',
@@ -314,7 +314,7 @@ test('สถานะที่ไม่ใช่ข้อความยัง�
 test('ข้อความสถานะกลางถูกใช้แทนค่าว่างเสมอ', () => {
   assert.equal(orderStatusLabel('WAITING_PAYMENT'), 'รอชำระเงิน');
   assert.equal(orderStatusLabel('UNKNOWN'), orderStatusLabels.UNKNOWN);
-  for (const value of ['SHIPPING_TO_BUYER', '', null, undefined]) {
+  for (const value of ['UNKNOWN_FUTURE_STATUS', '', null, undefined]) {
     assert.equal(orderStatusLabel(value), orderStatusLabels.UNKNOWN, `value=${value}`);
   }
   assert.notEqual(orderStatusLabels.UNKNOWN.trim(), '');
@@ -336,4 +336,23 @@ test('deadlineAt ให้เวลาดิบไว้ให้หน้าจ
   assert.equal(deadlineAt(null), null);
   assert.equal(deadlineAt(undefined), null);
   assert.equal(deadlineAt('not-a-date'), null);
+});
+
+
+test('all PR108 inspection states survive detail decoding', async () => {
+  for (const status of ['SHIPPING_TO_CENTER','RECEIVED_AT_CENTER','INSPECTING','RESULT_NOTIFIED']) {
+    const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => json(200, detail({ status })) });
+    assert.equal((await service.getOrder('tok',41)).status, status);
+  }
+});
+
+
+test('FINISH states and a refunded charge retain their server meaning', async () => {
+  for (const status of ['DELIVERED_PENDING_BUYER', 'DELIVERY_DISPUTED', 'RETURNED_TO_SELLER', 'REFUNDED']) {
+    const service = createOrderService({ baseUrl: 'https://api.test', fetch: async () => json(200, detail({ status, payment_status: status === 'REFUNDED' ? 'REFUNDED' : 'PAID', can_pay: false, can_cancel: false })) });
+    const result = await service.getOrder('tok', 41);
+    assert.equal(result.status, status);
+    assert.equal(result.paymentStatus, status === 'REFUNDED' ? 'REFUNDED' : 'PAID');
+    assert.notEqual(orderStatusLabel(result.status), orderStatusLabels.UNKNOWN);
+  }
 });

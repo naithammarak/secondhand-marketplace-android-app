@@ -26,6 +26,7 @@ from app.models.product_upload import ProductUpload
 from app.models.user import User
 from app.schemas.product import CreateProductRequest, UpdateProductRequest
 from app.services.product_seller_access import require_approved_seller
+from app.services.product_brands import resolve_product_brand
 from app.services.product_upload_binding import bind_pending_uploads, replace_product_images
 
 
@@ -332,7 +333,7 @@ def create_product(
         require_approved_seller(current_user=seller, db=db)
 
         category = db.get(Category, body.category_id)
-        brand = db.get(Brand, body.brand_id)
+        brand = resolve_product_brand(db, brand_id=body.brand_id, brand_name=body.brand_name)
         missing = {}
         if category is None:
             missing["category_id"] = ["ไม่พบหมวดหมู่ที่ระบุ"]
@@ -408,7 +409,8 @@ def create_product(
                         "minProperties": 1,
                         "additionalProperties": False,
                         "description": (
-                            "ส่งเฉพาะฟิลด์ที่ต้องการแก้ไข; images จะแทนที่รูปทั้งชุด"
+                            "ส่งเฉพาะฟิลด์ที่ต้องการแก้ไข; images จะแทนที่รูปทั้งชุด; "
+                            "แก้แบรนด์ด้วย brand_id หรือ brand_name เพียงอย่างเดียว"
                         ),
                         "properties": {
                             "product_name": {"type": "string", "minLength": 1, "maxLength": 255},
@@ -420,6 +422,10 @@ def create_product(
                             },
                             "category_id": {"type": "integer", "minimum": 1},
                             "brand_id": {"type": "integer", "minimum": 1},
+                            "brand_name": {
+                                "type": "string", "minLength": 1, "maxLength": 255,
+                                "description": "ชื่อแบรนด์ที่พิมพ์เอง ส่งแทน brand_id",
+                            },
                             "size": {"type": "string", "minLength": 1, "maxLength": 100},
                             "condition": {
                                 "type": "string",
@@ -558,8 +564,8 @@ def update_product(
             else db.get(Category, product.category_id)
         )
         brand = (
-            db.get(Brand, body.brand_id)
-            if "brand_id" in fields
+            resolve_product_brand(db, brand_id=body.brand_id, brand_name=body.brand_name)
+            if {"brand_id", "brand_name"} & fields
             else db.get(Brand, product.brand_id)
         )
         missing = {}
@@ -574,13 +580,14 @@ def update_product(
             "product_name",
             "description",
             "category_id",
-            "brand_id",
             "size",
             "condition",
             "sale_type",
         ):
             if field in fields:
                 setattr(product, field, getattr(body, field))
+        if {"brand_id", "brand_name"} & fields:
+            product.brand_id = brand.id
         if "price" in fields:
             product.price = Decimal(body.price)
 

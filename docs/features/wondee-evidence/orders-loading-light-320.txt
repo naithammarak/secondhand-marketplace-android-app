@@ -1,0 +1,12 @@
+- generic: QA FIXTURE · orders-loading · ไม่มี API/การบันทึกจริง
+- heading "คำสั่งซื้อ" [level=1]
+- button "รีเฟรช" [disabled]:
+  - generic: รีเฟรช
+- progressbar "กำลังโหลดคำสั่งซื้อ":
+- generic: กำลังโหลดคำสั่งซื้อ
+- tab "หน้าแรก":
+  - generic: หน้าแรก
+- tab "คำสั่งซื้อ":
+  - generic: คำสั่งซื้อ
+- tab "ฉัน":
+  - generic: ฉัน

@@ -4,7 +4,8 @@ import { ProductListScreen } from '@/components/product-list-screen';
 import type { ProductCatalogState } from '@/products/product-catalog-store';
 import type { ProductListItem } from '@/services/product-catalog-service';
 
-jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: null }) }));
+let mockSession: unknown = null;
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => ({ session: mockSession }) }));
 const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockReplace = jest.fn();
@@ -94,6 +95,7 @@ jest.mock('@/products/product-catalog-instance', () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockSession = null;
   mockCanGoBack = true;
   mockFocusCallback = null;
   mockState = defaultState();
@@ -123,8 +125,8 @@ describe('ProductListScreen', () => {
     expect(mockStore.setCategory).toHaveBeenCalledWith(42);
     fireEvent.press(screen.getByRole('tab', { name: 'คำสั่งซื้อ' }));
     expect(mockReplace).toHaveBeenCalledWith('/orders');
-    fireEvent.press(screen.getByRole('tab', { name: 'ขายของ' }));
-    expect(mockReplace).toHaveBeenCalledWith('/sell');
+    fireEvent.press(screen.getByRole('tab', { name: 'โปรไฟล์' }));
+    expect(mockReplace).toHaveBeenCalledWith('/profile');
     fireEvent.press(screen.getByRole('button', { name: 'เข้าสู่ระบบ' }));
     expect(mockPush).toHaveBeenCalledWith('/login');
   });
@@ -183,11 +185,11 @@ describe('ProductListScreen', () => {
 
     expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
     expect(screen.getByText('฿1,290.00')).toBeTruthy();
-    expect(screen.getByText('ดี')).toBeTruthy();
+    expect(screen.getByLabelText('สภาพดี')).toBeTruthy();
 
     expect(screen.getByText('กระเป๋าสะพายหนัง')).toBeTruthy();
     expect(screen.getByText('฿1,990.00')).toBeTruthy();
-    expect(screen.getByText('เหมือนใหม่')).toBeTruthy();
+    expect(screen.getByLabelText('สภาพเหมือนใหม่')).toBeTruthy();
   });
 
   test('updates query when user types in search input', () => {
@@ -229,7 +231,8 @@ describe('ProductListScreen', () => {
     });
     render(<ProductListScreen />);
 
-    expect(screen.getByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
+    expect(screen.getByText('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')).toBeTruthy();
+    expect(screen.getByText('กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่')).toBeTruthy();
     const retryButton = screen.getByText('ลองใหม่อีกครั้ง');
     fireEvent.press(retryButton);
     expect(mockStore.retry).toHaveBeenCalledTimes(1);
@@ -292,22 +295,57 @@ describe('ProductListScreen', () => {
     });
   });
 
-  test('navigates back when back button is pressed', () => {
-    mockState = defaultState({ loaded: true });
+  test('renders shopping bag button when authenticated and navigates to /orders', () => {
+    mockSession = { user: { id: 'user-1' } };
+    mockState = defaultState({ loaded: true, items: [] });
     render(<ProductListScreen />);
 
-    const backButton = screen.getByText('กลับ');
-    fireEvent.press(backButton);
-    expect(mockBack).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'เข้าสู่ระบบ' })).toBeNull();
+    const bagButton = screen.getByRole('button', { name: 'คำสั่งซื้อ' });
+    expect(bagButton).toBeTruthy();
+    fireEvent.press(bagButton);
+    expect(mockPush).toHaveBeenCalledWith('/orders');
   });
 
-  test('replaces to root when canGoBack is false and back button is pressed', () => {
-    mockCanGoBack = false;
-    mockState = defaultState({ loaded: true });
+  test('renders brand name and seller store name on product card', () => {
+    const itemWithBrandAndSeller: ProductListItem = {
+      ...sampleItem1,
+      brand: { id: 10, brandName: 'Bottega Veneta' },
+      seller: { displayName: 'ร้านวนดีช็อป', verified: true },
+    };
+    mockState = defaultState({
+      loaded: true,
+      items: [itemWithBrandAndSeller],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, hasNext: false },
+    });
     render(<ProductListScreen />);
 
-    const backButton = screen.getByText('กลับ');
-    fireEvent.press(backButton);
-    expect(mockReplace).toHaveBeenCalledWith('/');
+    expect(screen.getByText('Bottega Veneta')).toBeTruthy();
+    expect(screen.getByText('ร้านวนดีช็อป')).toBeTruthy();
+  });
+
+  test('hides the shop row instead of inventing a shop name when the API sends none', () => {
+    mockState = defaultState({
+      loaded: true,
+      items: [{ ...sampleItem1, seller: null }],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1, hasNext: false },
+    });
+    render(<ProductListScreen />);
+
+    expect(screen.getByText('เสื้อเชิ้ตสีฟ้า')).toBeTruthy();
+    expect(screen.queryByText('ร้านวนดีช็อป')).toBeNull();
+    expect(screen.queryByLabelText('ผู้ขายยืนยันตัวตนแล้ว')).toBeNull();
+  });
+
+  test('titles the list with the selected API category', () => {
+    mockState = defaultState({
+      loaded: true,
+      categoryId: 42,
+      categories: [{ id: 42, categoryName: 'หมวดจาก API', parentCategoryId: null }],
+    });
+    render(<ProductListScreen />);
+
+    expect(screen.getAllByText('หมวดจาก API').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('หมวดนี้ยังไม่มีสินค้าลงขาย ลองดูหมวดอื่นก่อนนะ')).toBeTruthy();
   });
 });

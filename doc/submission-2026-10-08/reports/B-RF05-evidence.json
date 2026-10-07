@@ -1,0 +1,72 @@
+{
+  "base": "c87a502c259fff7ad97ad5f11fe90d69fe4f96b5",
+  "status": "IMPLEMENTED_REVIEW_PENDING",
+  "checks": [
+    {
+      "name": "confirmed-base",
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "logSha256": "c1178d984b61a524337dbe14de3d0dfc7d5bef1ebc9ce5241f0233873e472ba5",
+      "junitSha256": "24da2ff82add977b5bc3e64c329dd6bae0a3ce805a7b7f036213f5d35795bd82",
+      "log": "review-evidence/confirmed-base.log",
+      "junit": "review-evidence/confirmed-base.xml"
+    },
+    {
+      "name": "fixed-progress",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "logSha256": "7bb6ef17c92e0677b32754df390fdd5f071ec504f4f896d4741144e4114d94eb",
+      "junitSha256": "1d7e5fa29d1dfa72db53ce05db3e7dfdf15ec2cb17737b5ae147d7c250b9c504",
+      "log": "review-evidence/fixed-progress.log",
+      "junit": "review-evidence/fixed-progress.xml"
+    },
+    {
+      "name": "legacy-worker",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "logSha256": "a0dba06fc1df92e27d518eb47d96e08bc024e7a159e7e5c748990d775df216ee",
+      "junitSha256": "3ead8a67a1c50c9f5c21bd4ba7d993c8d2a6d50e99a81e6f4c97473fe05d6cab",
+      "log": "review-evidence/legacy-worker.log",
+      "junit": "review-evidence/legacy-worker.xml"
+    },
+    {
+      "name": "existing-cursors",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "logSha256": "ff9bece3baa49fbd115e14ac413d033fcc0394bb1471030e61dc1832b239e72a",
+      "junitSha256": "f1c259e4560a8c40ea99d09422a14547600e43589aad4f478c9e94a7a6059354",
+      "log": "review-evidence/existing-cursors.log",
+      "junit": "review-evidence/existing-cursors.xml"
+    }
+  ],
+  "files": {
+    "backend/app/services/lifecycle_progress.py": "f886f65c6352ebf6c47fe9957144221fde2226c2d537d8c2fd787f7cdef91c0b",
+    "backend/app/services/lifecycle_worker.py": "65913086af0ef2187158ce3010c45b60dcfe86ff5801b5869fc86fc07d61d307",
+    "backend/app/services/unpaid_expiry_worker.py": "ad015e0898cd01ceb81896653fb00ed0f5f5fc9a67d69b9870d41c43bd7ada42",
+    "backend/tests/test_unpaid_lifecycle_progress_postgres.py": "29a273b4cc53e7e30b853c395d246bb5659d815a500e0d2bba1c42fd40c5ef77"
+  },
+  "passedFocused": 33,
+  "baselineFailedRequirements": 2,
+  "invalidBaselineAttemptRetained": true,
+  "database": {
+    "container": "b-unpaid-fix-pg-20261002",
+    "port": 55453,
+    "owned": true
+  },
+  "migrationChanged": false,
+  "sharedDbTouched": false,
+  "releaseAccepted": false,
+  "defaultEnvironmentGuard": {
+    "result": "5 specialized checks skipped only when owned FINISH test URL unset;not counted as passes",
+    "productionSourceUnchanged": true,
+    "originalPGResults": "5+9+19 passes at de56a25;guard does not change provided-target behavior"
+  }
+}

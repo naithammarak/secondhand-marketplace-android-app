@@ -1,0 +1,130 @@
+{
+  "submission_date": "2026-10-08",
+  "timezone": "Asia/Bangkok",
+  "scope_version": "submission-2026-10-03-e-review-correction",
+  "status": "E_CORRECTION_TESTED_INDEPENDENT_REVIEW_PENDING",
+  "app": {
+    "source_sha": "626711acbc8f1276db1864cbc091c152230f1f85",
+    "source_dirty": false,
+    "package": "com.kmutnb.secondhandmarketplace",
+    "version": null,
+    "version_code": null,
+    "api_mode": "complete"
+  },
+  "api": {
+    "source_sha": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "reachable_https_origin": null,
+    "public_certificate_origin": null,
+    "deployed_at": null
+  },
+  "database": {
+    "migration_head": "r01e20261002",
+    "isolated_rehearsal_evidence": "EXTERNAL-SHIPPING-VERIFICATION.json",
+    "shared_rollout_evidence": null
+  },
+  "worker": {
+    "source_sha": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "schedule_minutes": 5,
+    "active": null,
+    "health_evidence": null,
+    "activation_verified": false
+  },
+  "apk": {
+    "path": null,
+    "sha256": null,
+    "size_bytes": null,
+    "bundled_javascript": null,
+    "real_device_install_evidence": null
+  },
+  "qa": {
+    "report": "E-RF01-CORRECTION.md",
+    "mandatory_passed": null,
+    "mandatory_total": 28,
+    "device": null,
+    "real_google_login": false,
+    "real_private_storage": false,
+    "public_qr_second_device": false,
+    "sale_journey": null,
+    "refund_journey": null
+  },
+  "handover": {
+    "srs_pdf": null,
+    "slides": null,
+    "user_guide": null,
+    "setup_guide": null,
+    "demo_seed": null,
+    "backup_recording": null,
+    "rehearsal_evidence": null
+  },
+  "teacher_scope_acknowledgement": null,
+  "source_provenance": [
+    {
+      "base_pr": 121,
+      "sha": "d98d4a0b4b5d0cbfdce842ac886ed0ffc0409b05"
+    },
+    {
+      "original_checkout_head": "939e4f763c8185e5478b1d4962e746b7a2321a8d",
+      "inventory": "A-source-provenance.json"
+    },
+    {
+      "upstream_pr_inventory": "A-upstream-pr-inventory.json"
+    },
+    {
+      "package_a_pr": 123,
+      "source_sha": "33f0eadd8c1739735434ee9f103a5f23398178ed",
+      "pr_head_sha": "94a26a0fbb7a0a82948d95de7db9af070707b770",
+      "merge_sha": "76faba8a3fd939e7dad429f3351da583bd302cf0",
+      "independent_review_status": "REVIEW_PENDING"
+    },
+    {
+      "package_b_pr": 124,
+      "original_review_sha": "bc4f6c47303cc7005c5e2b5cb5ef0d8250a9284c",
+      "implementation_sha": "1e3d6a061be4f6fa8e875885dfd68586aa79b7cc",
+      "evidence": "B-verification.json"
+    },
+    {
+      "package_b_pr": 124,
+      "reviewed_sha": "29e90c3fe7c283aab6444ad56f011eef455b84fc",
+      "correction_source_sha": "9e8474c8c1bbf8b28d82aba51e4f212497863539",
+      "evidence": "B-review-fixes-verification.json",
+      "independent_review_status": "REREVIEW_PENDING"
+    },
+    {
+      "backend_pr": 130,
+      "source_sha": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+      "migration": "r01e20261002",
+      "local_ab_acceptance": "ACCEPTED_AB_AMENDMENT_LOCAL_CODE_API",
+      "scope_limit": "Does not establish shared/native/E acceptance"
+    },
+    {
+      "combined_e_pr": 133,
+      "correction_source_sha": "626711acbc8f1276db1864cbc091c152230f1f85",
+      "starting_reviewed_head": "49abbbd046f99ceb4b273c2186a49d8e7deed83f",
+      "finding": "E-RF01",
+      "independent_re_review": "PENDING",
+      "evidence": "E-RF01-VERIFICATION.json"
+    }
+  ],
+  "known_remaining_issues": [
+    "E independent re-review of E-RF01 correction on exact PR133 remote head pending",
+    "Shared DB/Storage/OAuth/Android/worker/public QR/APK/full release/presentation acceptance unverified",
+    "Historical PR124 manifest is preserved separately and must not choose current source/migration",
+    "Current AB backend acceptance is local code/API only; no shared rollout claimed"
+  ],
+  "candidate": {
+    "pr": 133,
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/133",
+    "base_pr": 130,
+    "base_sha": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+    "branch": "codex/e-ui-integration-2026-10-03",
+    "implementation_source_sha": "626711acbc8f1276db1864cbc091c152230f1f85",
+    "scope": "Combined UI1/PR131 and UI2/PR132 on locally accepted AB backend; E-RF01 correction; E independent re-review pending",
+    "starting_reviewed_head": "49abbbd046f99ceb4b273c2186a49d8e7deed83f",
+    "starting_review_verdict": "REQUEST_CHANGES",
+    "remote_final_head_location": "Exact published final head is sent separately to planner/E-IMPLEMENT-STATE.json, not self-referential future SHA",
+    "backend_local_acceptance": "ACCEPTED_AB_AMENDMENT_LOCAL_CODE_API",
+    "e_independent_review": "PENDING",
+    "full_release_ready": false
+  },
+  "historical_manifest": "history/release-manifest-pr124-9e8474c8.json"
+}

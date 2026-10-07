@@ -4,19 +4,35 @@
  */
 
 /**
- * สถานะที่แอปรุ่นนี้รู้จัก Backend จะเพิ่มสถานะหลังการจัดส่งในรอบถัดไป
- * (ส่งเข้าศูนย์ตรวจ, กำลังตรวจ, ส่งถึงผู้ซื้อ ฯลฯ ดู doc/orders/contract.md หัวข้อ 2)
+ * สถานะ ORDER และ INSPECT ที่แอปรุ่นนี้รองรับตามสัญญา backend
+ * (ดู doc/orders/contract.md หัวข้อ 2)
  * แอปรุ่นเก่าต้องไม่พังเมื่อเจอค่าที่ยังไม่รู้จัก จึงแปลงเป็น 'UNKNOWN' แล้วแสดงข้อความกลางแทน
  */
-export const KNOWN_ORDER_STATUSES = ['WAITING_PAYMENT', 'WAITING_SELLER_SHIP', 'CANCELLED'] as const;
+export const KNOWN_ORDER_STATUSES = [
+  'WAITING_PAYMENT',
+  'WAITING_SELLER_SHIP',
+  'SHIPPING_TO_CENTER',
+  'RECEIVED_AT_CENTER',
+  'INSPECTING',
+  'RESULT_NOTIFIED',
+  'SHIPPING_TO_BUYER',
+  'DELIVERED_PENDING_BUYER',
+  'DELIVERY_DISPUTED',
+  'RETURNED_TO_SELLER',
+  'COMPLETED',
+  'RETURNING_TO_SELLER',
+  'REFUNDED',
+  'RETURNED',
+  'CANCELLED',
+] as const;
 export type KnownOrderStatus = (typeof KNOWN_ORDER_STATUSES)[number];
 export type OrderStatus = KnownOrderStatus | 'UNKNOWN';
 export type CancelReason = 'BUYER' | 'EXPIRED';
-export type PaymentStatus = 'UNPAID' | 'PAID';
+export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
 export type ViewerRole = 'buyer' | 'seller';
 export type PaymentOutcome = 'SUCCESS' | 'FAILED';
 
-export type ProductSnapshot = { id: number; name: string; condition: string; size: string };
+export type ProductSnapshot = { id: number; name: string; condition: string; size: string; imageUrl?: string | null };
 
 export type ShippingAddress = {
   recipientName: string;
@@ -181,7 +197,13 @@ function optMoney(value: unknown): string | null {
 
 function toProduct(value: unknown): ProductSnapshot {
   const data = obj(value);
-  return { id: int(data.id), name: str(data.name), condition: str(data.condition), size: str(data.size) };
+  return {
+    id: int(data.id),
+    name: str(data.name),
+    condition: str(data.condition),
+    size: str(data.size),
+    imageUrl: optStr(data.image_url) ?? optStr(data.imageUrl) ?? null,
+  };
 }
 
 function toStatus(value: unknown): OrderStatus {
@@ -226,7 +248,7 @@ export function toOrderDetail(value: unknown): OrderDetail {
   return {
     id: int(data.id),
     status: toStatus(data.status),
-    paymentStatus: data.payment_status === 'PAID' ? 'PAID' : data.payment_status === 'UNPAID' ? 'UNPAID' : bad(),
+    paymentStatus: data.payment_status === 'REFUNDED' ? 'REFUNDED' : data.payment_status === 'PAID' ? 'PAID' : data.payment_status === 'UNPAID' ? 'UNPAID' : bad(),
     viewerRole: toViewerRole(data.viewer_role),
     product: toProduct(data.product),
     amounts: {
@@ -256,7 +278,7 @@ function toListItem(value: unknown): OrderListItem {
   return {
     id: int(data.id),
     status: toStatus(data.status),
-    paymentStatus: data.payment_status === 'PAID' ? 'PAID' : 'UNPAID',
+    paymentStatus: data.payment_status === 'REFUNDED' ? 'REFUNDED' : data.payment_status === 'PAID' ? 'PAID' : 'UNPAID',
     viewerRole: toViewerRole(data.viewer_role),
     product: toProduct(data.product),
     totalAmount: optMoney(data.total_amount),
@@ -422,10 +444,10 @@ export function createOrderService(options: { baseUrl?: string; fetch?: FetchLik
 
     async listOrders(
       token: string,
-      page: { limit: number; offset: number },
+      page: { limit: number; offset: number; role?: 'buyer' | 'seller' },
       signal?: AbortSignal,
     ): Promise<OrderPage> {
-      return toPage(await request(`/orders?limit=${page.limit}&offset=${page.offset}`,
+      return toPage(await request(`/orders?limit=${page.limit}&offset=${page.offset}${page.role ? `&role=${page.role}` : ''}`,
         { method: 'GET', headers: auth(token) }, signal));
     },
 

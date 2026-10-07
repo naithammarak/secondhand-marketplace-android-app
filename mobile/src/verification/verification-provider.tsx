@@ -37,7 +37,7 @@ export function VerificationProvider({ children }: PropsWithChildren) {
   }));
 
   const owner = auth.session?.user.id ?? null;
-  const isSeller = auth.account?.role === 'SELLER';
+  const isSeller = auth.account?.source === 'backend' && (auth.account.role === 'BUYER' || auth.account.role === 'SELLER') && !auth.accountError;
 
   useEffect(() => {
     // ออกจากระบบหรือเปลี่ยนบัญชีแล้วข้อมูลคำขอของบัญชีก่อนหน้าต้องหายไปทันที

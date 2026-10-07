@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     UniqueConstraint,
@@ -32,10 +33,15 @@ MONEY = Numeric(12, 2)
 # ตั้งใจไม่ใช้ native enum ของ PostgreSQL เพราะการเพิ่มค่าจะผูกกับ ALTER TYPE และ downgrade ยาก
 # คอลัมน์เป็น String(32) จึงรองรับชื่อสถานะยาว ๆ ของรอบถัดไปได้โดยไม่ต้องขยาย
 # ส่วน uq_orders_active_product ใช้เงื่อนไข `status <> 'CANCELLED'` จึงคลุมสถานะใหม่ให้เองอัตโนมัติ
-ORDER_STATUSES = ("WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED")
+ORDER_STATUSES = (
+    "WAITING_PAYMENT", "WAITING_SELLER_SHIP", "CANCELLED",
+    "SHIPPING_TO_CENTER", "RECEIVED_AT_CENTER", "INSPECTING", "RESULT_NOTIFIED",
+    "SHIPPING_TO_BUYER", "DELIVERED_PENDING_BUYER", "DELIVERY_DISPUTED",
+    "RETURNED_TO_SELLER", "COMPLETED", "REFUNDED",
+)
 CANCEL_REASONS = ("BUYER", "EXPIRED")
 ATTEMPT_OUTCOMES = ("SUCCEEDED", "FAILED")
-ESCROW_STATUSES = ("HELD",)
+ESCROW_STATUSES = ("HELD", "RELEASED", "REFUNDED")
 
 
 def _in_list(column: str, values: tuple[str, ...]) -> str:
@@ -45,6 +51,16 @@ def _in_list(column: str, values: tuple[str, ...]) -> str:
 class Order(Base):
     __tablename__ = "orders"
     __table_args__ = (
+        CheckConstraint("fulfillment_policy IN ('LEGACY_V1','EXTERNAL_V2')", name="ck_orders_fulfillment_policy"),
+        CheckConstraint("(result_available_at IS NULL AND result_decision_deadline_at IS NULL AND result_timed_out_at IS NULL) OR (fulfillment_policy = 'EXTERNAL_V2' AND result_available_at IS NOT NULL AND result_decision_deadline_at IS NOT NULL AND result_decision_deadline_at > result_available_at AND (result_timed_out_at IS NULL OR result_timed_out_at >= result_decision_deadline_at))", name="ck_orders_result_window"),
+        UniqueConstraint("id", "buyer_id", name="uq_orders_id_buyer_id"),
+        UniqueConstraint("missing_report_id", name="uq_orders_missing_report_id"),
+        UniqueConstraint("id", "seller_id", "buyer_id", name="uq_orders_parties"),
+        UniqueConstraint("id", "total_amount", "currency", name="uq_orders_currency_amount"),
+        CheckConstraint("(receipt_confirmed_at IS NULL AND receipt_confirmation_source IS NULL) OR (receipt_confirmed_at IS NOT NULL AND receipt_confirmation_source IS NOT NULL AND receipt_confirmation_source IN ('BUYER','AUTO') AND (receipt_deadline_at IS NOT NULL OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_confirmation_source = 'BUYER')) AND missing_reported_at IS NULL AND status = 'COMPLETED')", name="ck_orders_receipt_confirmation"),
+        CheckConstraint("(missing_reported_at IS NULL AND missing_report_reason IS NULL AND missing_report_id IS NULL) OR (missing_reported_at IS NOT NULL AND missing_report_reason IS NOT NULL AND missing_report_id IS NOT NULL AND length(trim(missing_report_reason)) BETWEEN 10 AND 2000 AND ((receipt_deadline_at IS NOT NULL AND missing_reported_at < receipt_deadline_at) OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_deadline_at IS NULL)) AND receipt_confirmed_at IS NULL AND status IN ('DELIVERY_DISPUTED','COMPLETED','REFUNDED'))", name="ck_orders_missing_report"),
+        CheckConstraint("(return_address IS NULL) = (return_address_saved_at IS NULL)", name="ck_orders_return_address_pair"),
+        CheckConstraint("receipt_confirmation_source IS NULL OR (receipt_confirmation_source = 'BUYER' AND (receipt_confirmed_at < receipt_deadline_at OR (fulfillment_policy = 'EXTERNAL_V2' AND receipt_deadline_at IS NULL))) OR (receipt_confirmation_source = 'AUTO' AND receipt_confirmed_at >= receipt_deadline_at)", name="ck_orders_receipt_boundary"),
         CheckConstraint(_in_list("status", ORDER_STATUSES), name="ck_orders_status"),
         CheckConstraint("buyer_id <> seller_id", name="ck_orders_not_self_purchase"),
         CheckConstraint(
@@ -92,8 +108,13 @@ class Order(Base):
         ),
         Index("ix_orders_buyer_created", "buyer_id", "created_at", "id"),
         Index("ix_orders_seller_created", "seller_id", "created_at", "id"),
+        Index("ix_orders_inspection_queue", "status", "created_at", "id"),
     )
 
+    fulfillment_policy: Mapped[str] = mapped_column(String(24), nullable=False, server_default="LEGACY_V1")
+    result_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_decision_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result_timed_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     buyer_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     seller_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
@@ -137,6 +158,16 @@ class Order(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    return_address: Mapped[dict | None] = mapped_column(JSON)
+    return_address_saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_confirmation_source: Mapped[str | None] = mapped_column(String(8))
+    missing_reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    missing_report_reason: Mapped[str | None] = mapped_column(String(2000))
+    missing_report_id: Mapped[str | None] = mapped_column(String(36))
+    inspection_overdue_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
 
 class PaymentAttempt(Base):
     """ทุกครั้งที่ผู้ซื้อกดจ่าย รวมครั้งที่ล้มเหลว"""
@@ -146,6 +177,7 @@ class PaymentAttempt(Base):
         CheckConstraint(_in_list("outcome", ATTEMPT_OUTCOMES), name="ck_payment_attempts_outcome"),
         CheckConstraint("amount > 0", name="ck_payment_attempts_amount_positive"),
         UniqueConstraint("order_id", "idempotency_key", name="uq_payment_attempts_order_key"),
+        UniqueConstraint("id", "order_id", "amount", name="uq_attempts_order_amount"),
         ForeignKeyConstraint(
             ["order_id", "amount"],
             ["orders.id", "orders.total_amount"],
@@ -172,6 +204,8 @@ class Payment(Base):
     __table_args__ = (
         UniqueConstraint("order_id", name="uq_payments_order_id"),
         UniqueConstraint("attempt_id", name="uq_payments_attempt_id"),
+        UniqueConstraint("id", "order_id", "amount", name="uq_payments_order_amount"),
+        ForeignKeyConstraint(["attempt_id", "order_id", "amount"], ["payment_attempts.id", "payment_attempts.order_id", "payment_attempts.amount"], name="fk_payments_attempt_tuple"),
         CheckConstraint("amount > 0", name="ck_payments_amount_positive"),
         ForeignKeyConstraint(
             ["order_id", "amount"],
@@ -199,6 +233,9 @@ class Escrow(Base):
     __table_args__ = (
         UniqueConstraint("order_id", name="uq_escrows_order_id"),
         UniqueConstraint("payment_id", name="uq_escrows_payment_id"),
+        UniqueConstraint("id", "order_id", "payment_id", "amount", name="uq_escrows_financial_tuple"),
+        ForeignKeyConstraint(["payment_id", "order_id", "amount"], ["payments.id", "payments.order_id", "payments.amount"], name="fk_escrows_payment_tuple"),
+        CheckConstraint("(status = 'HELD' AND settled_at IS NULL) OR (status IN ('RELEASED','REFUNDED') AND settled_at IS NOT NULL AND settled_at >= held_at)", name="ck_escrows_settlement_time"),
         CheckConstraint(_in_list("status", ESCROW_STATUSES), name="ck_escrows_status"),
         CheckConstraint("amount > 0", name="ck_escrows_amount_positive"),
         ForeignKeyConstraint(
@@ -213,6 +250,7 @@ class Escrow(Base):
     payment_id: Mapped[int] = mapped_column(Integer, ForeignKey("payments.id"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     held_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -226,6 +264,7 @@ class Receipt(Base):
         UniqueConstraint("order_id", name="uq_receipts_order_id"),
         UniqueConstraint("payment_id", name="uq_receipts_payment_id"),
         UniqueConstraint("receipt_no", name="uq_receipts_receipt_no"),
+        ForeignKeyConstraint(["payment_id", "order_id", "total_amount"], ["payments.id", "payments.order_id", "payments.amount"], name="fk_receipts_payment_tuple"),
         ForeignKeyConstraint(
             ["order_id", "total_amount"],
             ["orders.id", "orders.total_amount"],

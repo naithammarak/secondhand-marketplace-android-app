@@ -1,0 +1,54 @@
+@startuml
+!pragma layout smetana
+title 2NDHAND EXTERNAL_V2 Order states (2 Oct 2026)
+skinparam defaultFontName SansSerif
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam stateBackgroundColor #F1F5F9
+[*] --> WAITING_PAYMENT : create / EXTERNAL_V2 / reserve
+WAITING_PAYMENT --> CANCELLED : cancel / 30min expiry
+WAITING_PAYMENT --> WAITING_SELLER_SHIP : simulated Payment / Receipt / HELD
+WAITING_SELLER_SHIP --> REFUNDED : paid+72h without shipment / full refund
+WAITING_SELLER_SHIP --> SHIPPING_TO_CENTER : frozen return snapshot / carrier / tracking
+SHIPPING_TO_CENTER --> RECEIVED_AT_CENTER : actual Inspector receive
+RECEIVED_AT_CENTER --> INSPECTING : assigned work
+INSPECTING --> RESULT_NOTIFIED : atomic result / qualifying certificate / window
+RESULT_NOTIFIED --> SHIPPING_TO_BUYER : timely CONFIRM / Inspector final dispatch
+RESULT_NOTIFIED --> RETURNED_TO_SELLER : REJECT / timeout / negative; dispatch then actual Seller or Admin receipt
+SHIPPING_TO_BUYER --> DELIVERED_PENDING_BUYER : trusted Admin demo TO_BUYER event / receipt+72h
+SHIPPING_TO_BUYER --> COMPLETED : actual Buyer receipt / one RELEASE
+SHIPPING_TO_BUYER --> DELIVERY_DISPUTED : report without waiting for event / HELD
+DELIVERED_PENDING_BUYER --> COMPLETED : timely Buyer receipt OR eligible AUTO / one RELEASE
+DELIVERED_PENDING_BUYER --> DELIVERY_DISPUTED : timely report / HELD
+DELIVERY_DISPUTED --> COMPLETED : scoped audited Admin resolution / RELEASE
+DELIVERY_DISPUTED --> REFUNDED : scoped audited Admin non-receipt / full refund
+RETURNED_TO_SELLER --> REFUNDED : separate settlement / item-only or full by policy/cause
+CANCELLED --> [*]
+COMPLETED --> [*]
+REFUNDED --> [*]
+note right of RESULT_NOTIFIED
+  Positive atomic availability+72h decision window.
+  No Buyer response -> SYSTEM timeout, never fake REJECT/CONFIRM.
+  Return transit remains RESULT_NOTIFIED with TO_SELLER shipment.
+  Tracking/event alone cannot establish actual returned receipt.
+end note
+note right of DELIVERED_PENDING_BUYER
+  Receipt window = trusted TO_BUYER event server time+72h.
+  Separate from result window; tracking alone never starts AUTO.
+  Fresh DB clock after locks governs writes; report blocks AUTO.
+end note
+note right of RETURNED_TO_SELLER
+  Actual receipt commits before refund attempt.
+  Failure remains HELD and retries the same policy/cause once.
+end note
+note bottom of REFUNDED
+  Positive reject/timeout: item1200 + retained100/50 = held1350.
+  Negative/no-ship/non-receipt/legacy: full1350.
+  Original charge unchanged; Product CANCELLED; review forbidden.
+end note
+legend bottom
+  LEGACY_V1 keeps historical Courier/proof/full-refund rules.
+  Six no-HTTP jobs; inspection overdue escalates only.
+  Backend candidate is separate from E / shared / Android acceptance.
+endlegend
+@enduml

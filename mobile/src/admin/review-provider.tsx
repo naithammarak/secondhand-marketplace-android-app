@@ -37,7 +37,7 @@ export function ReviewProvider({ children }: PropsWithChildren) {
   }));
 
   const owner = auth.session?.user.id ?? null;
-  const isAdmin = auth.account?.role === 'ADMIN';
+  const isAdmin = auth.account?.source === 'backend' && auth.account.role === 'ADMIN' && !auth.accountError;
 
   useEffect(() => {
     // ออกจากระบบหรือเปลี่ยนบัญชีแล้วรายการคำขอของบัญชีก่อนหน้าต้องหายไปทันที

@@ -175,7 +175,7 @@ def test_public_list_only_currently_approved_available_sellers(db):
     assert response.status_code == 200
     assert response.json()["meta"]["total"] == 1
     assert [item["id"] for item in response.json()["data"]] == [visible]
-    assert set(response.json()["data"][0]) == {"id", "product_name", "price", "condition", "status", "main_image"}
+    assert set(response.json()["data"][0]) == {"id", "product_name", "price", "condition", "status", "main_image", "seller"}
     assert response.headers["cache-control"] == "no-store"
     for product_id in hidden:
         assert client.get(f"/products/{product_id}").status_code == 404
@@ -350,7 +350,7 @@ def test_list_query_count_does_not_grow_with_products(db):
     assert response.json()["meta"]["total"] == 10
     # จำนวนคำสั่งต้องคงที่ไม่ว่าจะมีสินค้ากี่ชิ้น: ด่านตรวจ Order หมดเวลา (D-05), approval integrity,
     # count, page, batch images — ด่านตรวจหมดเวลาเป็นคำสั่งอ่าน LIMIT 1 และไม่เขียนอะไรเมื่อไม่มีของค้าง
-    assert len(statements) == 5
+    assert len(statements) == 6  # includes one batched public shop projection
 
 
 def test_malformed_approval_returns_503_for_public_reads(db):
@@ -546,3 +546,22 @@ def move_deadline_into_the_past_for_paid_order(db, order_id):
     order = db.get(Order, order_id)
     order.expires_at = utcnow() - timedelta(minutes=1)
     db.commit()
+
+
+def test_public_shop_projection_uses_latest_eligible_record_and_no_pii(db):
+    seller, _ = create_user(db, UserRole.SELLER)
+    approve(db, seller)
+    record = db.scalars(select(Verification).where(Verification.user_id == seller)).one()
+    record.shop_name = 'ร้านวนดีทดสอบ'
+    db.commit()
+    category, brand = catalog(db)
+    product_id = product(db, seller, category, brand)
+    expected = {'id': seller, 'display_name': 'ร้านวนดีทดสอบ', 'verified': True}
+    assert client.get('/products').json()['data'][0]['seller'] == expected
+    assert client.get(f'/products/{product_id}').json()['seller'] == expected
+    record.shop_name = None
+    db.commit()
+    assert client.get('/products').json()['data'][0]['seller'] == {'id': seller, 'display_name': 'ร้านค้าที่ได้รับอนุมัติ', 'verified': True}
+    # Latest rejection hides old approval and its shop projection.
+    approve(db, seller, 'REJECTED', created_at=datetime.now(timezone.utc) + timedelta(seconds=1))
+    assert client.get('/products').json()['data'] == []

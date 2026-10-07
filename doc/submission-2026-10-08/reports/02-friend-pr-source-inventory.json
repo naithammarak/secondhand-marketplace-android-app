@@ -1,0 +1,18 @@
+{
+  "source_head": "939e4f763c8185e5478b1d4962e746b7a2321a8d",
+  "parent_sha": "521a3822744ac1c67cc75fc2a5574567eb885125",
+  "source_files": 857,
+  "copied_files": 853,
+  "ignored_trailing_blank_lines_only": [
+    "mobile/component-tests/inspection-views.test.tsx",
+    "mobile/component-tests/order-detail-screen.test.tsx",
+    "mobile/src/components/checkout-screen.tsx",
+    "mobile/src/components/profile-screen.tsx"
+  ],
+  "excluded_untracked_roots": [
+    "var"
+  ],
+  "retained_base_gitignore_protection": "/mobile/node_modules",
+  "original_snapshot_files_preserved_except_authorized_docs": 855,
+  "new_packet_secret_scan_hits": 0
+}

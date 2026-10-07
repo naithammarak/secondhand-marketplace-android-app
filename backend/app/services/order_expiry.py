@@ -9,10 +9,13 @@
 `sweep_expired_orders` **ปิด transaction ด้วย commit** ผู้เรียกจึงต้องไม่ถือ row lock ที่ยังต้องใช้ต่อ
 """
 
+from datetime import datetime
+
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.order import Order
+from app.services.transaction_clock import database_now
 from app.models.product import Product
 from app.services.order_pricing import (
     CANCEL_REASON_EXPIRED,
@@ -25,15 +28,19 @@ from app.services.order_pricing import (
 
 
 def release_reserved_products(db: Session, product_ids: list[int]) -> None:
-    """คืนสินค้าที่ถูกจองไว้ให้ขายต่อได้ สินค้าที่ถูกลบหรือเปลี่ยนสถานะไปแล้วจะไม่ถูกแตะ"""
+    """Release reservations only when no active Order still owns the product."""
     if not product_ids:
         return
+    active_order = select(Order.id).where(
+        Order.product_id == Product.id, Order.status != ORDER_CANCELLED
+    ).exists()
     db.execute(
         update(Product)
         .where(
             Product.id.in_(product_ids),
             Product.status == PRODUCT_RESERVED,
             Product.deleted_at.is_(None),
+            ~active_order,
         )
         .values(status=PRODUCT_AVAILABLE)
         .execution_options(synchronize_session=False)
@@ -48,9 +55,53 @@ def has_expired_orders(db: Session, *conditions) -> bool:
     """
     return db.scalar(
         select(Order.id)
-        .where(*conditions, Order.status == ORDER_WAITING_PAYMENT, Order.expires_at <= utcnow())
+        .where(
+            *conditions,
+            Order.status == ORDER_WAITING_PAYMENT,
+            Order.paid_at.is_(None),
+            Order.expires_at <= utcnow(),
+        )
         .limit(1)
     ) is not None
+
+
+def expire_orders_in_transaction(db: Session, *conditions, now: datetime | None = None) -> int:
+    """Expire and release in the caller's transaction; never commit or roll back here.
+
+    The conditional UPDATE rechecks eligibility after PostgreSQL waits for a
+    concurrent payment/cancellation lock. Product release is part of the same
+    transaction, so either both changes commit or neither does.
+    """
+    # Lock Orders in deterministic order before Product updates. Fresh clock is
+    # sampled AFTER waits; explicit now is retained only for deterministic tests.
+    ids = db.scalars(select(Order.id).where(*conditions,
+        Order.status == ORDER_WAITING_PAYMENT, Order.paid_at.is_(None))
+        .order_by(Order.id).with_for_update()).all()
+    if not ids:
+        return 0
+    instant = now if now is not None else database_now(db, fallback=utcnow)
+    released = (
+        db.execute(
+            update(Order)
+            .where(
+                Order.id.in_(ids),
+                Order.status == ORDER_WAITING_PAYMENT,
+                Order.paid_at.is_(None),
+                Order.expires_at <= instant,
+            )
+            .values(
+                status=ORDER_CANCELLED,
+                cancel_reason=CANCEL_REASON_EXPIRED,
+                cancelled_at=instant,
+            )
+            .returning(Order.product_id)
+            .execution_options(synchronize_session=False)
+        )
+        .scalars()
+        .all()
+    )
+    release_reserved_products(db, list(released))
+    return len(released)
 
 
 def sweep_expired_orders(db: Session, *conditions) -> int:
@@ -59,33 +110,13 @@ def sweep_expired_orders(db: Session, *conditions) -> int:
     ใช้ conditional update จึงปลอดภัยเมื่อหลายคำขอทำพร้อมกัน มีเพียงคำขอเดียวที่ได้แถวไป
     ผู้เรียกต้องไม่ถือ row lock ที่ยังต้องใช้ต่อ เพราะฟังก์ชันนี้ปิด transaction ด้วย commit
     """
-    now = utcnow()
     try:
-        released = (
-            db.execute(
-                update(Order)
-                .where(
-                    *conditions,
-                    Order.status == ORDER_WAITING_PAYMENT,
-                    Order.expires_at <= now,
-                )
-                .values(
-                    status=ORDER_CANCELLED,
-                    cancel_reason=CANCEL_REASON_EXPIRED,
-                    cancelled_at=now,
-                )
-                .returning(Order.product_id)
-                .execution_options(synchronize_session=False)
-            )
-            .scalars()
-            .all()
-        )
-        release_reserved_products(db, list(released))
+        cancelled = expire_orders_in_transaction(db, *conditions, now=None)
         db.commit()
     except Exception:
         db.rollback()
         raise
-    return len(released)
+    return cancelled
 
 
 def sweep_if_needed(db: Session, *conditions) -> int:

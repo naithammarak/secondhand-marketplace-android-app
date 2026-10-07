@@ -214,7 +214,7 @@ test('the service default fails closed when both mode and API URL are absent', a
 // ===== Condition label mapping =====
 
 test('condition codes map to the agreed Thai labels', () => {
-  assert.deepEqual(conditionLabels, { NEW: 'ใหม่', LIKE_NEW: 'เหมือนใหม่', GOOD: 'ดี', FAIR: 'พอใช้' });
+  assert.deepEqual(conditionLabels, { NEW: 'สภาพใหม่', LIKE_NEW: 'สภาพเหมือนใหม่', GOOD: 'สภาพดี', FAIR: 'สภาพพอใช้', UNKNOWN: 'ข้อมูลสภาพไม่พร้อมใช้งาน' });
 });
 
 // ===== Real branch: decode and error envelope (contract v1.0) =====
@@ -251,6 +251,14 @@ test('a detail response decodes the full product from the {data} envelope', asyn
   assert.equal(product.brand.brandName, 'ไม่ระบุแบรนด์');
   assert.equal(product.images[0].photoType, 'MAIN');
   assert.equal(product.saleType, 'FIXED_PRICE');
+});
+
+test('a future condition remains readable without inventing a known condition', async () => {
+  const { fetch } = recorder(() => json(200, { data: detail({ condition: 'FUTURE_CONDITION' }) }));
+  const service = createProductCatalogService({ baseUrl: 'https://api.test', fetch });
+  const product = await service.getProduct(101);
+  assert.equal(product.condition, 'UNKNOWN');
+  assert.equal(conditionLabels[product.condition], 'ข้อมูลสภาพไม่พร้อมใช้งาน');
 });
 
 test('price that is not a decimal string is treated as a malformed backend response', async () => {
@@ -320,4 +328,11 @@ test('caller abort rejects without waiting for the timeout', async () => {
     new Promise(resolve => setTimeout(() => resolve('hung'), 1000)),
   ]);
   assert.equal(outcome, 'aborted');
+});
+
+test('getProduct reads the public seller returned beside data (PR130 detail shape)', async () => {
+  const { fetch } = recorder(() => json(200, { data: detail(), seller: { id: 4, display_name: 'ร้านค้าที่ได้รับอนุมัติ', verified: true } }));
+  const service = createProductCatalogService({ mode: 'api', baseUrl: 'https://api.test', fetch });
+  const product = await service.getProduct(101);
+  assert.deepEqual(product.seller, { id: 4, displayName: 'ร้านค้าที่ได้รับอนุมัติ', verified: true });
 });

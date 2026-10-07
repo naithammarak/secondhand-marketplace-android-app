@@ -1,0 +1,67 @@
+[
+  {
+    "source": "docs/project-plan/FINISH-spec.md",
+    "original_sha256": "13eeed5bc486428eca316b0a51a157d0f331f50932400054e8a85135c16cde30",
+    "packet_path": "references/FINISH-spec.md"
+  },
+  {
+    "source": "docs/project-plan/FINISH-AI-handoff.md",
+    "original_sha256": "f9ebc13d323b91262fdc09f3951d875404040f3ad4332e32d5d4e9e9d52a76ac",
+    "packet_path": "references/FINISH-AI-handoff.md"
+  },
+  {
+    "source": "docs/project-plan/CERT-spec.md",
+    "original_sha256": "a6373edefb7c9dbe1bc5a7e933111ee312edd549c55ffe0751052ae9a5b2b76f",
+    "packet_path": "references/CERT-spec.md"
+  },
+  {
+    "source": "docs/project-plan/INSPECT-spec.md",
+    "original_sha256": "e8e39b3193a62c8855a971d7d293fcbf42faff21d8eef5758574aed7ab29e778",
+    "packet_path": "references/INSPECT-spec.md"
+  },
+  {
+    "source": "docs/project-plan/FULFILLMENT-00-delivery-proof-and-deadlines.md",
+    "original_sha256": "25cd7c74688b48f6e649edc777536b1b4c89ba6e82e62e4d590b2a36d5e39091",
+    "packet_path": "references/FULFILLMENT-00-delivery-proof-and-deadlines.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-00-readiness.md",
+    "original_sha256": "88fb62f66fff65c8d94aa4c4361a7ef01290e8b7975901d615e3db7bd6812339",
+    "packet_path": "references/FINISH-00-readiness.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-01-handoff.md",
+    "original_sha256": "0a629f444f5f29a1b5c0705e9fedec830a6554812e67dccb135c5060ea50ec3e",
+    "packet_path": "references/FINISH-01-handoff.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-02-handoff.md",
+    "original_sha256": "fdb698570e40520e35d9db08ff5349a4db1a1a07bd92b2c96b24c9e5c0116bb0",
+    "packet_path": "references/FINISH-02-handoff.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-03-handoff.md",
+    "original_sha256": "775e9479e7dbb059fab96733dd7bdc0c2bd43f94a8849e5dcd25f960c6c2793c",
+    "packet_path": "references/FINISH-03-handoff.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-04-handoff.md",
+    "original_sha256": "c602ebc609724a794138dc1267f07a5d9852ac703215b063b015388fc6cc4e21",
+    "packet_path": "references/FINISH-04-handoff.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-api-fixtures.md",
+    "original_sha256": "edb5567d3ef9ca52abeeabcfa7961857d8794115fb96a3c21f708d48145c7d04",
+    "packet_path": "references/FINISH-api-fixtures.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-contract-decisions.md",
+    "original_sha256": "8dc52f4c03a711aa28d3099f0d6795180c0e32149959b70398ae537cf80d1b99",
+    "packet_path": "references/FINISH-contract-decisions.md"
+  },
+  {
+    "source": "docs/project-plan/finish-00-2026-09-29/FINISH-dependencies.md",
+    "original_sha256": "990633edf0f5c24fc74c32b83c8802b2341a55c302cf0dd61cd8c2084bb2c6b7",
+    "packet_path": "references/FINISH-dependencies.md"
+  }
+]

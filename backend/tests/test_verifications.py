@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import time
 import uuid
 
@@ -131,6 +132,7 @@ def add_verification(user_id: int, status: str, reject_reason: str | None = None
 
 def submit(headers, storage_file=("card.png", PNG_BYTES, "image/png"), **fields):
     data = {
+        "shop_name": "ร้านทดสอบ",
         "bank_name": "ธนาคารทดสอบ",
         "bank_account_name": "ผู้ขาย ทดสอบ",
         "bank_account_number": "123-4-56789-0",
@@ -145,10 +147,12 @@ def test_requires_authentication():
     assert client.get("/verifications/me").status_code in [401, 403]
 
 
-def test_buyer_cannot_read_or_submit(storage):
-    _, headers = create_user(role=UserRole.BUYER)
-    assert client.get("/verifications/me", headers=headers).status_code == 403
-    assert submit(headers).status_code == 403
+def test_buyer_can_apply_without_promotion(storage):
+    user_id, headers = create_user(role=UserRole.BUYER)
+    assert client.get("/verifications/me", headers=headers).status_code == 200
+    assert submit(headers).status_code == 201
+    with TestingSessionLocal() as session:
+        assert session.get(User, user_id).role == UserRole.BUYER
 
 
 def test_seller_without_request_sees_not_submitted(storage):
@@ -159,6 +163,21 @@ def test_seller_without_request_sees_not_submitted(storage):
     assert body["status"] == "NOT_SUBMITTED"
     assert body["can_submit"] is True
     assert body["id"] is None
+
+
+def test_latest_request_uses_created_at_before_imported_id(storage):
+    user_id, headers = create_user(role=UserRole.BUYER)
+    latest_id = add_verification(user_id, "APPROVED")
+    imported_id = add_verification(user_id, "REJECTED", reject_reason="รูปเอกสารไม่ชัดเจน")
+    with TestingSessionLocal() as db:
+        db.get(Verification, latest_id).created_at = datetime.now(timezone.utc)
+        db.get(Verification, imported_id).created_at = datetime.now(timezone.utc) - timedelta(days=1)
+        db.commit()
+    response = client.get("/verifications/me", headers=headers)
+    assert response.json()["id"] == latest_id
+    assert response.json()["can_submit"] is False
+    assert submit(headers).status_code == 409
+    assert storage.uploads == []
 
 
 def test_submit_stores_request_as_pending_without_returning_id_card(storage):
@@ -474,3 +493,24 @@ def test_account_number_with_valid_spaces_and_hyphens_is_accepted(storage, valid
     response = submit(headers, bank_account_number=valid_account)
     assert response.status_code == 201
     assert len(storage.uploads) == 1
+
+
+@pytest.mark.parametrize('shop', [None, '', ' ', 'ก', 'ก' * 101])
+def test_shop_name_is_required_and_validated_without_upload(shop, storage):
+    user_id, headers = create_user(role=UserRole.BUYER)
+    response = submit(headers, shop_name=shop)
+    assert response.status_code == 422
+    assert 'shop_name' in response.json()['detail']['fields']
+    assert storage.uploads == []
+    with TestingSessionLocal() as db:
+        assert db.get(User, user_id).role == UserRole.BUYER
+        assert db.query(Verification).count() == 0
+
+
+def test_shop_name_is_trimmed_and_staff_cannot_apply(storage):
+    _, buyer = create_user(role=UserRole.BUYER)
+    assert submit(buyer, shop_name='  วนดี ทดสอบ  ').json()['shop_name'] == 'วนดี ทดสอบ'
+    for role in [UserRole.ADMIN, UserRole.INSPECTOR, None]:
+        _, headers = create_user(role=role)
+        assert submit(headers).status_code == 403
+        assert client.get('/verifications/me', headers=headers).status_code == 403

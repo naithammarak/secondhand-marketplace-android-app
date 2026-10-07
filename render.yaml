@@ -1,0 +1,39 @@
+# Render Blueprint for the 2NDHAND API (free web service, Docker).
+# Values marked sync: false are entered privately in the Render dashboard.
+services:
+  - type: web
+    name: secondhand-api
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_CERTIFICATE_BASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_JWT_AUDIENCE
+        value: authenticated
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
+      - key: SUPABASE_JWT_ALGORITHM
+        sync: false
+      - key: SUPABASE_VERIFICATION_BUCKET
+        value: seller-verifications
+      - key: APP_ENV
+        value: demo
+      - key: PAYMENT_SIMULATION_ENABLED
+        value: "true"
+      - key: FULFILLMENT_SIMULATION_ENABLED
+        value: "true"
+      - key: EXTERNAL_SHIPPING_DEMO_ENABLED
+        value: "true"

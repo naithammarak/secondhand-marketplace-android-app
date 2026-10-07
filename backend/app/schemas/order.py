@@ -14,6 +14,16 @@ from pydantic import BaseModel, ConfigDict
 class OrderStatus(str, Enum):
     WAITING_PAYMENT = "WAITING_PAYMENT"
     WAITING_SELLER_SHIP = "WAITING_SELLER_SHIP"
+    SHIPPING_TO_CENTER = "SHIPPING_TO_CENTER"
+    RECEIVED_AT_CENTER = "RECEIVED_AT_CENTER"
+    INSPECTING = "INSPECTING"
+    RESULT_NOTIFIED = "RESULT_NOTIFIED"
+    SHIPPING_TO_BUYER = "SHIPPING_TO_BUYER"
+    DELIVERED_PENDING_BUYER = "DELIVERED_PENDING_BUYER"
+    DELIVERY_DISPUTED = "DELIVERY_DISPUTED"
+    RETURNED_TO_SELLER = "RETURNED_TO_SELLER"
+    COMPLETED = "COMPLETED"
+    REFUNDED = "REFUNDED"
     CANCELLED = "CANCELLED"
 
 
@@ -25,6 +35,7 @@ class CancelReason(str, Enum):
 class PaymentStatus(str, Enum):
     UNPAID = "UNPAID"
     PAID = "PAID"
+    REFUNDED = "REFUNDED"
 
 
 class ViewerRole(str, Enum):
@@ -80,6 +91,7 @@ class ProductSnapshot(BaseModel):
     name: str
     condition: str
     size: str
+    image_url: str | None = None
 
 
 class OrderAmountsView(BaseModel):
@@ -118,6 +130,10 @@ class OrderDetail(BaseModel):
     cancel_reason: CancelReason | None
     created_at: datetime | None
     updated_at: datetime | None
+    can_confirm_receipt: bool = False
+    can_report_missing: bool = False
+    receipt_deadline_at: datetime | None = None
+    settlement: dict | None = None
 
 
 class OrderListItem(BaseModel):

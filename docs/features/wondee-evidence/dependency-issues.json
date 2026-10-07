@@ -1,0 +1,16 @@
+[
+  {
+    "assignees": [],
+    "number": 98,
+    "state": "OPEN",
+    "title": "FINISH-00 — [Lead] สัญญากลางการส่งถึง ยืนยันรับ 72 ชั่วโมง และปล่อย/คืนเงินจำลอง",
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/issues/98"
+  },
+  {
+    "assignees": [],
+    "number": 100,
+    "state": "OPEN",
+    "title": "[Feature] CERT — ใบรับรอง QR และการตัดสินใจของผู้ซื้อ",
+    "url": "https://github.com/naithammarak/secondhand-marketplace-android-app/issues/100"
+  }
+]

@@ -1,8 +1,27 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
-import { StyleSheet, View, type DimensionValue } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Platform, StyleSheet, View, type DimensionValue } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
+import type { ProductCondition } from '@/services/product-catalog-service';
 import { MarketplaceIcon } from './marketplace-icon';
+
+/** สีป้ายสภาพสินค้าตาม design (.cond-*) ใช้ร่วมกันทั้งการ์ดในรายการและหน้ารายละเอียด */
+export const conditionBadgeTheme: Record<ProductCondition, { bg: string; text: string }> = {
+  NEW: { bg: '#059669', text: '#ffffff' },
+  LIKE_NEW: { bg: '#0D9488', text: '#ffffff' },
+  GOOD: { bg: '#0284C7', text: '#ffffff' },
+  FAIR: { bg: '#D97706', text: '#ffffff' },
+  UNKNOWN: { bg: '#64748B', text: '#ffffff' },
+};
+
+/** คำสั้นบนป้ายตาม design; ใช้ conditionLabels (คำเต็ม) เป็น accessibilityLabel */
+export const cardConditionLabels: Record<ProductCondition, string> = {
+  NEW: 'ใหม่',
+  LIKE_NEW: 'เหมือนใหม่',
+  GOOD: 'ดี',
+  FAIR: 'พอใช้',
+  UNKNOWN: 'ไม่ระบุสภาพ',
+};
 
 type ProductImageProps = {
   uri: string | null | undefined;
@@ -10,13 +29,16 @@ type ProductImageProps = {
   height?: number;
   borderRadius?: number;
   accessibilityLabel?: string;
+  hovered?: boolean;
 };
 
 /** แสดง placeholder เมื่อไม่มีรูปหรือรูปโหลดไม่สำเร็จ (onError) แต่ละ instance มี state ความล้มเหลวของตัวเอง */
-export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, accessibilityLabel }: ProductImageProps) {
+export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, accessibilityLabel, hovered }: ProductImageProps) {
   const theme = useTheme();
   const [prevUri, setPrevUri] = useState(uri);
   const [failed, setFailed] = useState(false);
+  const [internalHovered, setInternalHovered] = useState(false);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   if (prevUri !== uri) {
     setPrevUri(uri);
@@ -24,21 +46,49 @@ export function ProductImage({ uri, width = 72, height = 72, borderRadius = 12, 
   }
 
   const showPlaceholder = !uri || failed;
+  const isHovered = hovered ?? internalHovered;
+  const prevHovered = useRef(isHovered);
+
+  useEffect(() => {
+    if (prevHovered.current === isHovered) return;
+    prevHovered.current = isHovered;
+    const anim = Animated.timing(scaleAnim, {
+      toValue: isHovered && !showPlaceholder ? 1.07 : 1,
+      duration: 250,
+      useNativeDriver: false,
+    });
+    anim.start();
+    return () => {
+      anim.stop();
+    };
+  }, [isHovered, showPlaceholder, scaleAnim]);
 
   return (
-    <View style={[styles.frame, { width, height, borderRadius, backgroundColor: theme.backgroundSelected }]}>
+    <View
+      onPointerEnter={() => setInternalHovered(true)}
+      onPointerLeave={() => setInternalHovered(false)}
+      style={[styles.frame, { width, height, borderRadius, backgroundColor: theme.backgroundSelected }]}
+    >
       {showPlaceholder ? (
         <View accessible accessibilityRole="image" accessibilityLabel={accessibilityLabel ?? 'ไม่มีรูปสินค้า'}>
           <MarketplaceIcon name="image" size={32} />
         </View>
       ) : (
-        <Image
-          source={{ uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          onError={() => setFailed(true)}
-          accessibilityLabel={accessibilityLabel}
-        />
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            { transform: [{ scale: scaleAnim }] },
+            Platform.OS === 'web' ? ({ transition: 'transform 0.25s ease-out' } as any) : undefined,
+          ]}
+        >
+          <Image
+            source={{ uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            onError={() => setFailed(true)}
+            accessibilityLabel={accessibilityLabel}
+          />
+        </Animated.View>
       )}
     </View>
   );

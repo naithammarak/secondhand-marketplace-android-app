@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "status": "ACCEPTED_AB_AMENDMENT_LOCAL_CODE_API",
+  "updatedAt": "2026-10-03T06:11:36.785820+00:00",
+  "document": "changes/EXTERNAL-SHIPPING-03.md",
+  "historicalReviewedSource": {
+    "pr": 129,
+    "head": "b531bd1372c0d26b8492fa28ff29ab20a85d7578",
+    "migrationHead": "c08f20261002",
+    "acceptanceAppliesTo": "Legacy Courier proof / full-refund contract only"
+  },
+  "selectedScope": {
+    "externalShipping": true,
+    "newCourierWorkspace": false,
+    "realCarrierIntegration": false,
+    "auditedAdminDemoEvents": true,
+    "mandatoryDeliveryPhoto": false,
+    "resultDecisionHours": 72,
+    "resultSilenceOutcome": "RETURN_TO_SELLER",
+    "rejectTimeoutRefund": "ITEM_PRICE_ONLY",
+    "otherRefundPoliciesUnchanged": true,
+    "successfulSaleCommissionPercent": 5,
+    "returnRefundRequiresActualRecipientReceiptOrAuditedAdminConfirmation": true
+  },
+  "pricingAssumption": "Preserve existing shipping/inspection snapshots; no new return fee or real carrier reimbursement in this amendment.",
+  "legacyPolicyPreserved": true,
+  "tasks": [
+    {
+      "id": "R1",
+      "owner": "A/integration",
+      "dependsOn": []
+    },
+    {
+      "id": "R2",
+      "owner": "B/backend",
+      "dependsOn": [
+        "R1"
+      ]
+    },
+    {
+      "id": "R3",
+      "owner": "B/backend",
+      "dependsOn": [
+        "R1",
+        "R2"
+      ]
+    },
+    {
+      "id": "R4",
+      "owner": "B/backend",
+      "dependsOn": [
+        "R1",
+        "R2",
+        "R3"
+      ]
+    },
+    {
+      "id": "R5",
+      "owner": "E/frontend",
+      "dependsOn": [
+        "R2",
+        "R3",
+        "R4"
+      ],
+      "designPreparationMayStart": true
+    },
+    {
+      "id": "R6",
+      "owner": "Lead/reviewer",
+      "dependsOn": [
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5"
+      ]
+    }
+  ],
+  "latestEUpstream": null,
+  "backendImplemented": true,
+  "frontendImplemented": false,
+  "migrationApplied": false,
+  "independentAcceptance": true,
+  "sharedDatabaseTouched": false,
+  "liveServersChanged": false,
+  "githubIssuesCreated": false,
+  "fullReleaseGatesRemaining": [
+    "Reviewed amended backend + latest E combined head",
+    "Authorized runtime/Auth/private Storage/worker rollout",
+    "Final APK + real Android/OAuth/HTTPS QR and complete journeys",
+    "Aligned final documents/test report/slides/backup recording/rehearsal"
+  ],
+  "abWorkflow": "coordination/AB-AMENDMENT-WORKFLOW.json",
+  "automationId": "a-b",
+  "currentAbPr": "https://github.com/naithammarak/secondhand-marketplace-android-app/pull/130",
+  "checkpointHead": "566c45b883a44c7a61845590762be0377cb2e503",
+  "currentAbHead": "0ffff2de66d321ab37a0a725d4427716cbfecba3",
+  "backendImplementationDelivered": true,
+  "independentAcceptanceScope": "R1–R4 local backend/code/API only",
+  "fullReleaseReady": false,
+  "abAcceptance": "coordination/AB-AMENDMENT-ACCEPTANCE.json",
+  "documentQualification": "Published active API/spec documents are accepted with the current planner packet. A Git-only clone omits the live coordination/EXTERNAL-SHIPPING-STATE.json planning link; copy that nonsecret current file as a separate docs overlay, without overwriting published active specs. No application correction was requested.",
+  "frontendTaskHandoff": "/home/tmk/project/market-place-mobile-app/secondhand-marketplace-android-app/doc/submission-2026-10-08/ui-handoff-2026-10-03",
+  "frontendTaskOwners": [
+    "UI1_CUSTOMER_SELLER",
+    "UI2_STAFF_CERTIFICATES"
+  ],
+  "designAuditStatus": "REVIEWED_REQUIRES_POLICY_CORRECTIONS",
+  "designInputSha256": "8191967e57ab0269131aba521de93c6b74ad436632dca1650d2d83b71ecf7821",
+  "designInterpretation": {
+    "kind": "rough_partial_visual_reference",
+    "missingMockupsExpected": true,
+    "implementationCompletesUnillustratedStates": true,
+    "clarifiedOnAsiaBangkok": "2026-10-03"
+  },
+  "frontendIntegrationStatus": "COMPOSED_LOCAL_CODE_API_QA_PASSED_PENDING_REVIEW",
+  "frontendIntegrationRecord": "coordination/E-INTEGRATION-STATE.json"
+}

@@ -1,6 +1,7 @@
 import type { IdCardFile, VerificationInput } from '../services/verification-service';
 
 export type VerificationFormValues = {
+  shopName: string;
   bankName: string;
   bankAccountName: string;
   bankAccountNumber: string;
@@ -10,6 +11,7 @@ export type VerificationFormValues = {
 export type VerificationFieldErrors = Partial<Record<keyof VerificationFormValues, string>>;
 
 export const emptyVerificationForm: VerificationFormValues = {
+  shopName: '',
   bankName: '',
   bankAccountName: '',
   bankAccountNumber: '',
@@ -25,6 +27,7 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 /** ชื่อช่องที่ backend ใช้ เพื่อจับคู่ข้อผิดพลาดรายช่องกลับมาที่ฟอร์ม */
 const FIELD_BY_API_NAME: Record<string, keyof VerificationFormValues> = {
+  shop_name: 'shopName',
   bank_name: 'bankName',
   bank_account_name: 'bankAccountName',
   bank_account_number: 'bankAccountNumber',
@@ -45,6 +48,8 @@ function validateName(value: string, label: string): string | undefined {
 
 export function validateVerificationForm(values: VerificationFormValues): VerificationFieldErrors {
   const errors: VerificationFieldErrors = {};
+  const shop = (values.shopName ?? '').trim();
+  if ([...shop].length < 2 || [...shop].length > 100) errors.shopName = 'ชื่อร้านค้าต้องมี 2–100 ตัวอักษร';
 
   const bankName = validateName(values.bankName, 'ชื่อธนาคาร');
   if (bankName) errors.bankName = bankName;
@@ -73,6 +78,7 @@ export function validateVerificationForm(values: VerificationFormValues): Verifi
 export function toVerificationInput(values: VerificationFormValues): VerificationInput | null {
   if (!values.idCard) return null;
   return {
+    shopName: values.shopName.trim(),
     bankName: values.bankName.trim(),
     bankAccountName: values.bankAccountName.trim(),
     bankAccountNumber: digitsOf(values.bankAccountNumber),

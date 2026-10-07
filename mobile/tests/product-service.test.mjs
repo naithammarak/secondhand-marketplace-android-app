@@ -94,6 +94,40 @@ test('create and edit send exact decimal text and required seller fields', async
   assert.deepEqual(JSON.parse(calls[0].init.body).description, 'สภาพดี');
   assert.deepEqual(JSON.parse(calls[1].init.body).size, 'M');
   assert.deepEqual(calls.map(call => call.init.method), ['POST', 'PATCH']);
+  assert.deepEqual(calls.map(call => JSON.parse(call.init.body).brand_id), [2, 2]);
+  assert.ok(calls.every(call => !('brand_name' in JSON.parse(call.init.body))));
+});
+
+test('create and edit send a typed brand name and read its real returned ID', async () => {
+  const calls = [];
+  const service = createProductService({ baseUrl: 'https://example.test', fetch: async (url, init) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify({ data: {
+      id: 1, product_name: 'เสื้อ', description: 'สภาพดี', size: 'M', price: '250.00',
+      brand_id: 88, brand: { id: 88, brand_name: 'แบรนด์ท้องถิ่น' }, images: [],
+    } }));
+  } });
+  const input = { name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: '250',
+    category: 'เสื้อผ้า', categoryId: 1, brand: ' แบรนด์ท้องถิ่น ', images: ['brand-regression-image'] };
+  registerProductImage(input.images[0], { uploadId: 91, imageId: 92 });
+  for (const result of [await service.createProduct(input, 'token'), await service.updateProduct('1', input, 'token')]) {
+    assert.equal(result.brand, 'แบรนด์ท้องถิ่น');
+    assert.equal(result.brandId, 88);
+  }
+  assert.deepEqual(calls.map(call => JSON.parse(call.init.body).brand_name), ['แบรนด์ท้องถิ่น', 'แบรนด์ท้องถิ่น']);
+  assert.ok(calls.every(call => !('brand_id' in JSON.parse(call.init.body))));
+});
+
+test('empty and oversized typed brand names are rejected before transport', async () => {
+  const service = createProductService({ baseUrl: 'https://example.test', fetch: async () => {
+    assert.fail('invalid brand must not be sent');
+  } });
+  const input = { name: 'เสื้อ', description: 'สภาพดี', size: 'M', condition: 'GOOD', price: '250',
+    category: 'เสื้อผ้า', categoryId: 1, images: ['image'] };
+  for (const brand of ['   ', 'x'.repeat(256)]) {
+    await assert.rejects(service.createProduct({ ...input, brand }, 'token'), error => !!error.fields.brand_name);
+    await assert.rejects(service.updateProduct('1', { ...input, brand }, 'token'), error => !!error.fields.brand_name);
+  }
 });
 
 test('create and edit reject missing description or size before sending', async () => {
@@ -119,7 +153,7 @@ test('create timeout covers response headers and body', async () => {
 
 test('image upload timeout covers response body', async () => {
   const service = createImageUploadService({ baseUrl: 'https://example.test', timeoutMs: 10, fetch: async () => ({ ok: true, json: () => new Promise(() => {}) }) });
-  await assert.rejects(service.uploadImage({ uri: 'file:///image.jpg' }, 'token'), error => error.kind === 'timeout');
+  await assert.rejects(service.uploadImage({ uri: 'blob:test-image', file: new Blob(['image'], { type: 'image/jpeg' }) }, 'token'), error => error.kind === 'timeout');
 });
 
 test('missing API configuration fails closed for product and image writes', async () => {

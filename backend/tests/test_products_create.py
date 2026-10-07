@@ -1,6 +1,7 @@
 """PRODUCT-03 create endpoint: contract, permission and rollback coverage."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -161,6 +162,96 @@ def test_approved_seller_creates_product_and_consumes_images(db):
     records = db.scalars(select(ProductUpload).order_by(ProductUpload.id)).all()
     assert [record.state for record in records] == ["ATTACHED", "ATTACHED"]
     assert all(record.attached_product_id == product.id for record in records)
+
+def test_typed_brand_is_saved_and_visible_in_owner_public_and_catalog_reads(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    body = valid_body(category_id, brand_id, [pending_upload(db, seller_id)])
+    del body["brand_id"]
+    body["brand_name"] = "  แบรนด์ท้องถิ่น  "
+    response = client.post("/products", headers=headers, json=body)
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["brand"]["brand_name"] == "แบรนด์ท้องถิ่น"
+    assert data["brand_id"] != brand_id
+    for path in [f"/products/me/{data['id']}", f"/products/{data['id']}"]:
+        reopened = client.get(path, headers=headers)
+        assert reopened.status_code == 200
+        assert reopened.json()["data"]["brand"] == data["brand"]
+    assert data["brand"] in client.get("/brands").json()["data"]
+    assert count(db, Brand) == 2
+
+
+def test_typed_brand_reuses_existing_name_case_insensitively(db):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    brand = Brand(brand_name="Mango")
+    db.add(brand)
+    db.commit()
+    body = valid_body(category_id, brand_id, [pending_upload(db, seller_id)])
+    del body["brand_id"]
+    body["brand_name"] = " mango "
+    response = client.post("/products", headers=headers, json=body)
+    assert response.status_code == 201
+    assert response.json()["data"]["brand"] == {"id": brand.id, "brand_name": "Mango"}
+    assert count(db, Brand) == 2
+
+
+@pytest.mark.parametrize("brand_fields", [
+    {}, {"brand_name": " "}, {"brand_name": "x" * 256}, {"brand_name": None},
+    {"brand_name": 123}, {"brand_name": "\ud800"}, {"brand_id": 1, "brand_name": "Mango"},
+    {"brand_id": None, "brand_name": "Mango"},
+])
+def test_invalid_brand_choice_does_not_write(db, brand_fields):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    body = valid_body(category_id, brand_id, [pending_upload(db, seller_id)])
+    del body["brand_id"]
+    response = client.post("/products", headers=headers | {"Content-Type": "application/json"},
+                           content=json.dumps(body | brand_fields))
+    assert response.status_code == 422
+    assert count(db, Brand) == 1
+    assert count(db, Product) == 0
+
+
+@pytest.mark.parametrize("failure", ["invalid-upload", "signing"])
+def test_failed_create_rolls_back_new_brand(db, monkeypatch, failure):
+    seller_id, headers = create_user(db, UserRole.SELLER)
+    approve(db, seller_id)
+    category_id, brand_id = catalog(db)
+    upload_id = pending_upload(db, seller_id)
+    body = valid_body(category_id, brand_id, [upload_id])
+    del body["brand_id"]
+    body["brand_name"] = "Rollback brand"
+    if failure == "invalid-upload":
+        body["images"] = [{"upload_id": 99999}]
+    else:
+        async def fail_sign(_path):
+            raise HTTPException(status_code=503, detail={"code": "STORAGE_UNAVAILABLE"})
+        monkeypatch.setattr(products_module, "sign_private_object", fail_sign)
+    response = client.post("/products", headers=headers, json=body)
+    assert response.status_code == (422 if failure == "invalid-upload" else 503)
+    assert count(db, Brand) == 1
+    assert count(db, Product) == 0
+    assert db.get(ProductUpload, upload_id).state == "PENDING"
+
+
+def test_buyer_cannot_create_a_brand_through_product_write(db):
+    buyer_id, headers = create_user(db, UserRole.BUYER)
+    category_id, brand_id = catalog(db)
+    body = valid_body(category_id, brand_id, [pending_upload(db, buyer_id)])
+    del body["brand_id"]
+    response = client.post("/products", headers=headers, json=body | {"brand_name": "Forbidden brand"})
+    assert response.status_code == 403
+    assert count(db, Brand) == 1
+
+def test_create_openapi_documents_both_brand_choices():
+    schema = app.openapi()["components"]["schemas"]["CreateProductRequest"]
+    assert schema["oneOf"] == [{"required": ["brand_id"]}, {"required": ["brand_name"]}]
+    assert {"brand_id", "brand_name"} <= set(schema["properties"])
 
 
 def test_ten_images_are_accepted_in_request_order(db):

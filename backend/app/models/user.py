@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import DateTime, Enum as SqlEnum, Integer, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.schema import UniqueConstraint
+from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 from app.database import Base
 
@@ -14,6 +14,7 @@ class UserRole(str, Enum):
     SELLER = "SELLER"
     ADMIN = "ADMIN"
     INSPECTOR = "INSPECTOR"
+    COURIER = "COURIER"
 
 
 class UserStatus(str, Enum):
@@ -25,6 +26,7 @@ class UserStatus(str, Enum):
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
+        CheckConstraint("(privacy_policy_version IS NULL) = (privacy_acknowledged_at IS NULL)", name="ck_users_policy_pair"),
         UniqueConstraint(
             "supabase_user_id",
             name="uq_users_supabase_user_id",
@@ -47,6 +49,8 @@ class User(Base):
         String(320),
         nullable=False,
     )
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    privacy_acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     role: Mapped[UserRole | None] = mapped_column(
         SqlEnum(
             UserRole,
@@ -55,8 +59,9 @@ class User(Base):
             create_constraint=True,
             validate_strings=True,
             length=16,
-        ),
+        ).evaluates_none(),
         nullable=True,
+        server_default=text("'BUYER'"),
     )
     status: Mapped[UserStatus] = mapped_column(
         SqlEnum(

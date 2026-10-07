@@ -1,0 +1,86 @@
+@startuml
+title Order State Diagram - Prototype / Fulfillment decision 2026-09-26
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Leelawadee UI"
+skinparam dpi 150
+skinparam shadowing false
+skinparam roundcorner 10
+skinparam ArrowColor #475569
+skinparam state {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+}
+
+state "WAITING_PAYMENT\nรอชำระเงิน" as WAITING_PAYMENT
+state "WAITING_SELLER_SHIP\nรอผู้ขายจัดส่ง" as WAITING_SELLER_SHIP
+state "SHIPPING_TO_CENTER\nกำลังส่งไปศูนย์ตรวจสอบ" as SHIPPING_TO_CENTER
+state "RECEIVED_AT_CENTER\nศูนย์ตรวจสอบรับสินค้าแล้ว" as RECEIVED_AT_CENTER
+state "INSPECTING\nกำลังตรวจสอบสินค้า" as INSPECTING
+state "RESULT_NOTIFIED\nแจ้งผลตรวจและรอผู้ซื้อตัดสินใจ" as RESULT_NOTIFIED
+state "SHIPPING_TO_BUYER\nกำลังส่งสินค้าให้ผู้ซื้อ" as SHIPPING_TO_BUYER
+state "DELIVERED_PENDING_BUYER\nส่งถึงผู้ซื้อ รอยืนยันรับ" as DELIVERED_PENDING_BUYER
+state "DELIVERY_DISPUTED\nผู้ซื้อแจ้งว่ายังไม่ได้รับ" as DELIVERY_DISPUTED #FFF7E6
+state "COMPLETED\nส่งมอบและปล่อยเงินสำเร็จ" as COMPLETED #EAF7ED
+state "RETURNED_TO_SELLER\nสินค้าส่งคืนถึงผู้ขายแล้ว" as RETURNED_TO_SELLER
+state "REFUNDED\nคืนเงินให้ผู้ซื้อแล้ว" as REFUNDED #FFF7E6
+state "CANCELLED\nยกเลิกคำสั่งซื้อ" as CANCELLED #FDECEC
+
+[*] --> WAITING_PAYMENT : ผู้ซื้อสั่งซื้อสินค้า\n/ สร้าง Order และจองสินค้า
+
+WAITING_PAYMENT --> WAITING_SELLER_SHIP : ชำระเงินสำเร็จ\n[PaymentStatus = SUCCESS และ EscrowState = HELD]
+WAITING_PAYMENT --> CANCELLED : ครบ 30 นาทีและยังไม่ชำระสำเร็จ\n[CancelReason = EXPIRED] / ปลดจองสินค้า
+WAITING_PAYMENT --> CANCELLED : ผู้ซื้อยกเลิกก่อนจ่าย\n[CancelReason = BUYER] / ปลดจองสินค้า
+
+WAITING_SELLER_SHIP --> SHIPPING_TO_CENTER : ผู้ขายสร้าง Shipment ไปศูนย์ตรวจสอบ
+WAITING_SELLER_SHIP --> REFUNDED : เกิน 3 วันหลังจ่ายและผู้ขายยังไม่ส่ง\n[Reason = SELLER_NO_SHIP] / คืนเงินเต็มยอด 1 ครั้ง
+
+SHIPPING_TO_CENTER --> RECEIVED_AT_CENTER : Courier ถ่ายรูปและยืนยันส่งถึงศูนย์\nInspector ยืนยันรับ [Proof 1..3 รูป]
+RECEIVED_AT_CENTER --> INSPECTING : ผู้ตรวจสอบเริ่มตรวจสินค้า
+INSPECTING --> RESULT_NOTIFIED : บันทึกผลตรวจหนึ่งใน 4 แบบ\n[PASS/MINOR_ISSUE ออก Certificate พร้อมผล; ผลลบไม่มี] / แจ้งผล
+
+RESULT_NOTIFIED --> SHIPPING_TO_BUYER : ผู้ซื้อยอมรับผลตรวจ CONFIRM\n[PASS/MINOR_ISSUE] / สร้าง Shipment ไปผู้ซื้อ
+RESULT_NOTIFIED --> RETURNED_TO_SELLER : ผู้ซื้อ REJECT หรือผลเป็น NOT_AS_DESCRIBED/FAKE\nCourier ถ่ายรูปและยืนยันส่งคืนถึงผู้ขาย
+
+SHIPPING_TO_BUYER --> DELIVERED_PENDING_BUYER : Courier ถ่ายรูปและยืนยันส่งถึงผู้ซื้อ\n[Proof 1..3 รูป] / เริ่มนับ 72 ชั่วโมงจากเวลา Server
+DELIVERED_PENDING_BUYER --> COMPLETED : ผู้ซื้อยืนยันว่าได้รับสินค้า\n/ ปล่อยเงินครั้งเดียว [EscrowState = RELEASED]
+DELIVERED_PENDING_BUYER --> COMPLETED : ครบ 72 ชั่วโมงโดยไม่มีรายงานไม่รับ\n/ Worker ปล่อยเงินครั้งเดียว [EscrowState = RELEASED]
+DELIVERED_PENDING_BUYER --> DELIVERY_DISPUTED : ผู้ซื้อแจ้งว่ายังไม่ได้รับก่อนครบ 72 ชั่วโมง\n/ พักเงินไว้ [EscrowState = HELD]
+DELIVERY_DISPUTED --> COMPLETED : Admin ตรวจหลักฐานแล้วว่าส่งถึง\n/ บันทึกเหตุผลและปล่อยเงินครั้งเดียว
+DELIVERY_DISPUTED --> REFUNDED : Admin ตรวจหลักฐานแล้วว่าไม่ได้ส่งถึง\n/ บันทึกเหตุผลและคืนเงินเต็มยอดครั้งเดียว
+RETURNED_TO_SELLER --> REFUNDED : คืนเงินสำเร็จ\n[PaymentStatus = REFUNDED และ EscrowState = REFUNDED]
+
+CANCELLED --> [*] : ยังไม่เคยชำระเงิน
+COMPLETED --> [*]
+REFUNDED --> [*]
+
+note right of WAITING_PAYMENT
+  กล่องทั้งหมดในรูปคือ OrderStatus
+  PaymentStatus, EscrowState และ ShipmentStatus
+  เป็นเงื่อนไขหรือผลของเหตุการณ์ ไม่ใช่สถานะ Order
+end note
+
+note right of RESULT_NOTIFIED
+  ระหว่างส่งคืนสินค้า Order ยังคงเป็น RESULT_NOTIFIED
+  จน Shipment ส่งคืนถึงผู้ขายสำเร็จ
+  ไม่มีการยอมรับผลตรวจแทนผู้ซื้อเมื่อครบ 72 ชั่วโมง
+  หากรอนาน ให้เตือน/ส่งให้ Admin ติดตาม โดยยังพักเงิน
+end note
+
+note right of DELIVERED_PENDING_BUYER
+  72 ชั่วโมงเริ่มจากเวลา Courier ยืนยันส่งถึงพร้อมรูป
+  รูปใน private Storage; ผู้ซื้อเห็นได้เฉพาะ Order ของตน
+  หากแจ้งว่าไม่รับก่อนครบเวลา ต้องหยุด auto-release
+  Job ทำงานแม้ไม่มีผู้ใช้เปิดแอป
+end note
+
+legend bottom
+  |= สี |= ความหมาย |
+  |<#F8FAFC> | Order กำลังดำเนินการ |
+  |<#EAF7ED> | สำเร็จ |
+  |<#FFF7E6> | คืนเงินแล้ว |
+  |<#FDECEC> | สิ้นสุดจากหมดเวลาหรือยกเลิก |
+endlegend
+
+@enduml

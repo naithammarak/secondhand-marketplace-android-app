@@ -1,0 +1,141 @@
+{
+  "fixture_status": "CONTRACT_ONLY_NOT_LIVE",
+  "upstream_integration": "PENDING_PACKAGE_A_TASK02",
+  "currency": "THB",
+  "pricing_snapshot": {
+    "item_price": "1200.00",
+    "shipping_fee": "50.00",
+    "inspection_fee": "100.00",
+    "commission_fee": "60.00",
+    "seller_payout": "1140.00",
+    "total_amount": "1350.00"
+  },
+  "allocations": {
+    "RELEASE": {
+      "held_amount": "1350.00",
+      "seller_payout": "1140.00",
+      "buyer_refund": "0.00",
+      "commission": "60.00",
+      "inspection": "100.00",
+      "shipping": "50.00"
+    },
+    "REFUND": {
+      "held_amount": "1350.00",
+      "seller_payout": "0.00",
+      "buyer_refund": "1350.00",
+      "commission": "0.00",
+      "inspection": "0.00",
+      "shipping": "0.00"
+    }
+  },
+  "buyer_pending_delivery": {
+    "order_id": 42,
+    "order_status": "DELIVERED_PENDING_BUYER",
+    "server_time": "2026-10-03T10:05:00Z",
+    "shipments": [{
+      "id": 17,
+      "leg": "TO_BUYER",
+      "status": "DELIVERED",
+      "carrier": "Demo Courier",
+      "tracking_number": "DEMO-42",
+      "shipped_at": "2026-10-03T09:00:00Z",
+      "courier_delivered_at": "2026-10-03T10:00:00Z",
+      "proofs": [{"id": 21, "url": "/shipment-delivery-proofs/21"}]
+    }],
+    "receipt_deadline_at": "2026-10-06T10:00:00Z",
+    "receipt_confirmed_at": null,
+    "receipt_confirmation_source": null,
+    "delivery_reported_missing_at": null,
+    "can_confirm_receipt": true,
+    "can_report_missing": true,
+    "settlement_status": "HELD",
+    "settlement": null
+  },
+  "seller_buyer_delivery_progress": {
+    "order_id": 42,
+    "order_status": "DELIVERED_PENDING_BUYER",
+    "shipments": [{
+      "id": 17,
+      "leg": "TO_BUYER",
+      "status": "DELIVERED",
+      "carrier": "Demo Courier",
+      "tracking_number": "DEMO-42",
+      "courier_delivered_at": "2026-10-03T10:00:00Z",
+      "proofs": []
+    }],
+    "can_confirm_receipt": false,
+    "can_report_missing": false,
+    "settlement_status": "HELD",
+    "settlement": null
+  },
+  "return_delivery_refund_pending": {
+    "shipment": {
+      "id": 18,
+      "leg": "TO_SELLER",
+      "status": "DELIVERED",
+      "courier_delivered_at": "2026-10-03T12:00:00Z",
+      "confirmed_proof_ids": [22]
+    },
+    "order_id": 43,
+    "order_status": "RETURNED_TO_SELLER",
+    "receipt_deadline_at": null,
+    "settlement_status": "HELD",
+    "settlement": null,
+    "processing_pending": true
+  },
+  "reported_missing": {
+    "order_id": 42,
+    "order_status": "DELIVERY_DISPUTED",
+    "reported_at": "2026-10-03T10:06:00Z",
+    "settlement_status": "HELD"
+  },
+  "buyer_completed_release": {
+    "order_id": 42,
+    "order_status": "COMPLETED",
+    "receipt_confirmed_at": "2026-10-03T10:06:00Z",
+    "receipt_confirmation_source": "BUYER",
+    "settlement_status": "RELEASED",
+    "settlement": {
+      "id": 9,
+      "kind": "RELEASE",
+      "source": "BUYER_RECEIPT",
+      "reason": "RECEIPT_CONFIRMED",
+      "currency": "THB",
+      "amount": "1350.00",
+      "settled_at": "2026-10-03T10:06:00Z"
+    }
+  },
+  "seller_release_summary": {
+    "id": 9,
+    "kind": "RELEASE",
+    "source": "BUYER_RECEIPT",
+    "reason": "RECEIPT_CONFIRMED",
+    "currency": "THB",
+    "seller_payout": "1140.00",
+    "settled_at": "2026-10-03T10:06:00Z"
+  },
+  "buyer_full_refund": {
+    "order_id": 43,
+    "order_status": "REFUNDED",
+    "payment_status": "REFUNDED",
+    "settlement_status": "REFUNDED",
+    "settlement": {
+      "id": 10,
+      "kind": "REFUND",
+      "source": "RETURN_DELIVERY",
+      "reason": "BUYER_REJECTED_INSPECTION",
+      "currency": "THB",
+      "amount": "1350.00",
+      "settled_at": "2026-10-03T12:05:00Z"
+    }
+  },
+  "seller_refund_summary": {
+    "id": 10,
+    "kind": "REFUND",
+    "source": "RETURN_DELIVERY",
+    "reason": "BUYER_REJECTED_INSPECTION",
+    "currency": "THB",
+    "seller_payout": "0.00",
+    "settled_at": "2026-10-03T12:05:00Z"
+  }
+}

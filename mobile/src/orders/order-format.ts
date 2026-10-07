@@ -1,9 +1,21 @@
 import type { CancelReason, OrderStatus, PaymentStatus } from '../services/order-service';
 
 /** ข้อความภาษาไทยของสถานะจาก backend หน้าจอแสดงตามนี้เท่านั้น ไม่คำนวณสถานะเอง */
-export const orderStatusLabels: Record<OrderStatus, string> = {
+export const orderStatusLabels: Record<string, string> = {
   WAITING_PAYMENT: 'รอชำระเงิน',
   WAITING_SELLER_SHIP: 'ชำระแล้ว รอผู้ขายจัดส่ง',
+  SHIPPING_TO_CENTER: 'กำลังส่งเข้าศูนย์ตรวจ',
+  RECEIVED_AT_CENTER: 'ศูนย์รับสินค้าแล้ว',
+  INSPECTING: 'กำลังตรวจสินค้า',
+  RESULT_NOTIFIED: 'แจ้งผลตรวจแล้ว',
+  SHIPPING_TO_BUYER: 'กำลังส่งถึงผู้ซื้อ',
+  DELIVERED_PENDING_BUYER: 'ส่งถึงผู้ซื้อแล้ว รอยืนยันรับสินค้า',
+  DELIVERY_DISPUTED: 'ผู้ซื้อแจ้งไม่ได้รับสินค้า รอผู้ดูแลตรวจสอบ',
+  RETURNED_TO_SELLER: 'ส่งคืนถึงผู้ขายแล้ว รอคืนเงิน',
+  COMPLETED: 'สำเร็จ',
+  RETURNING_TO_SELLER: 'กำลังส่งคืนผู้ขาย',
+  REFUNDED: 'คืนเงินแล้ว',
+  RETURNED: 'ส่งคืนแล้ว',
   CANCELLED: 'ยกเลิกแล้ว',
   // สถานะที่แอปรุ่นนี้ยังไม่รู้จัก (backend เพิ่มสถานะหลังการจัดส่งในรอบถัดไป)
   UNKNOWN: 'สถานะอื่น ๆ กรุณาอัปเดตแอปเพื่อดูรายละเอียด',
@@ -12,7 +24,7 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
 /** ใช้ตัวนี้เสมอแทนการอ่าน orderStatusLabels ตรง ๆ เพื่อไม่ให้หน้าจอว่างเมื่อเจอสถานะใหม่ */
 export function orderStatusLabel(status: OrderStatus | string | null | undefined): string {
   if (!status) return orderStatusLabels.UNKNOWN;
-  return orderStatusLabels[status as OrderStatus] ?? orderStatusLabels.UNKNOWN;
+  return orderStatusLabels[status] ?? orderStatusLabels.UNKNOWN;
 }
 
 /** ใช้ได้ทั้งมุมมองผู้ซื้อและผู้ขาย จึงไม่เขียนว่า "คุณ" */
@@ -24,6 +36,7 @@ export const cancelReasonLabels: Record<CancelReason, string> = {
 export const paymentStatusLabels: Record<PaymentStatus, string> = {
   UNPAID: 'ยังไม่ชำระ',
   PAID: 'ชำระแล้ว',
+  REFUNDED: 'คืนเงินแล้ว',
 };
 
 /**
@@ -66,4 +79,22 @@ export function formatDateTime(value: string | null | undefined): string | null 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleString('th-TH');
+}
+
+/** Remaining time "2 วัน 03:04:05" from a server deadline. Null when missing/invalid/passed. */
+export function formatLongRemaining(deadline: string | null | undefined, now: number): string | null {
+  if (!deadline) return null;
+  const at = new Date(deadline).getTime();
+  if (Number.isNaN(at)) return null;
+  const total = Math.ceil((at - now) / 1000);
+  if (total <= 0) return null;
+  const days = Math.floor(total / 86400);
+  const rest = total % 86400;
+  const clock = [Math.floor(rest / 3600), Math.floor((rest % 3600) / 60), rest % 60].map(part => String(part).padStart(2, '0')).join(':');
+  return days > 0 ? `${days} วัน ${clock}` : clock;
+}
+
+/** Count Unicode code points the same way the server's length checks do. */
+export function textLength(value: string): number {
+  return [...value.trim()].length;
 }

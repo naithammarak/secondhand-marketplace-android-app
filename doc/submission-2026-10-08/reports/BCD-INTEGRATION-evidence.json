@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "status": "AUTHOR_INTEGRATION_PASS_INDEPENDENT_REVIEW_PENDING",
+  "productionCompositionHead": "b5e9a05f2bcd6b09bc6a7d98923277507b024bf7",
+  "apiExecutionSourceBeforeTestGuardMerge": "6d0bb4200fa048932863f2a3dad713179e8e2d70",
+  "productionIdenticalAfterTestOnlyMerge": true,
+  "upstream": {
+    "A_PR123": "94a26a0fbb7a0a82948d95de7db9af070707b770",
+    "B_PR128": "161f5dcf5ee655e7811acaa787ae1003c936f4a9",
+    "C_PROFILE_PR126": "60abb9988530ff648d9b45cb49aa9843b2dae679",
+    "C_REVIEWS_PR127": "7e36f5d214cb26f1e35e1613121454e03f89d88f",
+    "D_PR125": "33e0100be5eb4272a14d1e81b55481885b843b34"
+  },
+  "testSource": "/home/tmk/.codex/worktrees/bcd-integration-20261002/secondhand-marketplace-android-app/backend/tests/test_bcd_api_integration_postgres.py",
+  "testSha256": "b1c00e716e6079619b8199c225ff98022c647447abdcf95992e19911be2c4630",
+  "postgres": {
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "container": "bcd-integration-pg-20261002",
+    "loopbackPort": 55455,
+    "database": "bcd_journey_verified_test",
+    "freshEmptyOwnedTarget": true,
+    "terminalFactsOnlyThroughActualAPI": true,
+    "authAndPrivateStorageFixtures": "synthetic local",
+    "artifacts": [
+      {
+        "path": "/home/tmk/.codex/worktrees/bcd-integration-20261002/secondhand-marketplace-android-app/review-evidence/bcd-journey.log",
+        "sha256": "3c8da8913514aae8ca3bdeeae367141ea6a082a170a1d799555483e5bfada29e",
+        "classification": "passing_final"
+      },
+      {
+        "path": "/home/tmk/.codex/worktrees/bcd-integration-20261002/secondhand-marketplace-android-app/review-evidence/bcd-journey.xml",
+        "sha256": "27e9b97bbe2fcaa7311c3e689e415271919426a8862696ffc8707c24efc1db98",
+        "classification": "passing_final"
+      },
+      {
+        "path": "/home/tmk/.codex/worktrees/bcd-integration-20261002/secondhand-marketplace-android-app/review-evidence/bcd-journey-unapproved-seller-fixture.log",
+        "sha256": "e98c8427037cd9c8e8c99e94b57066319d00d20c75642be250bacc4ad590d2fb",
+        "classification": "retained_invalid_seller_fixture_failure"
+      },
+      {
+        "path": "/home/tmk/.codex/worktrees/bcd-integration-20261002/secondhand-marketplace-android-app/review-evidence/bcd-journey-unapproved-seller-fixture.xml",
+        "sha256": "564209817ff13ff67e0fcef8750b5203f64a7a436285a321c569ff786964e152",
+        "classification": "retained_invalid_seller_fixture_failure"
+      }
+    ]
+  },
+  "mobile": {
+    "typecheck": "PASS exit 0",
+    "components": {
+      "passed": 47,
+      "suites": 7,
+      "names": [
+        "profile-screen",
+        "profile-persistence",
+        "review-modal",
+        "seller-reviews-modal",
+        "order-detail-screen",
+        "admin-certificate-screen",
+        "public-certificate-screen"
+      ]
+    },
+    "evidenceKind": "Observed command tool stdout; no raw mobile log file retained"
+  },
+  "migration": {
+    "singleHead": "c08f20261002",
+    "parents": [
+      "c07f20261002",
+      "a02f20261002"
+    ],
+    "freshUpgradeExecutedByPostgresFixture": true
+  },
+  "manualProductionConflictResolution": [
+    "backend/app/main.py"
+  ],
+  "newProductionBehaviorOutsideComposition": false,
+  "EIncluded": false,
+  "fullReleaseAccepted": false,
+  "sharedDatabaseTouched": false,
+  "mergedToMain": false,
+  "schedulerActivated": false,
+  "remaining": [
+    "Independent exact-head BCD review and C08 acceptance",
+    "Latest E/UI source reconciliation",
+    "Android device build and real Auth/private Storage/public HTTPS QR",
+    "Shared service rollout and deployed jobs",
+    "Handover/demo/presentation"
+  ]
+}

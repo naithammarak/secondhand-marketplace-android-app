@@ -1,0 +1,15 @@
+- generic: QA FIXTURE · shared · ไม่มี API/การบันทึกจริง
+- generic: Wondee · สถานะและมาสคอต
+- generic: neutral
+- generic: courier
+- generic: inspector
+- generic: pass
+- generic: minor
+- generic: discrepancy
+- generic: fake
+- generic: seal
+- generic "กำลังโหลด"
+- generic: ยังไม่มีรายการ
+- generic: รายการของคุณจะแสดงที่นี่
+- generic: เชื่อมต่อไม่ได้
+- generic: กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่

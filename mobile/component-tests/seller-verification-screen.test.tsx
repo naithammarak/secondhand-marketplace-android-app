@@ -1,358 +1,157 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-
 import { SellerVerificationScreen } from '@/components/seller-verification-screen';
-import * as pickIdCardModule from '@/verification/pick-id-card';
-
-const mockBack = jest.fn();
+import * as picker from '@/verification/pick-id-card';
+const mockPush = jest.fn();
 let mockAuth: any;
-let mockVerificationState: any;
-let mockVerificationStore: any;
-
+let mockState: any;
+const mockStore = { load: jest.fn(), refresh: jest.fn(), retry: jest.fn(), clearFieldError: jest.fn(),
+  submit: jest.fn(), getSnapshot: () => mockState };
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ back: mockBack }),
-  Redirect: ({ href }: { href: string }) => null,
+  useFocusEffect: (callback: () => void) => require('react').useEffect(callback, [callback]),
+  useRouter: () => ({ push: mockPush, canGoBack: () => false, replace: mockPush }),
+  router: { canGoBack: () => false, replace: mockPush }, Redirect: () => null,
 }));
-
-jest.mock('@/auth/auth-provider', () => ({
-  useAuth: () => mockAuth,
-}));
-
-jest.mock('@/verification/verification-provider', () => ({
-  useVerification: () => ({
-    state: mockVerificationState,
-    store: mockVerificationStore,
-  }),
-}));
-
-function newAuth(overrides: Record<string, unknown> = {}) {
-  return {
-    session: { user: { id: 'seller-1' } },
-    account: { fullName: 'ผู้ขาย สมหมาย', role: 'SELLER', source: 'backend' },
-    accountChecking: false,
-    accountError: null,
-    retryAccount: jest.fn(),
-    ...overrides,
-  };
-}
-
-function newVerificationState(overrides: Record<string, unknown> = {}) {
-  return {
-    owner: 'seller-1',
-    loading: false,
-    refreshing: false,
-    record: null,
-    loadError: null,
-    submitting: false,
-    submitError: null,
-    fieldErrors: {},
-    ...overrides,
-  };
-}
-
-function newVerificationStore(overrides: Record<string, unknown> = {}) {
-  return {
-    load: jest.fn().mockResolvedValue(undefined),
-    refresh: jest.fn().mockResolvedValue(undefined),
-    retry: jest.fn().mockResolvedValue(undefined),
-    clearFieldError: jest.fn(),
-    submit: jest.fn().mockResolvedValue(undefined),
-    getSnapshot: jest.fn(() => mockVerificationState),
-    ...overrides,
-  };
-}
-
+jest.mock('@/auth/auth-provider', () => ({ useAuth: () => mockAuth }));
+jest.mock('@/verification/verification-provider', () => ({ useVerification: () => ({ state: mockState, store: mockStore }) }));
 beforeEach(() => {
   jest.clearAllMocks();
-  mockAuth = newAuth();
-  mockVerificationState = newVerificationState();
-  mockVerificationStore = newVerificationStore();
+  mockAuth = { session: { user: { id: 'buyer' } }, account: { role: 'BUYER', source: 'backend' }, retryAccount: jest.fn() };
+  mockState = { owner: 'buyer', record: { id: null, status: 'NOT_SUBMITTED', canSubmit: true }, fieldErrors: {},
+    loading: false, refreshing: false, submitting: false, loadError: null, submitError: null };
+  mockStore.submit.mockResolvedValue(undefined);
 });
-
-test('waits for account check before showing seller verification form (fail closed)', async () => {
-  mockAuth = newAuth({ account: null, accountChecking: true });
-  await render(<SellerVerificationScreen />);
-
+afterEach(() => jest.restoreAllMocks());
+test('Buyer can apply with shop, bank and private image but no optimistic promotion', async () => {
+  const file = { uri: 'file:///id.jpg', name: 'id.jpg', type: 'image/jpeg', size: 500 };
+  jest.spyOn(picker, 'pickIdCardImage').mockResolvedValue({ status: 'picked', file });
+  render(<SellerVerificationScreen />);
+  for (const [label, value] of [['ชื่อร้านค้า', 'ร้านวนดี'], ['ชื่อธนาคาร', 'ธนาคารทดสอบ'], ['ชื่อบัญชี', 'สมใจ ทดสอบ'], ['เลขที่บัญชี', '1234567890']]) fireEvent.changeText(screen.getByLabelText(label), value);
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' })); });
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' })); });
+  expect(mockStore.submit).toHaveBeenCalledWith({ shopName: 'ร้านวนดี', bankName: 'ธนาคารทดสอบ', bankAccountName: 'สมใจ ทดสอบ', bankAccountNumber: '1234567890', idCard: file });
+  expect(screen.queryByText('ลงขายสินค้า')).toBeNull();
+});
+test.each(['ADMIN', 'INSPECTOR'])('%s cannot apply', role => {
+  mockAuth.account.role = role;
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('บัญชีนี้ยังไม่พร้อมขอเปิดร้าน')).toBeTruthy();
+  expect(screen.queryByLabelText('ชื่อร้านค้า')).toBeNull();
+  expect(mockStore.load).not.toHaveBeenCalled();
+});
+test('checking account hides form', () => {
+  mockAuth.accountChecking = true; mockAuth.account = null;
+  render(<SellerVerificationScreen />);
   expect(screen.getByLabelText('กำลังตรวจสอบสิทธิ์บัญชี')).toBeTruthy();
-  expect(screen.queryByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeNull();
-  expect(mockVerificationStore.load).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText('ชื่อร้านค้า')).toBeNull();
 });
-
-test('shows account check error with retry button when account verification fails', async () => {
-  mockAuth = newAuth({ account: null, accountChecking: false, accountError: 'network-error' });
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('ตรวจสอบสิทธิ์บัญชีไม่สำเร็จ')).toBeTruthy();
-  const retryBtn = screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' });
-  await fireEvent.press(retryBtn);
+test('account error offers retry even when account is null', () => {
+  mockAuth.accountError = 'network-error'; mockAuth.account = null;
+  render(<SellerVerificationScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' }));
   expect(mockAuth.retryAccount).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeNull();
 });
-
-test.each(['BUYER', 'ADMIN', 'INSPECTOR'] as const)(
-  'blocks non-seller role %s and displays forbidden message',
-  async (role) => {
-    mockAuth = newAuth({ account: { fullName: `ผู้ใช้ ${role}`, role, source: 'backend' } });
-    await render(<SellerVerificationScreen />);
-
-    expect(screen.getByText('หน้านี้สำหรับบัญชีผู้ขายเท่านั้น')).toBeTruthy();
-    expect(screen.queryByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeNull();
-
-    await fireEvent.press(screen.getByText('กลับ'));
-    expect(mockBack).toHaveBeenCalledTimes(1);
-  }
-);
-
-test('fills all form fields, picks image, and wires submission payload to store.submit()', async () => {
-  const fakeImage = {
-    uri: 'file:///fake/id-card.jpg',
-    name: 'id-card.jpg',
-    type: 'image/jpeg',
-    size: 1024 * 500,
-  };
-  const spyPick = jest.spyOn(pickIdCardModule, 'pickIdCardImage').mockResolvedValue({
-    status: 'picked',
-    file: fakeImage,
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  fireEvent.changeText(screen.getByPlaceholderText('เช่น ธนาคารกรุงไทย'), 'ธนาคารกรุงไทย');
-  expect(mockVerificationStore.clearFieldError).toHaveBeenCalledWith('bankName');
-
-  fireEvent.changeText(screen.getByPlaceholderText('ชื่อ-นามสกุลตามหน้าสมุดบัญชี'), 'สมหมาย ค้าขาย');
-  expect(mockVerificationStore.clearFieldError).toHaveBeenCalledWith('bankAccountName');
-
-  fireEvent.changeText(screen.getByPlaceholderText('ตัวเลข 10-15 หลัก'), '1234567890');
-  expect(mockVerificationStore.clearFieldError).toHaveBeenCalledWith('bankAccountNumber');
-
-  await act(async () => {
-    await fireEvent.press(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' }));
-  });
-  expect(mockVerificationStore.clearFieldError).toHaveBeenCalledWith('idCard');
-
-  await act(async () => {
-    await fireEvent.press(screen.getByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' }));
-  });
-
-  expect(mockVerificationStore.submit).toHaveBeenCalledTimes(1);
-  expect(mockVerificationStore.submit).toHaveBeenCalledWith({
-    bankName: 'ธนาคารกรุงไทย',
-    bankAccountName: 'สมหมาย ค้าขาย',
-    bankAccountNumber: '1234567890',
-    idCard: fakeImage,
-  });
-
-  spyPick.mockRestore();
+test('unknown or stale verification does not expose form or private fields', () => {
+  mockState.owner = 'another'; mockState.record.shopName = 'PRIVATE';
+  render(<SellerVerificationScreen />);
+  expect(screen.queryByText('PRIVATE')).toBeNull();
+  expect(screen.queryByLabelText('ชื่อร้านค้า')).toBeNull();
 });
-
-test('renders loading indicator when initial status is loading without cached record', async () => {
-  mockVerificationState = newVerificationState({ loading: true, record: null });
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByLabelText('กำลังโหลดสถานะคำขอ')).toBeTruthy();
-});
-
-test('renders load error (e.g. network-error or 403) with retry button', async () => {
-  mockVerificationState = newVerificationState({
-    loadError: 'forbidden',
-  });
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('บัญชีนี้ไม่มีสิทธิ์ส่งคำขอยืนยันผู้ขาย')).toBeTruthy();
-  const retryBtn = screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' });
-  await fireEvent.press(retryBtn);
-  expect(mockVerificationStore.retry).toHaveBeenCalledTimes(1);
-});
-
-test('renders NOT_SUBMITTED state with submission form enabled', async () => {
-  mockVerificationState = newVerificationState({
-    record: {
-      id: null,
-      status: 'NOT_SUBMITTED',
-      canSubmit: true,
-      bankName: null,
-      bankAccountName: null,
-      bankAccountLast4: null,
-      rejectReason: null,
-      reviewedAt: null,
-      verifiedAt: null,
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('สถานะ: ยังไม่ส่งคำขอ')).toBeTruthy();
-  expect(screen.getByText('กรอกข้อมูลด้านล่างเพื่อส่งคำขอยืนยันตัวตนผู้ขาย')).toBeTruthy();
-  expect(screen.getByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeTruthy();
-  expect(screen.getByPlaceholderText('เช่น ธนาคารกรุงไทย')).toBeTruthy();
-  expect(screen.getByPlaceholderText('ชื่อ-นามสกุลตามหน้าสมุดบัญชี')).toBeTruthy();
-  expect(screen.getByPlaceholderText('ตัวเลข 10-15 หลัก')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' })).toBeTruthy();
-});
-
-test('renders PENDING state: shows pending badge, masked bank details, and hides submission form', async () => {
-  mockVerificationState = newVerificationState({
-    record: {
-      id: 101,
-      status: 'PENDING',
-      canSubmit: false,
-      bankName: 'ธนาคารกสิกรไทย',
-      bankAccountName: 'สมหมาย ค้าขาย',
-      bankAccountLast4: '4567',
-      rejectReason: null,
-      reviewedAt: null,
-      verifiedAt: null,
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('สถานะ: รอตรวจสอบ')).toBeTruthy();
-  expect(screen.getByText('ธนาคารกสิกรไทย • สมหมาย ค้าขาย • เลขบัญชีลงท้าย 4567')).toBeTruthy();
-  expect(screen.queryByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeNull();
+test('pending shows masked details and refresh, no resubmit', () => {
+  mockState.record = { id: 1, status: 'PENDING', canSubmit: false, shopName: 'ร้านวนดี', bankName: 'ธนาคารทดสอบ', bankAccountName: 'สมใจ', bankAccountLast4: '4567' };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText(/เลขบัญชีลงท้าย 4567/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' })).toBeNull();
-
-  const refreshBtn = screen.getByRole('button', { name: 'รีเฟรชสถานะ' });
-  await fireEvent.press(refreshBtn);
-  expect(mockVerificationStore.refresh).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByRole('button', { name: 'รีเฟรชสถานะ' }));
+  expect(mockStore.refresh).toHaveBeenCalledTimes(1);
+  expect(mockAuth.retryAccount).toHaveBeenCalledTimes(1);
+});
+test('approval refreshes me and waits for the Seller role', () => {
+  mockState.record = { id: 1, status: 'APPROVED', canSubmit: false };
+  const view = render(<SellerVerificationScreen />);
+  expect(mockAuth.retryAccount).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('button', { name: 'ลงขายสินค้า' })).toBeNull();
+  mockAuth.account.role = 'SELLER'; view.rerender(<SellerVerificationScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'ลงขายสินค้า' }));
+  expect(mockPush).toHaveBeenCalledWith('/product/new');
+  expect(mockAuth.retryAccount).toHaveBeenCalledTimes(1);
+});
+test('rejection displays actual reason and permits a fresh application', () => {
+  mockState.record = { id: 1, status: 'REJECTED', canSubmit: true, rejectReason: 'ชื่อบัญชีไม่ตรงกับบัตร กรุณาตรวจสอบ' };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('ชื่อบัญชีไม่ตรงกับบัตร กรุณาตรวจสอบ')).toBeTruthy();
+  expect(screen.getByLabelText('ชื่อร้านค้า')).toBeTruthy();
+});
+test('busy prevents duplicate submits', () => {
+  mockState.submitting = true;
+  render(<SellerVerificationScreen />);
+  fireEvent.press(screen.getByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' }));
+  expect(mockStore.submit).not.toHaveBeenCalled();
+});
+test('permission denial is actionable and is not an uploaded image', async () => {
+  jest.spyOn(picker, 'pickIdCardImage').mockResolvedValue({ status: 'permission-denied' });
+  render(<SellerVerificationScreen />);
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' })); });
+  expect(screen.getByText(/ไม่ได้รับอนุญาตให้เข้าถึงคลังรูปภาพ/)).toBeTruthy();
+  expect(screen.queryByLabelText('รูปบัตรที่เลือก')).toBeNull();
+});
+test('account switch resets form and ignores a late private picker result', async () => {
+  let resolve!: (value: any) => void;
+  jest.spyOn(picker, 'pickIdCardImage').mockImplementation(() => new Promise(r => { resolve = r; }));
+  const view = render(<SellerVerificationScreen />);
+  fireEvent.changeText(screen.getByLabelText('ชื่อบัญชี'), 'ชื่อส่วนตัว');
+  fireEvent.press(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' }));
+  mockAuth.session = { user: { id: 'buyer-2' } }; mockState.owner = 'buyer-2';
+  view.rerender(<SellerVerificationScreen />);
+  await act(async () => { resolve({ status: 'picked', file: { uri: 'file:///old-private.jpg' } }); });
+  expect(screen.getByLabelText('ชื่อบัญชี').props.value).toBe('');
+  expect(screen.queryByLabelText('รูปบัตรที่เลือก')).toBeNull();
+});
+test('load errors prevent writing while preserving retry', () => {
+  mockState.loadError = 'forbidden';
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('บัญชีนี้ไม่มีสิทธิ์ส่งคำขอ')).toBeTruthy();
+  expect(screen.queryByLabelText('ชื่อร้านค้า')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'ลองใหม่อีกครั้ง' }));
+  expect(mockStore.retry).toHaveBeenCalledTimes(1);
+});
+test('field validation and submission conflicts stay visible', () => {
+  mockState.fieldErrors.shopName = 'กรุณาระบุชื่อร้าน 2–100 ตัวอักษร';
+  const view = render(<SellerVerificationScreen />);
+  expect(screen.getByText('กรุณาระบุชื่อร้าน 2–100 ตัวอักษร')).toBeTruthy();
+  mockState.record = { status: 'PENDING', canSubmit: false }; mockState.submitError = 'conflict';
+  view.rerender(<SellerVerificationScreen />);
+  expect(screen.getByText('ส่งคำขอไว้แล้ว ระบบกำลังแสดงสถานะล่าสุด')).toBeTruthy();
 });
 
-test('renders APPROVED state: shows approved badge, masked bank details, and hides submission form', async () => {
-  mockVerificationState = newVerificationState({
-    record: {
-      id: 101,
-      status: 'APPROVED',
-      canSubmit: false,
-      bankName: 'ธนาคารไทยพาณิชย์',
-      bankAccountName: 'สมหมาย ค้าขาย',
-      bankAccountLast4: '9876',
-      rejectReason: null,
-      reviewedAt: '2026-09-18T10:00:00Z',
-      verifiedAt: '2026-09-18T10:00:00Z',
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('สถานะ: อนุมัติแล้ว')).toBeTruthy();
-  expect(screen.getByText('บัญชีผู้ขายของคุณได้รับการยืนยันแล้ว')).toBeTruthy();
-  expect(screen.getByText('ธนาคารไทยพาณิชย์ • สมหมาย ค้าขาย • เลขบัญชีลงท้าย 9876')).toBeTruthy();
-  expect(screen.queryByText('ข้อมูลสำหรับยืนยันตัวตน')).toBeNull();
-});
-
-test('renders REJECTED state: displays rejection reason and enables resubmission form', async () => {
-  mockVerificationState = newVerificationState({
-    record: {
-      id: 101,
-      status: 'REJECTED',
-      canSubmit: true,
-      bankName: 'ธนาคารกรุงเทพ',
-      bankAccountName: 'สมหมาย ค้าขาย',
-      bankAccountLast4: '1122',
-      rejectReason: 'รูปบัตรประชาชนไม่ชัดเจน ไม่สามารถอ่านเลขประจำตัวได้',
-      reviewedAt: '2026-09-18T12:00:00Z',
-      verifiedAt: null,
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('สถานะ: ถูกปฏิเสธ')).toBeTruthy();
-  expect(screen.getByText('เหตุผลที่ถูกปฏิเสธ')).toBeTruthy();
-  expect(screen.getByText('รูปบัตรประชาชนไม่ชัดเจน ไม่สามารถอ่านเลขประจำตัวได้')).toBeTruthy();
-  expect(screen.getByText('ส่งคำขอใหม่')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'ส่งคำขอยืนยันตัวตน' })).toBeTruthy();
-});
-
-test('submitting in-flight disables submit button and shows loading indicator', async () => {
-  mockVerificationState = newVerificationState({
-    submitting: true,
-    record: null,
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  const submitBtn = screen.getByRole('button', { name: 'กำลังส่งคำขอ' });
-  expect(submitBtn.props.accessibilityState?.disabled).toBe(true);
-  expect(screen.getByLabelText('กำลังส่งคำขอ')).toBeTruthy();
-});
-
-test('picking an image updates preview and allows submission', async () => {
-  const spyPick = jest.spyOn(pickIdCardModule, 'pickIdCardImage').mockResolvedValue({
-    status: 'picked',
-    file: {
-      uri: 'file:///fake/id-card.jpg',
-      name: 'id-card.jpg',
-      type: 'image/jpeg',
-      size: 1024 * 500,
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  const pickBtn = screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' });
-  await act(async () => {
-    await fireEvent.press(pickBtn);
-  });
-
-  expect(spyPick).toHaveBeenCalledTimes(1);
-  expect(await screen.findByText('id-card.jpg')).toBeTruthy();
+test('a local card read error appears next to the image without clearing the form', () => {
+  const view = render(<SellerVerificationScreen />);
+  fireEvent.changeText(screen.getByLabelText('ชื่อร้านค้า'), 'ร้านทดสอบ');
+  fireEvent.changeText(screen.getByLabelText('เลขที่บัญชี'), '1234567890');
+  mockState.fieldErrors = { idCard: 'อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่' };
+  mockState.submitError = 'validation-error';
+  view.rerender(<SellerVerificationScreen />);
+  expect(screen.getByText('อ่านรูปบัตรไม่สำเร็จ กรุณาเลือกรูปใหม่')).toBeTruthy();
+  expect(screen.getByLabelText('ชื่อร้านค้า').props.value).toBe('ร้านทดสอบ');
+  expect(screen.getByLabelText('เลขที่บัญชี').props.value).toBe('1234567890');
   expect(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' })).toBeTruthy();
-
-  spyPick.mockRestore();
 });
 
-test('shows picker error when permission is denied', async () => {
-  const spyPick = jest.spyOn(pickIdCardModule, 'pickIdCardImage').mockResolvedValue({
-    status: 'permission-denied',
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  await act(async () => {
-    await fireEvent.press(screen.getByRole('button', { name: 'เลือกรูปบัตรประชาชน' }));
-  });
-  expect(await screen.findByText('ไม่ได้รับอนุญาตให้เข้าถึงคลังรูปภาพ กรุณาอนุญาตในการตั้งค่า')).toBeTruthy();
-
-  spyPick.mockRestore();
+test('a deep link waits for session restore instead of redirecting to login', () => {
+  mockAuth = { initializing: true, session: null, account: null, retryAccount: jest.fn() };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('กำลังตรวจสอบบัญชี')).toBeTruthy();
 });
 
-test('displays field errors from client validation or backend', async () => {
-  mockVerificationState = newVerificationState({
-    fieldErrors: {
-      bankName: 'กรุณากรอกชื่อธนาคาร',
-      bankAccountNumber: 'เลขที่บัญชีต้องเป็นตัวเลข 10-15 หลัก',
-      idCard: 'กรุณาแนบรูปถ่ายบัตรประชาชน',
-    },
-    submitError: 'validation-error',
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('กรุณากรอกชื่อธนาคาร')).toBeTruthy();
-  expect(screen.getByText('เลขที่บัญชีต้องเป็นตัวเลข 10-15 หลัก')).toBeTruthy();
-  expect(screen.getByText('กรุณาแนบรูปถ่ายบัตรประชาชน')).toBeTruthy();
-  expect(screen.getByText('ข้อมูลยังไม่ครบถ้วน กรุณาตรวจสอบช่องที่มีข้อความสีแดง')).toBeTruthy();
+test('status uses Thai labels from the API state, not raw enum text', () => {
+  mockState.record = { id: 1, status: 'PENDING', canSubmit: false, shopName: 'ร้านวนดี', bankName: 'ธนาคารทดสอบ', bankAccountName: 'สมใจ', bankAccountLast4: '4567' };
+  render(<SellerVerificationScreen />);
+  expect(screen.getByText('รอตรวจสอบ')).toBeTruthy();
+  expect(screen.queryByText('PENDING')).toBeNull();
+  expect(screen.getByText('กำลังตรวจสอบคำขอของคุณ')).toBeTruthy();
 });
 
-test('displays conflict error when submission collides with existing pending request', async () => {
-  mockVerificationState = newVerificationState({
-    submitError: 'conflict',
-    record: {
-      id: 102,
-      status: 'PENDING',
-      canSubmit: false,
-      bankName: 'ธนาคารกรุงไทย',
-      bankAccountName: 'สมหมาย',
-      bankAccountLast4: '3344',
-      rejectReason: null,
-      reviewedAt: null,
-      verifiedAt: null,
-    },
-  });
-
-  await render(<SellerVerificationScreen />);
-
-  expect(screen.getByText('มีคำขอที่รอผลอยู่แล้ว ระบบได้ดึงสถานะล่าสุดมาแสดงให้')).toBeTruthy();
+test('a first application shows only the form, without a status block', () => {
+  render(<SellerVerificationScreen />);
+  expect(screen.queryByText('เตรียมร้านของคุณให้พร้อม')).toBeNull();
+  expect(screen.getByLabelText('ชื่อร้านค้า')).toBeTruthy();
 });

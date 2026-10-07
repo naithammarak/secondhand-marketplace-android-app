@@ -114,7 +114,7 @@ const makeStyles = (theme: MarketplaceTheme) => StyleSheet.create({
   },
   title: { fontFamily: Fonts.sans, fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: Spacing.three },
   checkButton: { backgroundColor: theme.primary, padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three },
-  checkButtonText: { color: '#fff', textAlign: 'center', fontWeight: '700' },
+  checkButtonText: { color: theme.onPrimary, textAlign: 'center', fontWeight: '700' },
   resumeButton: { padding: Spacing.three, borderRadius: 8, marginBottom: Spacing.three, borderWidth: 1, borderColor: theme.primary },
   resumeButtonText: { color: theme.text, textAlign: 'center', fontWeight: '700' },
 });

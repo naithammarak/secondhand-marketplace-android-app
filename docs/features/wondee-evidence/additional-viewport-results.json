@@ -1,0 +1,394 @@
+[
+  {
+    "scene": "buyer",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "catalog",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "detail",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "form",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "orders",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "dark",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "buyer",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "catalog",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "detail",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "form",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "orders",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "light",
+    "height": 932,
+    "horizontalOverflow": false,
+    "width": 430
+  },
+  {
+    "scene": "buyer",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "catalog",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "detail",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "form",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "orders",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "dark",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "buyer",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "catalog",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "detail",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "form",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "orders",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "light",
+    "height": 1024,
+    "horizontalOverflow": false,
+    "width": 768
+  },
+  {
+    "scene": "orders-empty",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "orders-error",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "orders-loading",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "checkout-error",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "orders-empty",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "orders-error",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "orders-loading",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "checkout-error",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-MINOR_ISSUE",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-NOT_AS_DESCRIBED",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "inspector-work3",
+    "theme": "dark",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-MINOR_ISSUE",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-NOT_AS_DESCRIBED",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "inspector-work3",
+    "theme": "light",
+    "height": 740,
+    "horizontalOverflow": false,
+    "width": 320
+  },
+  {
+    "scene": "result-MINOR_ISSUE",
+    "theme": "dark",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "result-NOT_AS_DESCRIBED",
+    "theme": "dark",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "dark",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "dark",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "inspector-work3",
+    "theme": "dark",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "result-MINOR_ISSUE",
+    "theme": "light",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "result-NOT_AS_DESCRIBED",
+    "theme": "light",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "result-FAKE",
+    "theme": "light",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "inspector-work2",
+    "theme": "light",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  },
+  {
+    "scene": "inspector-work3",
+    "theme": "light",
+    "height": 844,
+    "horizontalOverflow": false,
+    "width": 390
+  }
+]
