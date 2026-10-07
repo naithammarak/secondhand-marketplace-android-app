@@ -1,9 +1,0 @@
-# F2 unpaid expiry handoff
-
-- Base: Wondee PR #113 at `9a3313757675848fe542085e3173fd5ea34fd445`; local branch `codex/f2-unpaid-expiry`. The original checkout started on `794b193` and was clean; it was switched to a branch from the Wondee base before edits.
-- Scope: backend expiry service, a bounded PostgreSQL worker, the existing CLI, focused tests, and this runbook. No mobile, CERT, migration, or shared-service changes.
-- Behavior: a run considers only `WAITING_PAYMENT`, unpaid Orders whose persisted `expires_at` is at or before the server cutoff. It conditionally records `CANCELLED/EXPIRED` and releases a Product only when no active Order owns it. Each Order has an independent transaction; locked candidates are retried on a later run. Orphan repair was removed from the CLI's automatic path.
-- Controls: explicit dedicated URL variable, expected database name, environment label, remote acknowledgement, `--apply` and matching `--confirm-target`. Dry-run and a single scan are defaults. `--repeat` starts with an immediate scan and uses a five-minute interval by default; SIGTERM/SIGINT stop it cleanly.
-- Observability: per-scan counts and nonzero failure status; per-row failure logs include only Order ID and error class. Failed rows roll back and remain retryable.
-- Tests on a separate disposable PostgreSQL: new worker suite 9 passed, including independent CLI processes for dry-run, apply, restart, and graceful SIGTERM. Existing PostgreSQL Order suite 26 passed. Existing SQLite Order/Product suites 107 passed and Admin Order suite 28 passed. Two pre-existing dependency deprecation warnings appeared.
-- Remaining gates: L1 integration with current Wondee/frontend and CERT branches; L3 staging/shared target review, supervisor or scheduler setup, metrics/alerts, migration and permissions check, and deployment acceptance. No deploy, push, issue change, or schema change was made here.
