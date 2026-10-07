@@ -1,1 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.423" timestamp="2026-10-02T15:28:43.012979+07:00" hostname="DESKTOP-OOGJ0MN"><testcase classname="tests.test_database_security" name="test_test_messages_has_rls_enabled" time="0.049" /></testsuite></testsuites>
